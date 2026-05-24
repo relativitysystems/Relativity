@@ -19,7 +19,7 @@ function initStars() {
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
       r: Math.random() * 1.1 + 0.1,
-      o: Math.random() * 0.65 + 0.2,
+      o: Math.random() * 0.9 + 0.4,
       speed: Math.random() * 0.15 + 0.03,
     });
   }
