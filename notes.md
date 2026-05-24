@@ -1,5 +1,10 @@
 # Relativity.ai
 
+## my notes
+here are some things i dont want to forget to add
+- contacts section
+- examples / testamonials
+
 ## Overview
 Relativity.ai is an AI integration and automation agency focused on helping businesses streamline operations using AI workflows, automation systems, and intelligent data handling.
 

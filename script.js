@@ -12,7 +12,7 @@ function resize() {
 
 function initStars() {
   stars = [];
-  const density = 6960;
+  const density = 6500;
   const count = Math.floor((canvas.width * canvas.height) / density);
   for (let i = 0; i < count; i++) {
     stars.push({
@@ -20,7 +20,7 @@ function initStars() {
       y: Math.random() * canvas.height,
       r: Math.random() * 1.1 + 0.1,
       o: Math.random() * 0.9 + 0.4,
-      speed: Math.random() * 0.15 + 0.03,
+      speed: Math.random() * 0.20 + 0.03,
     });
   }
 }

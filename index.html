@@ -175,7 +175,10 @@
             <input type="text" name="name" placeholder="Your name" required autocomplete="name">
             <input type="email" name="email" placeholder="Email address" required autocomplete="email">
           </div>
-          <input type="text" name="company" placeholder="Company (optional)" autocomplete="organization">
+          <div class="form-row">
+            <input type="tel" name="phone" placeholder="Phone number (optional)" autocomplete="tel">
+            <input type="text" name="company" placeholder="Company (optional)" autocomplete="organization">
+          </div>
           <textarea name="message" placeholder="What would you like to automate?" rows="5" required></textarea>
           <button type="submit" class="btn btn-primary" id="submitBtn">Send Message</button>
           <p class="form-status" id="formStatus"></p>
