@@ -65,7 +65,7 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
 
 .section-sub {
   color: var(--text-secondary);
-  max-width: 440px;
+  max-width: 560px;
   margin-top: 14px;
   font-size: 0.95rem;
   line-height: 1.7;
