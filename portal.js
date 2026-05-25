@@ -1,70 +1,100 @@
 /**
  * portal.js — Client Integration Portal
  *
- * On load, reads URL params to:
- *   - Show success/error banners after OAuth redirects
- *   - Update button states to "Connected" if a service was just linked
- *
- * No secrets live here — this file is served publicly.
- * Token storage and API calls happen entirely on the backend.
+ * On load:
+ *   1. Reads clientId from ?clientId= URL param
+ *   2. Injects clientId into OAuth connect links
+ *   3. Calls /api/status/:clientId to show real persistent connection state
+ *   4. Handles success/error banners after OAuth redirects
  */
 
 (function () {
   const params = new URLSearchParams(window.location.search);
-  const connected = params.get('connected'); // e.g. 'dropbox'
-  const error = params.get('error');         // e.g. 'dropbox_denied'
+  const clientId = params.get('clientId');
+  const connected = params.get('connected');
+  const error = params.get('error');
 
-  // Show success banner and update card if a service was just connected
-  if (connected) {
-    const bannerSuccess = document.getElementById('bannerSuccess');
-    const bannerText = document.getElementById('bannerSuccessText');
-    const serviceNames = { dropbox: 'Dropbox', google_drive: 'Google Drive', slack: 'Slack' };
-    const name = serviceNames[connected] || connected;
-
-    bannerText.textContent = `${name} connected successfully. Your automations are ready.`;
-    bannerSuccess.hidden = false;
-
-    markConnected(connected);
-
-    // Clean the URL so refreshing doesn't re-show the banner
-    window.history.replaceState({}, '', '/portal.html');
+  // --- 1. Guard: no clientId means this link wasn't personalized ---
+  if (!clientId) {
+    showBanner('error', 'No client ID found in this link. Please contact Relativity for your personalized portal URL.');
+    disableAllButtons();
+    return;
   }
 
-  // Show error banner
+  // --- 2. Inject clientId into OAuth links ---
+  const dropboxBtn = document.getElementById('btn-dropbox');
+  if (dropboxBtn) {
+    dropboxBtn.href = `/auth/dropbox/start?clientId=${encodeURIComponent(clientId)}`;
+  }
+
+  // --- 3. Handle post-OAuth redirect banners ---
+  if (connected) {
+    const serviceNames = { dropbox: 'Dropbox', google_drive: 'Google Drive', slack: 'Slack' };
+    const name = serviceNames[connected] || connected;
+    showBanner('success', `${name} connected successfully. Your automations are ready.`);
+    markConnected(connected);
+    window.history.replaceState({}, '', `/portal.html?clientId=${clientId}`);
+  }
+
   if (error) {
-    const bannerError = document.getElementById('bannerError');
-    const bannerText = document.getElementById('bannerErrorText');
     const messages = {
       dropbox_denied: 'Dropbox authorization was cancelled. Click "Connect Dropbox" to try again.',
       dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
     };
-    bannerText.textContent = messages[error] || 'Connection failed. Please try again.';
-    bannerError.hidden = false;
-
-    window.history.replaceState({}, '', '/portal.html');
+    showBanner('error', messages[error] || 'Connection failed. Please try again.');
+    window.history.replaceState({}, '', `/portal.html?clientId=${clientId}`);
   }
 
-  /**
-   * Switch a card's button from "Connect" to "Connected" state.
-   * Called after a successful OAuth flow.
-   */
+  // --- 4. Check real connection status from backend ---
+  // WHY: without this, refreshing the page after connecting Dropbox resets the UI
+  // to "Not connected" even though the token is stored in Supabase.
+  fetch(`/auth/status/${encodeURIComponent(clientId)}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      return res.json();
+    })
+    .then(status => {
+      Object.entries(status).forEach(([provider, isConnected]) => {
+        if (isConnected) markConnected(provider);
+      });
+    })
+    .catch(err => {
+      console.warn('Could not fetch connection status:', err.message);
+      // Non-fatal — portal still works, just won't show persistent state
+    });
+
+  // --- Helpers ---
+
   function markConnected(provider) {
     const btn = document.getElementById(`btn-${provider}`);
-    const statusDot = document.querySelector(`#card-${provider} .status-dot`);
-    const statusText = document.querySelector(`#card-${provider} .status-text`);
+    const card = document.getElementById(`card-${provider}`);
+    const statusDot = card && card.querySelector('.status-dot');
+    const statusText = card && card.querySelector('.status-text');
 
     if (btn) {
       btn.textContent = 'Connected';
       btn.className = 'btn btn-connected';
-      btn.removeAttribute('href'); // disable further clicks
+      btn.removeAttribute('href');
     }
+    if (statusDot) statusDot.className = 'status-dot status-dot--connected';
+    if (statusText) statusText.textContent = 'Connected';
+  }
 
-    if (statusDot) {
-      statusDot.className = 'status-dot status-dot--connected';
-    }
-
-    if (statusText) {
-      statusText.textContent = 'Connected';
+  function showBanner(type, message) {
+    const banner = document.getElementById(type === 'success' ? 'bannerSuccess' : 'bannerError');
+    const text = document.getElementById(type === 'success' ? 'bannerSuccessText' : 'bannerErrorText');
+    if (banner && text) {
+      text.textContent = message;
+      banner.hidden = false;
     }
   }
+
+  function disableAllButtons() {
+    document.querySelectorAll('.btn-connect').forEach(btn => {
+      btn.className = 'btn btn-disabled';
+      btn.removeAttribute('href');
+    });
+  }
+
+
 })();
