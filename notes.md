@@ -4,6 +4,48 @@
 here are some things i dont want to forget to add
 - contacts section
 - examples / testamonials
+- some sort of client onboading process doccument where they can authorize me.
+    I think this would be called "OAuth Client Onboarding"
+- supabase
+1. Client creates Supabase project
+2. Client invites you as a team member
+3. You create the tables/vector database setup
+4. You create n8n credentials using their Project URL + secret key
+5. You build the RAG/knowledge base workflow
+6. If they leave, they keep everything
+- dropbox
+1. Client clicks “Connect Dropbox” on your website
+2. Your backend sends them to Dropbox’s permission screen
+3. Client logs into Dropbox and clicks “Allow”
+4. Dropbox redirects back to your backend
+5. Your backend receives an authorization code
+6. Your backend exchanges that code for an access token
+7. Your backend stores the token securely in your database
+8. n8n workflow runs later and asks your backend:
+   “Give me access to Client A’s Dropbox files”
+9. Your backend uses Client A’s token to call Dropbox
+10. n8n receives the file/data and continues the automation
+
+## potential website structure for OAuth
+Relativity Website
+├── Client dashboard
+├── Connect Dropbox button
+├── Connect Google Drive button
+└── Connect Slack button
+
+Relativity Backend
+├── OAuth redirect routes
+├── Token storage
+├── Refresh token logic
+├── Client permissions
+└── API endpoints for n8n
+
+n8n
+├── Watches webhooks
+├── Runs automations
+├── Calls your backend
+├── Sends data to AI
+└── Updates client systems
 
 ## Overview
 Relativity.ai is an AI integration and automation agency focused on helping businesses streamline operations using AI workflows, automation systems, and intelligent data handling.

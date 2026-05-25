@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Portal — Relativity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="portal.css" />
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav">
+    <a href="index.html" class="nav-logo">Relativity</a>
+    <span class="nav-label">Client Portal</span>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <div class="portal-header">
+      <h1 class="portal-title">Integration Hub</h1>
+      <p class="portal-subtitle">
+        Connect your tools below. Once authorized, Relativity can automate workflows on your behalf — securely and without storing your passwords.
+      </p>
+    </div>
+
+    <!-- Status Banner — shown after OAuth redirect -->
+    <div class="banner banner--success" id="bannerSuccess" hidden>
+      <span class="banner-icon">&#10003;</span>
+      <span id="bannerSuccessText">Successfully connected.</span>
+    </div>
+    <div class="banner banner--error" id="bannerError" hidden>
+      <span class="banner-icon">&#10005;</span>
+      <span id="bannerErrorText">Connection failed. Please try again.</span>
+    </div>
+
+    <!-- Integration Cards -->
+    <div class="integrations">
+
+      <!-- Dropbox -->
+      <div class="card" id="card-dropbox">
+        <div class="card-icon">
+          <!-- Dropbox logo mark (SVG inline) -->
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 4L16 9.5L8 15L0 9.5L8 4Z" fill="#0061FF"/>
+            <path d="M24 4L32 9.5L24 15L16 9.5L24 4Z" fill="#0061FF"/>
+            <path d="M0 20.5L8 15L16 20.5L8 26L0 20.5Z" fill="#0061FF"/>
+            <path d="M32 20.5L24 15L16 20.5L24 26L32 20.5Z" fill="#0061FF"/>
+            <path d="M8 27.5L16 22L24 27.5L16 32L8 27.5Z" fill="#0061FF"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h2 class="card-title">Dropbox</h2>
+          <p class="card-desc">
+            Allow Relativity to read and organize files in your Dropbox. Used for document ingestion, RAG pipelines, and automated file workflows.
+          </p>
+          <div class="card-status" id="status-dropbox">
+            <span class="status-dot status-dot--disconnected"></span>
+            <span class="status-text">Not connected</span>
+          </div>
+        </div>
+        <div class="card-action">
+          <!--
+            The clientId here is your client's UUID from the Supabase `clients` table.
+            For MVP, you'll paste the correct UUID per client when sharing this portal link.
+            Future: after login, fetch this from a session.
+          -->
+          <a
+            class="btn btn-connect"
+            id="btn-dropbox"
+            href="/auth/dropbox/start?clientId=REPLACE_WITH_CLIENT_UUID"
+          >
+            Connect Dropbox
+          </a>
+        </div>
+      </div>
+
+      <!-- Google Drive — Coming Soon -->
+      <div class="card card--soon">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10.667 4L16 13.333 5.333 13.333 0 4z" fill="#4285F4"/>
+            <path d="M21.333 4L32 4 26.667 13.333 16 13.333z" fill="#FBBC05"/>
+            <path d="M5.333 13.333L16 13.333 10.667 22.667 0 22.667z" fill="#34A853"/>
+            <path d="M16 13.333L26.667 13.333 21.333 22.667 10.667 22.667z" fill="#EA4335"/>
+            <path d="M10.667 22.667L16 32 21.333 22.667z" fill="#34A853"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h2 class="card-title">Google Drive</h2>
+          <p class="card-desc">
+            Connect your Google Drive for document automation and knowledge base ingestion.
+          </p>
+          <div class="card-status">
+            <span class="status-dot status-dot--soon"></span>
+            <span class="status-text">Coming soon</span>
+          </div>
+        </div>
+        <div class="card-action">
+          <button class="btn btn-disabled" disabled>Coming Soon</button>
+        </div>
+      </div>
+
+      <!-- Slack — Coming Soon -->
+      <div class="card card--soon">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="12" width="8" height="8" rx="4" fill="#E01E5A"/>
+            <rect x="12" y="0" width="8" height="8" rx="4" fill="#36C5F0"/>
+            <rect x="12" y="12" width="8" height="8" rx="4" fill="#2EB67D"/>
+            <rect x="24" y="12" width="8" height="8" rx="4" fill="#ECB22E"/>
+            <rect x="12" y="24" width="8" height="8" rx="4" fill="#E01E5A"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h2 class="card-title">Slack</h2>
+          <p class="card-desc">
+            Send automated notifications, summaries, and AI-generated updates directly into your Slack workspace.
+          </p>
+          <div class="card-status">
+            <span class="status-dot status-dot--soon"></span>
+            <span class="status-text">Coming soon</span>
+          </div>
+        </div>
+        <div class="card-action">
+          <button class="btn btn-disabled" disabled>Coming Soon</button>
+        </div>
+      </div>
+
+    </div><!-- /integrations -->
+
+    <!-- How it works -->
+    <section class="how-it-works">
+      <h2 class="section-title">How authorization works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <p>You click "Connect" and are sent to the service's official login screen.</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <p>You approve access — your credentials never leave that service.</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <p>Relativity receives a secure token and stores it encrypted in our database.</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <p>Our automations use your token to act on your behalf — safely, without your password.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span>&copy; 2025 Relativity.ai</span>
+    <a href="index.html">Back to site</a>
+  </footer>
+
+  <script src="portal.js"></script>
+</body>
+</html>
