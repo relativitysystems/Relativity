@@ -52,8 +52,15 @@ router.get('/dropbox/callback', async (req, res) => {
   const { code, state, error } = req.query;
 
   // Dropbox sends error=access_denied if the client clicked Cancel
+  // state is still present on denial, so we can recover clientId for the redirect
   if (error) {
-    return res.redirect('/portal.html?error=dropbox_denied');
+    let deniedClientId = '';
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+      deniedClientId = decoded.clientId || '';
+    } catch { /* ignore */ }
+    const clientParam = deniedClientId ? `&clientId=${encodeURIComponent(deniedClientId)}` : '';
+    return res.redirect(`/portal.html?error=dropbox_denied${clientParam}`);
   }
 
   if (!code || !state) {
@@ -89,10 +96,40 @@ router.get('/dropbox/callback', async (req, res) => {
     );
 
     // Redirect back to portal — portal.js detects ?connected=dropbox and shows success UI
-    res.redirect('/portal.html?connected=dropbox');
+    res.redirect(`/portal.html?clientId=${encodeURIComponent(clientId)}&connected=dropbox`);
   } catch (err) {
     console.error('Dropbox callback error:', err.message);
-    res.redirect('/portal.html?error=dropbox_failed');
+    res.redirect(`/portal.html?clientId=${encodeURIComponent(clientId)}&error=dropbox_failed`);
+  }
+});
+
+/**
+ * GET /auth/status/:clientId
+ *
+ * Returns which providers a client has connected — boolean only, no token data.
+ * Called by portal.js on page load to show persistent connection state after refresh.
+ * No API key required — lives in the public auth router.
+ *
+ * Response: { dropbox: true, google_drive: false, slack: false }
+ */
+router.get('/status/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  const providers = ['dropbox', 'google_drive', 'slack'];
+
+  try {
+    const results = await Promise.all(
+      providers.map(p => supabaseService.getToken(clientId, p))
+    );
+
+    const status = {};
+    providers.forEach((p, i) => {
+      status[p] = results[i] !== null;
+    });
+
+    res.json(status);
+  } catch (err) {
+    console.error('Status check failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch connection status.' });
   }
 });
 
