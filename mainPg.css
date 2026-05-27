@@ -165,12 +165,16 @@ nav#nav.scrolled {
 }
 
 .logo {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #fff;
+  display: flex;
+  align-items: center;
   text-decoration: none;
-  letter-spacing: -0.03em;
+}
+
+.logo-img {
+  height: 28px;
+  width: auto;
+  display: block;
+  filter: invert(1);
 }
 
 .nav-links {
@@ -532,8 +536,8 @@ footer {
   gap: 16px;
 }
 
-.footer-logo {
-  font-size: 1.15rem;
+.footer-logo .logo-img {
+  height: 32px;
 }
 
 .footer-sub {
