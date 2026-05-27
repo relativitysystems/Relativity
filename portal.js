@@ -70,7 +70,7 @@
     };
     const subject = subjects[type] || 'Portal Request';
     const body = `Client ID: ${clientId}\n\n`;
-    window.location.href = `mailto:hello@relativity.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = `mailto:info@relativitysystems.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   // --- Helpers ---

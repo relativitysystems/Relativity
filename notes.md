@@ -1,4 +1,4 @@
-# Relativity.ai
+# Relativity Systems
 
 ## my notes
 here are some things i dont want to forget to add
@@ -48,7 +48,7 @@ n8n
 └── Updates client systems
 
 ## Overview
-Relativity.ai is an AI integration and automation agency focused on helping businesses streamline operations using AI workflows, automation systems, and intelligent data handling.
+Relativity Systems is an AI integration and automation agency focused on helping businesses streamline operations using AI workflows, automation systems, and intelligent data handling.
 
 The brand should feel:
 - Modern
@@ -192,4 +192,4 @@ Avoid:
 
 # Goal
 
-Relativity.ai should position itself as a modern AI integration agency that helps businesses implement practical AI systems that save time, reduce operational friction, and improve scalability.
+Relativity Systems should position itself as a modern AI integration agency that helps businesses implement practical AI systems that save time, reduce operational friction, and improve scalability.
