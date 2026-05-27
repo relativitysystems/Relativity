@@ -1,5 +1,5 @@
 /**
- * portal.js — Client Integration Portal
+ * portal.js — Client Operations Portal
  *
  * On load:
  *   1. Reads clientId from ?clientId= URL param
@@ -38,7 +38,7 @@
 
   if (error) {
     const messages = {
-      dropbox_denied: 'Dropbox authorization was cancelled. Click "Connect Dropbox" to try again.',
+      dropbox_denied: 'Dropbox authorization was cancelled. Click "Connect" to try again.',
       dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
     };
     showBanner('error', messages[error] || 'Connection failed. Please try again.');
@@ -46,8 +46,6 @@
   }
 
   // --- 4. Check real connection status from backend ---
-  // WHY: without this, refreshing the page after connecting Dropbox resets the UI
-  // to "Not connected" even though the token is stored in Supabase.
   fetch(`/auth/status/${encodeURIComponent(clientId)}`)
     .then(res => {
       if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -60,8 +58,20 @@
     })
     .catch(err => {
       console.warn('Could not fetch connection status:', err.message);
-      // Non-fatal — portal still works, just won't show persistent state
     });
+
+  // --- Request handler (exposed globally for onclick attributes) ---
+  window.openRequest = function (type) {
+    const subjects = {
+      'new-automation': 'New Automation Request',
+      'report-issue': 'Issue Report',
+      'kb-update': 'Knowledge Base Update Request',
+      'workflow-change': 'Workflow Change Request',
+    };
+    const subject = subjects[type] || 'Portal Request';
+    const body = `Client ID: ${clientId}\n\n`;
+    window.location.href = `mailto:hello@relativity.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
 
   // --- Helpers ---
 
@@ -73,7 +83,7 @@
 
     if (btn) {
       btn.textContent = 'Connected';
-      btn.className = 'btn btn-connected';
+      btn.className = 'btn-integration btn-integration--connected';
       btn.removeAttribute('href');
     }
     if (statusDot) statusDot.className = 'status-dot status-dot--connected';
@@ -90,11 +100,11 @@
   }
 
   function disableAllButtons() {
-    document.querySelectorAll('.btn-connect').forEach(btn => {
-      btn.className = 'btn btn-disabled';
+    const btn = document.getElementById('btn-dropbox');
+    if (btn) {
+      btn.className = 'btn-integration btn-integration--disabled';
       btn.removeAttribute('href');
-    });
+    }
   }
-
 
 })();

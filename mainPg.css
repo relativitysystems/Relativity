@@ -165,8 +165,11 @@ nav#nav.scrolled {
 }
 
 .logo {
+<<<<<<< HEAD:mainPg.css
   display: flex;
   align-items: center;
+=======
+>>>>>>> c7cede1 (client portal refractor):style.css
   text-decoration: none;
 }
 
