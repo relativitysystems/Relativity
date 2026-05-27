@@ -9,7 +9,10 @@ const app = express();
 
 app.use(express.json());
 
-// Serves index.html, portal.html, style.css, etc. from the project root
+// Explicit root route so mainPg.html is served at / (express.static defaults to index.html)
+app.get('/', (req, res) => res.sendFile('mainPg.html', { root: '.' }));
+
+// Serves mainPg.html, portal.html, mainPg.css, etc. from the project root
 app.use(express.static('.'));
 
 // OAuth routes — no API key required (browser-facing)
