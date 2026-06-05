@@ -647,3 +647,207 @@ footer {
     padding: 0;
   }
 }
+
+/* ============================================================
+   EXAMPLES SECTION
+   ============================================================ */
+
+#examples {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+.examples-grid {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  max-width: 860px;
+}
+
+/* Example Card */
+.example-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 36px;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.example-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #111;
+}
+
+.example-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.example-number {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.example-card h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.example-desc {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.75;
+  margin-bottom: 32px;
+}
+
+/* Flow Diagram */
+.flow-diagram {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 24px 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 28px;
+  overflow-x: auto;
+}
+
+.flow-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 72px;
+}
+
+.flow-node-box {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  flex-shrink: 0;
+  transition: border-color 0.25s ease;
+}
+
+.example-card:hover .flow-node-box {
+  border-color: #2a2a2a;
+}
+
+.flow-node-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.flow-connector {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  flex-shrink: 0;
+  margin-bottom: 20px;
+}
+
+/* Feature Tags */
+.feature-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition: border-color 0.2s ease;
+}
+
+.example-card:hover .tag {
+  border-color: #2a2a2a;
+}
+
+/* Business Outcome */
+.business-outcome {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.outcome-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.business-outcome p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.75;
+}
+
+/* Responsive — tablet */
+@media (max-width: 960px) {
+  .flow-diagram {
+    padding: 20px 16px;
+  }
+}
+
+/* Responsive — mobile */
+@media (max-width: 700px) {
+  #examples {
+    padding: 80px 0;
+  }
+
+  .example-card {
+    padding: 28px 22px;
+  }
+
+  .flow-diagram {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+  }
+
+  .flow-node {
+    flex-direction: row;
+    gap: 12px;
+    flex: none;
+    width: 100%;
+  }
+
+  .flow-node-label {
+    text-align: left;
+  }
+
+  .flow-connector {
+    padding: 4px 0 4px 16px;
+    margin-bottom: 0;
+    transform: rotate(90deg);
+    transform-origin: left center;
+    margin-left: 6px;
+  }
+}
