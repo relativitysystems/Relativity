@@ -48,6 +48,17 @@ Relativity Systems is an AI integration and automation agency that helps busines
 
 ---
 
+## Repo Split
+
+| Repo | Responsibility |
+|---|---|
+| `Relativity` (this repo) | Public website, client login, portal, Dropbox OAuth token storage |
+| `dropbox_slack_inngest` | Dropbox folder monitoring, Inngest functions, Slack notifications |
+
+The automation repo reads Dropbox tokens from the shared Supabase database (same `oauth_tokens` table).
+
+---
+
 ## Technical Stack
 
 - Vanilla HTML/CSS/JS (no framework)
@@ -79,7 +90,6 @@ Relativity Systems is an AI integration and automation agency that helps busines
 | `GET /auth/me` | Soft (JWT) | Returns client identity or `{ authenticated: false }` |
 | `GET /auth/dropbox/start` | Required (JWT) | Returns `{ url }` for Dropbox OAuth |
 | `GET /auth/dropbox/callback` | None (state param) | Exchanges code, stores tokens, redirects |
-| `GET /api/dropbox/files/:clientId` | API key | Legacy file listing |
 
 ### Database Tables
 - `clients` — id, name, email, slack_channel_id, dropbox_watch_path, is_active
@@ -92,7 +102,6 @@ server.js                  — Express entry point
 config/index.js            — all env config
 middleware/clientAuth.js   — JWT → client resolver
 routes/auth.js             — /config, /me, /dropbox/start, /dropbox/callback
-routes/api.js              — legacy file listing route
 services/supabaseService.js
 services/dropboxService.js — Dropbox OAuth helpers
 login.html / login.js / login.css
