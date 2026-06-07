@@ -5,21 +5,11 @@ const dropboxService = require('../services/dropboxService');
 
 
 /**
+ * LEGACY — n8n only. New automation uses Inngest (dropbox/check-client event).
+ * Keep for backward compatibility until n8n is fully decommissioned.
+ *
  * GET /api/dropbox/files/:clientId
- *
- * n8n calls this endpoint to get a client's Dropbox files.
  * Protected by apiKey middleware in server.js — requires Authorization: Bearer <N8N_API_KEY>
- *
- * Flow:
- *   1. Look up stored Dropbox token for this client
- *   2. Refresh the access token if it's expired
- *   3. Call Dropbox API with valid token
- *   4. Return file list as JSON to n8n
- *
- * n8n HTTP Request node setup:
- *   Method: GET
- *   URL: http://your-server/api/dropbox/files/CLIENT_UUID
- *   Header: Authorization: Bearer YOUR_N8N_API_KEY
  */
 router.get('/dropbox/files/:clientId', async (req, res) => {
   const { clientId } = req.params;

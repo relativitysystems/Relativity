@@ -1,66 +1,103 @@
 const express = require('express');
 const router = express.Router();
-const { dropbox } = require('../config');
+const { createClient } = require('@supabase/supabase-js');
+const { supabase: supabaseConfig, dropbox: dropboxConfig } = require('../config');
+const clientAuth = require('../middleware/clientAuth');
 const dropboxService = require('../services/dropboxService');
 const supabaseService = require('../services/supabaseService');
 
+const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
+
 /**
- * GET /auth/dropbox/start?clientId=<uuid>
+ * GET /auth/config
  *
- * Step 1 of OAuth: redirect the client's browser to Dropbox's authorization page.
- *
- * WHY the `state` param:
- *   - OAuth redirects go through the client's browser, so you can't pass data
- *     in a server-side variable. We encode clientId in `state` so Dropbox sends
- *     it back to us in the callback URL.
- *   - `state` also protects against CSRF: if the `state` in the callback doesn't
- *     match what we sent, we reject it.
+ * Returns public Supabase config for the browser Supabase Auth SDK.
+ * Only the anon key is returned — the service key never leaves the server.
  */
-router.get('/dropbox/start', (req, res) => {
-  const { clientId } = req.query;
-
-  if (!clientId) {
-    return res.status(400).json({ error: 'clientId query param is required' });
-  }
-
-  // Encode clientId in state so we can retrieve it in the callback
-  const state = Buffer.from(JSON.stringify({ clientId })).toString('base64');
-
-  const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
-  authUrl.searchParams.set('client_id', dropbox.appKey);
-  authUrl.searchParams.set('redirect_uri', dropbox.redirectUri);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('token_access_type', 'offline'); // request refresh token
-  authUrl.searchParams.set('state', state);
-
-  // Send the browser to Dropbox — client sees the "Allow" screen
-  res.redirect(authUrl.toString());
+router.get('/config', (req, res) => {
+  res.json({
+    supabaseUrl: supabaseConfig.url,
+    supabaseAnonKey: supabaseConfig.anonKey,
+  });
 });
 
 /**
- * GET /auth/dropbox/callback?code=<auth_code>&state=<encoded_state>
+ * GET /auth/me
  *
- * Step 2 of OAuth: Dropbox redirects here after the client clicks "Allow".
+ * Soft-auth: always returns 200.
+ * { authenticated: false } when token is missing or invalid.
+ * { authenticated: true, clientId, clientName, email, dropboxConnected } when valid.
+ */
+router.get('/me', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
+
+  if (!token) return res.json({ authenticated: false });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) return res.json({ authenticated: false });
+
+  const { data: clientUser } = await supabase
+    .from('client_users')
+    .select('client_id, email')
+    .eq('auth_user_id', user.id)
+    .single();
+
+  if (!clientUser) return res.json({ authenticated: false });
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, name, is_active')
+    .eq('id', clientUser.client_id)
+    .single();
+
+  if (!client || !client.is_active) return res.json({ authenticated: false });
+
+  const connectionStatus = await supabaseService.getClientConnectionStatus(client.id);
+
+  res.json({
+    authenticated: true,
+    clientId: client.id,
+    clientName: client.name,
+    email: clientUser.email,
+    dropboxConnected: connectionStatus.dropbox,
+  });
+});
+
+/**
+ * GET /auth/dropbox/start
  *
- * What happens here:
- *   1. Decode clientId from state
- *   2. Exchange the one-time code for access + refresh tokens
- *   3. Store tokens in Supabase
- *   4. Redirect browser back to the portal with a success indicator
+ * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
+ * Returns JSON { url } — portal.js redirects the browser there.
+ * clientId is always resolved server-side; never accepted from the browser.
+ */
+router.get('/dropbox/start', clientAuth, (req, res) => {
+  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
+
+  const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
+  authUrl.searchParams.set('client_id', dropboxConfig.appKey);
+  authUrl.searchParams.set('redirect_uri', dropboxConfig.redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('token_access_type', 'offline');
+  authUrl.searchParams.set('state', state);
+
+  res.json({ url: authUrl.toString() });
+});
+
+/**
+ * GET /auth/dropbox/callback
+ *
+ * Dropbox redirects here after the user clicks Allow.
+ * clientId comes from the server-generated state — never from the browser.
+ * Redirects to portal without clientId in the URL.
  */
 router.get('/dropbox/callback', async (req, res) => {
   const { code, state, error } = req.query;
 
-  // Dropbox sends error=access_denied if the client clicked Cancel
-  // state is still present on denial, so we can recover clientId for the redirect
   if (error) {
-    let deniedClientId = '';
-    try {
-      const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-      deniedClientId = decoded.clientId || '';
-    } catch { /* ignore */ }
-    const clientParam = deniedClientId ? `&clientId=${encodeURIComponent(deniedClientId)}` : '';
-    return res.redirect(`/portal.html?error=dropbox_denied${clientParam}`);
+    return res.redirect('/portal.html?error=dropbox_denied');
   }
 
   if (!code || !state) {
@@ -76,60 +113,16 @@ router.get('/dropbox/callback', async (req, res) => {
   }
 
   try {
-    // Exchange auth code for tokens
     const tokenData = await dropboxService.exchangeCodeForToken(code);
-
     const { access_token, refresh_token, expires_in } = tokenData;
+    const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
 
-    // Calculate when the access token expires
-    const expiresAt = expires_in
-      ? new Date(Date.now() + expires_in * 1000)
-      : null;
+    await supabaseService.upsertToken(clientId, 'dropbox', access_token, refresh_token || null, expiresAt);
 
-    // Persist tokens to Supabase
-    await supabaseService.upsertToken(
-      clientId,
-      'dropbox',
-      access_token,
-      refresh_token || null,
-      expiresAt
-    );
-
-    // Redirect back to portal — portal.js detects ?connected=dropbox and shows success UI
-    res.redirect(`/portal.html?clientId=${encodeURIComponent(clientId)}&connected=dropbox`);
+    res.redirect('/portal.html?connected=dropbox');
   } catch (err) {
     console.error('Dropbox callback error:', err.message);
-    res.redirect(`/portal.html?clientId=${encodeURIComponent(clientId)}&error=dropbox_failed`);
-  }
-});
-
-/**
- * GET /auth/status/:clientId
- *
- * Returns which providers a client has connected — boolean only, no token data.
- * Called by portal.js on page load to show persistent connection state after refresh.
- * No API key required — lives in the public auth router.
- *
- * Response: { dropbox: true, google_drive: false, slack: false }
- */
-router.get('/status/:clientId', async (req, res) => {
-  const { clientId } = req.params;
-  const providers = ['dropbox', 'google_drive', 'slack'];
-
-  try {
-    const results = await Promise.all(
-      providers.map(p => supabaseService.getToken(clientId, p))
-    );
-
-    const status = {};
-    providers.forEach((p, i) => {
-      status[p] = results[i] !== null;
-    });
-
-    res.json(status);
-  } catch (err) {
-    console.error('Status check failed:', err.message);
-    res.status(500).json({ error: 'Failed to fetch connection status.' });
+    res.redirect('/portal.html?error=dropbox_failed');
   }
 });
 

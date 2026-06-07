@@ -1,16 +1,24 @@
 require('dotenv').config();
 
-// Central config — import this instead of process.env directly throughout the app
 module.exports = {
   port: process.env.PORT || 3000,
   supabase: {
     url: process.env.SUPABASE_URL,
-    key: process.env.SUPABASE_SERVICE_KEY,
+    serviceKey: process.env.SUPABASE_SERVICE_KEY,
+    anonKey: process.env.SUPABASE_ANON_KEY,
   },
   dropbox: {
     appKey: process.env.DROPBOX_APP_KEY,
     appSecret: process.env.DROPBOX_APP_SECRET,
     redirectUri: process.env.DROPBOX_REDIRECT_URI,
+    basePath: process.env.DROPBOX_BASE_PATH || '',
   },
-  n8nApiKey: process.env.N8N_API_KEY,
+  inngest: {
+    eventKey: process.env.INNGEST_EVENT_KEY,
+    signingKey: process.env.INNGEST_SIGNING_KEY,
+  },
+  slack: {
+    botToken: process.env.SLACK_BOT_TOKEN,
+    defaultChannel: process.env.SLACK_DEFAULT_CHANNEL,
+  },
 };

@@ -50,6 +50,23 @@ body {
   text-transform: uppercase;
 }
 
+.btn-logout {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  padding: 6px 14px;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.btn-logout:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
 /* ---- Main ---- */
 .main {
   flex: 1;

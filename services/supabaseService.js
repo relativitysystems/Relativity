@@ -1,20 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
 
-// Service-role client bypasses Row Level Security — keep this server-side only.
-// Never expose SUPABASE_SERVICE_KEY to the frontend.
-const supabase = createClient(supabaseConfig.url, supabaseConfig.key);
+const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
-/**
- * Save or update a client's OAuth token for a given provider.
- * Uses upsert so re-connecting Dropbox overwrites the old tokens cleanly.
- *
- * @param {string} clientId   - UUID from the clients table
- * @param {string} provider   - 'dropbox' | 'google_drive' | 'slack'
- * @param {string} accessToken
- * @param {string|null} refreshToken
- * @param {Date|null} expiresAt - JS Date object or null
- */
 async function upsertToken(clientId, provider, accessToken, refreshToken, expiresAt) {
   const { error } = await supabase
     .from('oauth_tokens')
@@ -33,14 +21,6 @@ async function upsertToken(clientId, provider, accessToken, refreshToken, expire
   if (error) throw new Error(`Supabase upsertToken failed: ${error.message}`);
 }
 
-/**
- * Retrieve stored tokens for a client + provider combination.
- * Returns null if no token row exists (client hasn't connected yet).
- *
- * @param {string} clientId
- * @param {string} provider
- * @returns {object|null}
- */
 async function getToken(clientId, provider) {
   const { data, error } = await supabase
     .from('oauth_tokens')
@@ -49,9 +29,65 @@ async function getToken(clientId, provider) {
     .eq('provider', provider)
     .single();
 
-  if (error && error.code === 'PGRST116') return null; // no row found
+  if (error && error.code === 'PGRST116') return null;
   if (error) throw new Error(`Supabase getToken failed: ${error.message}`);
   return data;
 }
 
-module.exports = { upsertToken, getToken };
+async function getClientById(clientId) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, email, slack_channel_id, dropbox_watch_path, is_active')
+    .eq('id', clientId)
+    .single();
+
+  if (error) throw new Error(`Supabase getClientById failed: ${error.message}`);
+  return data;
+}
+
+async function getClientByAuthUserId(authUserId) {
+  const { data: clientUser, error: cuError } = await supabase
+    .from('client_users')
+    .select('client_id')
+    .eq('auth_user_id', authUserId)
+    .single();
+
+  if (cuError) throw new Error(`Supabase getClientByAuthUserId failed: ${cuError.message}`);
+  return getClientById(clientUser.client_id);
+}
+
+async function getActiveClients() {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, email, slack_channel_id, dropbox_watch_path, is_active')
+    .eq('is_active', true);
+
+  if (error) throw new Error(`Supabase getActiveClients failed: ${error.message}`);
+  return data;
+}
+
+async function getClientConnectionStatus(clientId) {
+  const providers = ['dropbox'];
+  const results = await Promise.all(providers.map(p => getToken(clientId, p)));
+  const status = {};
+  providers.forEach((p, i) => { status[p] = results[i] !== null; });
+  return status;
+}
+
+async function logEvent(clientId, eventType, payload) {
+  const { error } = await supabase
+    .from('automation_logs')
+    .insert({ client_id: clientId, event_type: eventType, payload });
+
+  if (error) throw new Error(`Supabase logEvent failed: ${error.message}`);
+}
+
+module.exports = {
+  upsertToken,
+  getToken,
+  getClientById,
+  getClientByAuthUserId,
+  getActiveClients,
+  getClientConnectionStatus,
+  logEvent,
+};

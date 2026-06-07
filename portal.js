@@ -1,39 +1,45 @@
-/**
- * portal.js — Client Operations Portal
- *
- * On load:
- *   1. Reads clientId from ?clientId= URL param
- *   2. Injects clientId into OAuth connect links
- *   3. Calls /api/status/:clientId to show real persistent connection state
- *   4. Handles success/error banners after OAuth redirects
- */
+(async function () {
+  // 1. Fetch Supabase public config from server (never hardcode keys in frontend)
+  const configRes = await fetch('/auth/config');
+  const { supabaseUrl, supabaseAnonKey } = await configRes.json();
+  const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 
-(function () {
-  const params = new URLSearchParams(window.location.search);
-  const clientId = params.get('clientId');
-  const connected = params.get('connected');
-  const error = params.get('error');
-
-  // --- 1. Guard: no clientId means this link wasn't personalized ---
-  if (!clientId) {
-    showBanner('error', 'No client ID found in this link. Please contact Relativity for your personalized portal URL.');
-    disableAllButtons();
+  // 2. Guard: redirect to login if there is no active session
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = '/login.html';
     return;
   }
 
-  // --- 2. Inject clientId into OAuth links ---
-  const dropboxBtn = document.getElementById('btn-dropbox');
-  if (dropboxBtn) {
-    dropboxBtn.href = `/auth/dropbox/start?clientId=${encodeURIComponent(clientId)}`;
+  const accessToken = session.access_token;
+
+  // 3. Identify client from server-side JWT resolution
+  const meRes = await fetch('/auth/me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const me = await meRes.json();
+
+  if (!me.authenticated) {
+    window.location.href = '/login.html';
+    return;
   }
 
-  // --- 3. Handle post-OAuth redirect banners ---
+  const { clientId, clientName, email, dropboxConnected } = me;
+
+  // 4. Show initial connection state
+  if (dropboxConnected) markConnected('dropbox');
+
+  // 5. Handle post-OAuth redirect params (no clientId in URL)
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get('connected');
+  const error = params.get('error');
+
   if (connected) {
     const serviceNames = { dropbox: 'Dropbox', google_drive: 'Google Drive', slack: 'Slack' };
     const name = serviceNames[connected] || connected;
     showBanner('success', `${name} connected successfully. Your automations are ready.`);
     markConnected(connected);
-    window.history.replaceState({}, '', `/portal.html?clientId=${clientId}`);
+    window.history.replaceState({}, '', '/portal.html');
   }
 
   if (error) {
@@ -42,25 +48,39 @@
       dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
     };
     showBanner('error', messages[error] || 'Connection failed. Please try again.');
-    window.history.replaceState({}, '', `/portal.html?clientId=${clientId}`);
+    window.history.replaceState({}, '', '/portal.html');
   }
 
-  // --- 4. Check real connection status from backend ---
-  fetch(`/auth/status/${encodeURIComponent(clientId)}`)
-    .then(res => {
-      if (!res.ok) throw new Error(`Status ${res.status}`);
-      return res.json();
-    })
-    .then(status => {
-      Object.entries(status).forEach(([provider, isConnected]) => {
-        if (isConnected) markConnected(provider);
-      });
-    })
-    .catch(err => {
-      console.warn('Could not fetch connection status:', err.message);
+  // 6. Wire Dropbox connect button — uses fetch + bearer token instead of a plain link
+  const dropboxBtn = document.getElementById('btn-dropbox');
+  if (dropboxBtn && !dropboxConnected) {
+    dropboxBtn.removeAttribute('href');
+    dropboxBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch('/auth/dropbox/start', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to start Dropbox auth');
+        const { url } = await res.json();
+        window.location.href = url;
+      } catch (err) {
+        showBanner('error', 'Could not start Dropbox connection. Please try again.');
+        console.error('Dropbox start error:', err.message);
+      }
     });
+  }
 
-  // --- Request handler (exposed globally for onclick attributes) ---
+  // 7. Logout button
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      window.location.href = '/login.html';
+    });
+  }
+
+  // 8. Request handler (uses client name + email instead of clientId)
   window.openRequest = function (type) {
     const subjects = {
       'new-automation': 'New Automation Request',
@@ -69,7 +89,7 @@
       'workflow-change': 'Workflow Change Request',
     };
     const subject = subjects[type] || 'Portal Request';
-    const body = `Client ID: ${clientId}\n\n`;
+    const body = `Client: ${clientName}\nEmail: ${email}\n\n`;
     window.location.href = `mailto:info@relativitysystems.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -96,14 +116,6 @@
     if (banner && text) {
       text.textContent = message;
       banner.hidden = false;
-    }
-  }
-
-  function disableAllButtons() {
-    const btn = document.getElementById('btn-dropbox');
-    if (btn) {
-      btn.className = 'btn-integration btn-integration--disabled';
-      btn.removeAttribute('href');
     }
   }
 
