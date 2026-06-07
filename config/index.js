@@ -13,12 +13,4 @@ module.exports = {
     redirectUri: process.env.DROPBOX_REDIRECT_URI,
     basePath: process.env.DROPBOX_BASE_PATH || '',
   },
-  inngest: {
-    eventKey: process.env.INNGEST_EVENT_KEY,
-    signingKey: process.env.INNGEST_SIGNING_KEY,
-  },
-  slack: {
-    botToken: process.env.SLACK_BOT_TOKEN,
-    defaultChannel: process.env.SLACK_DEFAULT_CHANNEL,
-  },
 };

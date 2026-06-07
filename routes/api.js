@@ -5,11 +5,8 @@ const dropboxService = require('../services/dropboxService');
 
 
 /**
- * LEGACY — n8n only. New automation uses Inngest (dropbox/check-client event).
- * Keep for backward compatibility until n8n is fully decommissioned.
- *
  * GET /api/dropbox/files/:clientId
- * Protected by apiKey middleware in server.js — requires Authorization: Bearer <N8N_API_KEY>
+ * Protected by apiKey middleware in server.js.
  */
 router.get('/dropbox/files/:clientId', async (req, res) => {
   const { clientId } = req.params;

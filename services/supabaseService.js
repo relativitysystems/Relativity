@@ -56,16 +56,6 @@ async function getClientByAuthUserId(authUserId) {
   return getClientById(clientUser.client_id);
 }
 
-async function getActiveClients() {
-  const { data, error } = await supabase
-    .from('clients')
-    .select('id, name, email, slack_channel_id, dropbox_watch_path, is_active')
-    .eq('is_active', true);
-
-  if (error) throw new Error(`Supabase getActiveClients failed: ${error.message}`);
-  return data;
-}
-
 async function getClientConnectionStatus(clientId) {
   const providers = ['dropbox'];
   const results = await Promise.all(providers.map(p => getToken(clientId, p)));
@@ -74,20 +64,10 @@ async function getClientConnectionStatus(clientId) {
   return status;
 }
 
-async function logEvent(clientId, eventType, payload) {
-  const { error } = await supabase
-    .from('automation_logs')
-    .insert({ client_id: clientId, event_type: eventType, payload });
-
-  if (error) throw new Error(`Supabase logEvent failed: ${error.message}`);
-}
-
 module.exports = {
   upsertToken,
   getToken,
   getClientById,
   getClientByAuthUserId,
-  getActiveClients,
   getClientConnectionStatus,
-  logEvent,
 };

@@ -53,9 +53,7 @@ Relativity Systems is an AI integration and automation agency that helps busines
 - Vanilla HTML/CSS/JS (no framework)
 - Node.js/Express backend (`server.js`)
 - Supabase (auth + database)
-- Inngest (automation engine — replaces n8n)
 - Dropbox OAuth for client file access
-- Slack for client notifications
 
 ---
 
@@ -74,14 +72,6 @@ Relativity Systems is an AI integration and automation agency that helps busines
 4. Dropbox redirects to `/auth/dropbox/callback` → server exchanges code for tokens, stores in `oauth_tokens`
 5. Redirects to `/portal.html?connected=dropbox` (no clientId in URL)
 
-### Inngest Automation Flow
-1. Hourly cron (`dropboxScheduledCheck`) fires → sends `dropbox/check-client` event per active client
-2. `dropboxCheckClient` function: refreshes Dropbox token if needed → lists day folders → counts files in address folders
-3. Waits for stable file counts (2 consecutive polls at same count, 30s apart) before notifying
-4. Sends Slack message to `client.slack_channel_id` (fallback to `SLACK_DEFAULT_CHANNEL`)
-5. Deduplicates: only notifies when `fileCount !== last_notified_count`
-6. Detects deleted folders and notifies once
-
 ### Backend Routes
 | Route | Auth | Purpose |
 |---|---|---|
@@ -89,15 +79,12 @@ Relativity Systems is an AI integration and automation agency that helps busines
 | `GET /auth/me` | Soft (JWT) | Returns client identity or `{ authenticated: false }` |
 | `GET /auth/dropbox/start` | Required (JWT) | Returns `{ url }` for Dropbox OAuth |
 | `GET /auth/dropbox/callback` | None (state param) | Exchanges code, stores tokens, redirects |
-| `POST /api/inngest` | Inngest signed | Inngest function handler |
-| `GET /api/dropbox/files/:clientId` | API key | Legacy — n8n only |
+| `GET /api/dropbox/files/:clientId` | API key | Legacy file listing |
 
 ### Database Tables
 - `clients` — id, name, email, slack_channel_id, dropbox_watch_path, is_active
 - `client_users` — links `auth.users` → `clients` (auth_user_id is unique)
 - `oauth_tokens` — stored Dropbox tokens per client (unique on client_id + provider)
-- `folder_states` — Inngest stability tracking (last_count, stable_count, last_notified_count, is_deleted)
-- `automation_logs` — append-only event log
 
 ### Key Files
 ```
@@ -105,13 +92,9 @@ server.js                  — Express entry point
 config/index.js            — all env config
 middleware/clientAuth.js   — JWT → client resolver
 routes/auth.js             — /config, /me, /dropbox/start, /dropbox/callback
-routes/api.js              — legacy n8n route
+routes/api.js              — legacy file listing route
 services/supabaseService.js
-services/dropboxService.js — listFolder (paginated), getRecentDayFolders
-services/stateService.js   — folder_states DB ops
-services/slackService.js   — sendMessage(client, text)
-inngest/client.js          — Inngest client export
-inngest/functions.js       — 3 Inngest functions
+services/dropboxService.js — Dropbox OAuth helpers
 login.html / login.js / login.css
 portal.html / portal.js / portal.css
 ```
@@ -124,28 +107,12 @@ SUPABASE_ANON_KEY          # browser-safe, returned by /auth/config
 DROPBOX_APP_KEY
 DROPBOX_APP_SECRET
 DROPBOX_REDIRECT_URI
-DROPBOX_BASE_PATH          # default watch path (empty = Dropbox root)
-INNGEST_EVENT_KEY
-INNGEST_SIGNING_KEY
-SLACK_BOT_TOKEN
-SLACK_DEFAULT_CHANNEL
+DROPBOX_BASE_PATH          # optional root path override
 ```
 
 ### Running Locally
 ```bash
-# Terminal 1
 node server.js
-
-# Terminal 2
-npm run inngest:dev
-# → npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
-# → Inngest Dev UI at http://localhost:8288
-```
-
-### Manual Inngest Test
-In Inngest Dev UI → Send Event:
-```json
-{ "name": "dropbox/check-client", "data": { "clientId": "<uuid>" } }
 ```
 
 ---
