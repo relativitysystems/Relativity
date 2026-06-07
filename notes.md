@@ -4,7 +4,7 @@
 
 ## Overview
 
-Relativity Systems is an AI integration and automation agency that helps businesses streamline operations using AI workflows, automation systems, and intelligent data handling. The goal is to position as a modern, premium AI consultancy that builds practical systems — not demos.
+Relativity Systems is an AI integration and automation agency that helps businesses streamline operations using AI workflows, automation systems, and intelligent data handling.
 
 **Positioning statement:**
 > "AI systems designed to streamline operations, automate workflows, and centralize business intelligence."
@@ -13,79 +13,29 @@ Relativity Systems is an AI integration and automation agency that helps busines
 
 ## Brand
 
-**Feel:**
-- Modern, minimal, intelligent, premium — technical but approachable
+- Modern, minimal, intelligent, premium
+- Black, white, dark gray palette — space/physics aesthetic
+- Confident, clear, professional tone
+- Avoid: corporate buzzwords, cluttered layouts
 
-**Visual direction:**
-- Space / physics / relativity themes
-- Black, white, dark gray palette
-- Clean typography with strong hierarchy
-- Subtle futuristic elements, smooth animations
-
-**Tone:**
-- Confident, intelligent, clear, professional, forward-thinking
-- Avoid: corporate buzzwords, excessive jargon, cluttered layouts
-
-**Key messaging lines:**
+**Key messaging:**
 - "Modern AI infrastructure for growing businesses."
 - "Automation, intelligence, and operational scale."
-- "Build Your AI Infrastructure"
 
 ---
 
 ## Core Services
 
-### AI Workflow Automation
-Custom business automations using n8n, APIs, webhooks, and CRM/SaaS integrations.
-
-Examples:
-- Lead intake automation
-- CRM syncing
-- AI follow-up and email triage systems
-- Automated reporting
-- Internal operational workflows
-
-Integrations: Slack, Gmail, Dropbox, CRMs
-
-### AI Knowledge Systems (RAG)
-Build AI systems that search and retrieve company knowledge from internal documents.
-
-Sources: PDFs, SOPs, Dropbox, Google Drive, CRM notes, internal docs
-
-Examples:
-- Internal AI assistants
-- Company knowledge search tools
-- AI employee knowledge bases
-- SOP & document intelligence
+- **AI Workflow Automation** — custom automations, CRM syncing, lead intake, Slack/Dropbox/Gmail integrations
+- **AI Knowledge Systems (RAG)** — AI assistants that search internal docs, SOPs, Dropbox, Google Drive
 
 ---
 
 ## Website
 
-### Goals
-1. Look highly professional and modern
-2. Build trust quickly
-3. Clearly explain services
-4. Generate inbound leads
-5. Feel like a premium AI consultancy
+**Pages/Sections:** Hero, Services, Examples, Process, Contact
 
-### CTAs
-- "Book a Consultation"
-- "Automate Your Business"
-- "Build Your AI Infrastructure"
-
-### Current Pages / Sections
-- **Hero** — strong headline + CTA
-- **Services** — Automation, AI Knowledge Systems, AI Agents & Assistants
-- **Examples** — polished system walkthroughs (see backlog for more)
-- **Process** — Discovery → System Architecture → Build → Deployment → Optimization
-- **Contact** — high-conversion contact form
-
-### Suggested Pages (not yet built)
-- Case Studies (placeholder examples fine initially)
-- Client Dashboard / Portal
-
-### Editing Reference — Examples Section
+**Editing Reference — Examples Section**
 
 | What to change | Where in index.html |
 |---|---|
@@ -100,66 +50,102 @@ Examples:
 
 ## Technical Stack
 
-**Preferred:**
-- Next.js
-- TailwindCSS
-- Framer Motion
-- Vercel deployment
-
-**Current site:** Vanilla HTML/CSS/JS (no framework)
-
-**Design priorities:**
-- Mobile responsive, fast loading
-- Smooth scrolling, modern animations
-- Strong typography hierarchy
+- Vanilla HTML/CSS/JS (no framework)
+- Node.js/Express backend (`server.js`)
+- Supabase (auth + database)
+- Inngest (automation engine — replaces n8n)
+- Dropbox OAuth for client file access
+- Slack for client notifications
 
 ---
 
-## Client Onboarding System (OAuth)
+## Client Portal Architecture
 
-A future system allowing clients to authorize Relativity to access their tools without handing over passwords. Likely called "OAuth Client Onboarding."
-
-### Supabase Onboarding Flow
-1. Client creates their own Supabase project
-2. Client invites you as a team member
-3. You create the tables and vector database setup
-4. You create n8n credentials using their Project URL + secret key
-5. You build the RAG / knowledge base workflow
-6. If they leave, they keep everything (their project, their data)
+### Authentication Flow
+1. Client visits `/login.html` → email + password via Supabase Auth
+2. After login → redirect to `/portal.html`
+3. Portal calls `GET /auth/me` with Bearer token — server resolves client identity from JWT
+4. No `clientId` ever appears in the URL or is trusted from the browser
 
 ### Dropbox OAuth Flow
-1. Client clicks "Connect Dropbox" on the website
-2. Backend redirects them to Dropbox's permission screen
-3. Client logs in and clicks "Allow"
-4. Dropbox redirects back to your backend with an authorization code
-5. Backend exchanges code for an access token
-6. Backend stores token securely in database
-7. n8n workflow calls your backend: "Give me Client A's Dropbox files"
-8. Backend uses Client A's token to call Dropbox API
-9. n8n receives the data and continues the automation
+1. Client clicks "Connect" on portal → portal fetches `/auth/dropbox/start` with Bearer token
+2. Server validates JWT, generates Dropbox OAuth URL server-side, returns `{ url }`
+3. Portal redirects browser to Dropbox consent screen
+4. Dropbox redirects to `/auth/dropbox/callback` → server exchanges code for tokens, stores in `oauth_tokens`
+5. Redirects to `/portal.html?connected=dropbox` (no clientId in URL)
 
-### Portal / Backend Architecture
+### Inngest Automation Flow
+1. Hourly cron (`dropboxScheduledCheck`) fires → sends `dropbox/check-client` event per active client
+2. `dropboxCheckClient` function: refreshes Dropbox token if needed → lists day folders → counts files in address folders
+3. Waits for stable file counts (2 consecutive polls at same count, 30s apart) before notifying
+4. Sends Slack message to `client.slack_channel_id` (fallback to `SLACK_DEFAULT_CHANNEL`)
+5. Deduplicates: only notifies when `fileCount !== last_notified_count`
+6. Detects deleted folders and notifies once
 
+### Backend Routes
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /auth/config` | None | Returns `{ supabaseUrl, supabaseAnonKey }` for browser SDK |
+| `GET /auth/me` | Soft (JWT) | Returns client identity or `{ authenticated: false }` |
+| `GET /auth/dropbox/start` | Required (JWT) | Returns `{ url }` for Dropbox OAuth |
+| `GET /auth/dropbox/callback` | None (state param) | Exchanges code, stores tokens, redirects |
+| `POST /api/inngest` | Inngest signed | Inngest function handler |
+| `GET /api/dropbox/files/:clientId` | API key | Legacy — n8n only |
+
+### Database Tables
+- `clients` — id, name, email, slack_channel_id, dropbox_watch_path, is_active
+- `client_users` — links `auth.users` → `clients` (auth_user_id is unique)
+- `oauth_tokens` — stored Dropbox tokens per client (unique on client_id + provider)
+- `folder_states` — Inngest stability tracking (last_count, stable_count, last_notified_count, is_deleted)
+- `automation_logs` — append-only event log
+
+### Key Files
 ```
-Relativity Website
-├── Client dashboard
-├── Connect Dropbox button
-├── Connect Google Drive button
-└── Connect Slack button
+server.js                  — Express entry point
+config/index.js            — all env config
+middleware/clientAuth.js   — JWT → client resolver
+routes/auth.js             — /config, /me, /dropbox/start, /dropbox/callback
+routes/api.js              — legacy n8n route
+services/supabaseService.js
+services/dropboxService.js — listFolder (paginated), getRecentDayFolders
+services/stateService.js   — folder_states DB ops
+services/slackService.js   — sendMessage(client, text)
+inngest/client.js          — Inngest client export
+inngest/functions.js       — 3 Inngest functions
+login.html / login.js / login.css
+portal.html / portal.js / portal.css
+```
 
-Relativity Backend
-├── OAuth redirect routes
-├── Token storage
-├── Refresh token logic
-├── Client permissions
-└── API endpoints for n8n
+### Required Environment Variables
+```
+SUPABASE_URL
+SUPABASE_SERVICE_KEY       # server-side only
+SUPABASE_ANON_KEY          # browser-safe, returned by /auth/config
+DROPBOX_APP_KEY
+DROPBOX_APP_SECRET
+DROPBOX_REDIRECT_URI
+DROPBOX_BASE_PATH          # default watch path (empty = Dropbox root)
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+SLACK_BOT_TOKEN
+SLACK_DEFAULT_CHANNEL
+```
 
-n8n
-├── Watches webhooks
-├── Runs automations
-├── Calls your backend
-├── Sends data to AI
-└── Updates client systems
+### Running Locally
+```bash
+# Terminal 1
+node server.js
+
+# Terminal 2
+npm run inngest:dev
+# → npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
+# → Inngest Dev UI at http://localhost:8288
+```
+
+### Manual Inngest Test
+In Inngest Dev UI → Send Event:
+```json
+{ "name": "dropbox/check-client", "data": { "clientId": "<uuid>" } }
 ```
 
 ---
@@ -172,6 +158,6 @@ n8n
 - [ ] Build out Case Studies page
 
 ### Client System
-- [ ] Build OAuth client onboarding flow (Dropbox, Google Drive, Slack)
-- [ ] Client portal dashboard (view active workflows, connect integrations)
-- [ ] Client authorization document / agreement flow
+- [ ] Populate portal stats (Active Systems, Workflow Health, etc.)
+- [ ] AI Knowledge Assistant (currently "Coming Soon")
+- [ ] Google Drive OAuth integration
