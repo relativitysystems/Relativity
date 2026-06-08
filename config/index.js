@@ -13,4 +13,9 @@ module.exports = {
     redirectUri: process.env.DROPBOX_REDIRECT_URI,
     basePath: process.env.DROPBOX_BASE_PATH || '',
   },
+  slack: {
+    appId: process.env.SLACK_APP_ID,
+    appSecret: process.env.SLACK_APP_SECRET,
+    redirectUri: process.env.SLACK_REDIRECT_URI,
+  },
 };

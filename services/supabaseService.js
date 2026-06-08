@@ -57,11 +57,20 @@ async function getClientByAuthUserId(authUserId) {
 }
 
 async function getClientConnectionStatus(clientId) {
-  const providers = ['dropbox'];
+  const providers = ['dropbox', 'slack'];
   const results = await Promise.all(providers.map(p => getToken(clientId, p)));
   const status = {};
   providers.forEach((p, i) => { status[p] = results[i] !== null; });
   return status;
+}
+
+async function updateClientSlackChannel(clientId, channelId) {
+  const { error } = await supabase
+    .from('clients')
+    .update({ slack_channel_id: channelId })
+    .eq('id', clientId);
+
+  if (error) throw new Error(`Supabase updateClientSlackChannel failed: ${error.message}`);
 }
 
 module.exports = {
@@ -70,4 +79,5 @@ module.exports = {
   getClientById,
   getClientByAuthUserId,
   getClientConnectionStatus,
+  updateClientSlackChannel,
 };

@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, dropbox: dropboxConfig } = require('../config');
+const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig } = require('../config');
 const clientAuth = require('../middleware/clientAuth');
 const dropboxService = require('../services/dropboxService');
+const slackService = require('../services/slackService');
 const supabaseService = require('../services/supabaseService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
@@ -63,6 +64,7 @@ router.get('/me', async (req, res) => {
     clientName: client.name,
     email: clientUser.email,
     dropboxConnected: connectionStatus.dropbox,
+    slackConnected: connectionStatus.slack,
   });
 });
 
@@ -123,6 +125,67 @@ router.get('/dropbox/callback', async (req, res) => {
   } catch (err) {
     console.error('Dropbox callback error:', err.message);
     res.redirect('/portal.html?error=dropbox_failed');
+  }
+});
+
+/**
+ * GET /auth/slack/start
+ *
+ * Requires a valid Supabase Bearer token.
+ * Returns JSON { url } — portal.js redirects the browser there.
+ * Slack prompts the user to pick a workspace and channel.
+ */
+router.get('/slack/start', clientAuth, (req, res) => {
+  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
+
+  const authUrl = new URL('https://slack.com/oauth/v2/authorize');
+  authUrl.searchParams.set('client_id', slackConfig.appId);
+  authUrl.searchParams.set('redirect_uri', slackConfig.redirectUri);
+  authUrl.searchParams.set('scope', 'chat:write,incoming-webhook');
+  authUrl.searchParams.set('state', state);
+
+  res.json({ url: authUrl.toString() });
+});
+
+/**
+ * GET /auth/slack/callback
+ *
+ * Slack redirects here after the user authorizes.
+ * Stores the bot token in oauth_tokens and the chosen channel in clients.
+ */
+router.get('/slack/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+
+  if (error) {
+    return res.redirect('/portal.html?error=slack_denied');
+  }
+
+  if (!code || !state) {
+    return res.status(400).json({ error: 'Missing code or state param' });
+  }
+
+  let clientId;
+  try {
+    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+    clientId = decoded.clientId;
+  } catch {
+    return res.status(400).json({ error: 'Invalid state param' });
+  }
+
+  try {
+    const tokenData = await slackService.exchangeCodeForToken(code);
+    const { access_token, incoming_webhook } = tokenData;
+
+    await supabaseService.upsertToken(clientId, 'slack', access_token, null, null);
+
+    if (incoming_webhook && incoming_webhook.channel_id) {
+      await supabaseService.updateClientSlackChannel(clientId, incoming_webhook.channel_id);
+    }
+
+    res.redirect('/portal.html?connected=slack');
+  } catch (err) {
+    console.error('Slack callback error:', err.message);
+    res.redirect('/portal.html?error=slack_failed');
   }
 });
 

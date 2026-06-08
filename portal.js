@@ -24,10 +24,11 @@
     return;
   }
 
-  const { clientId, clientName, email, dropboxConnected } = me;
+  const { clientId, clientName, email, dropboxConnected, slackConnected } = me;
 
   // 4. Show initial connection state
   if (dropboxConnected) markConnected('dropbox');
+  if (slackConnected) markConnected('slack');
 
   // 5. Handle post-OAuth redirect params (no clientId in URL)
   const params = new URLSearchParams(window.location.search);
@@ -46,6 +47,8 @@
     const messages = {
       dropbox_denied: 'Dropbox authorization was cancelled. Click "Connect" to try again.',
       dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
+      slack_denied: 'Slack authorization was cancelled. Click "Connect" to try again.',
+      slack_failed: 'Something went wrong connecting Slack. Please try again or contact support.',
     };
     showBanner('error', messages[error] || 'Connection failed. Please try again.');
     window.history.replaceState({}, '', '/portal.html');
@@ -71,7 +74,27 @@
     });
   }
 
-  // 7. Logout button
+  // 7. Wire Slack connect button
+  const slackBtn = document.getElementById('btn-slack');
+  if (slackBtn && !slackConnected) {
+    slackBtn.removeAttribute('href');
+    slackBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch('/auth/slack/start', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to start Slack auth');
+        const { url } = await res.json();
+        window.location.href = url;
+      } catch (err) {
+        showBanner('error', 'Could not start Slack connection. Please try again.');
+        console.error('Slack start error:', err.message);
+      }
+    });
+  }
+
+  // 9. Logout button
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
@@ -80,7 +103,7 @@
     });
   }
 
-  // 8. Request handler (uses client name + email instead of clientId)
+  // 10. Request handler (uses client name + email instead of clientId)
   window.openRequest = function (type) {
     const subjects = {
       'new-automation': 'New Automation Request',
