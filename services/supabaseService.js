@@ -3,20 +3,20 @@ const { supabase: supabaseConfig } = require('../config');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
-async function upsertToken(clientId, provider, accessToken, refreshToken, expiresAt) {
+async function upsertToken(clientId, provider, accessToken, refreshToken, expiresAt, scope = null) {
+  const record = {
+    client_id: clientId,
+    provider,
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: expiresAt ? expiresAt.toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+  if (scope !== null) record.scope = scope;
+
   const { error } = await supabase
     .from('oauth_tokens')
-    .upsert(
-      {
-        client_id: clientId,
-        provider,
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expires_at: expiresAt ? expiresAt.toISOString() : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'client_id,provider' }
-    );
+    .upsert(record, { onConflict: 'client_id,provider' });
 
   if (error) throw new Error(`Supabase upsertToken failed: ${error.message}`);
 }
@@ -57,7 +57,7 @@ async function getClientByAuthUserId(authUserId) {
 }
 
 async function getClientConnectionStatus(clientId) {
-  const providers = ['dropbox', 'slack'];
+  const providers = ['dropbox', 'slack', 'google_drive'];
   const results = await Promise.all(providers.map(p => getToken(clientId, p)));
   const status = {};
   providers.forEach((p, i) => { status[p] = results[i] !== null; });

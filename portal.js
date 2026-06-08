@@ -24,11 +24,12 @@
     return;
   }
 
-  const { clientId, clientName, email, dropboxConnected, slackConnected } = me;
+  const { clientId, clientName, email, dropboxConnected, slackConnected, googleDriveConnected } = me;
 
   // 4. Show initial connection state
   if (dropboxConnected) markConnected('dropbox');
   if (slackConnected) markConnected('slack');
+  if (googleDriveConnected) markConnected('google_drive');
 
   // 5. Handle post-OAuth redirect params (no clientId in URL)
   const params = new URLSearchParams(window.location.search);
@@ -49,6 +50,8 @@
       dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
       slack_denied: 'Slack authorization was cancelled. Click "Connect" to try again.',
       slack_failed: 'Something went wrong connecting Slack. Please try again or contact support.',
+      google_drive_denied: 'Google Drive authorization was cancelled. Click "Connect" to try again.',
+      google_drive_failed: 'Something went wrong connecting Google Drive. Please try again or contact support.',
     };
     showBanner('error', messages[error] || 'Connection failed. Please try again.');
     window.history.replaceState({}, '', '/portal.html');
@@ -90,6 +93,26 @@
       } catch (err) {
         showBanner('error', 'Could not start Slack connection. Please try again.');
         console.error('Slack start error:', err.message);
+      }
+    });
+  }
+
+  // 8. Wire Google Drive connect button
+  const googleDriveBtn = document.getElementById('btn-google_drive');
+  if (googleDriveBtn && !googleDriveConnected) {
+    googleDriveBtn.removeAttribute('href');
+    googleDriveBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch('/auth/google/start', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to start Google Drive auth');
+        const { url } = await res.json();
+        window.location.href = url;
+      } catch (err) {
+        showBanner('error', 'Could not start Google Drive connection. Please try again.');
+        console.error('Google Drive start error:', err.message);
       }
     });
   }

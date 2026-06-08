@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig } = require('../config');
+const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig, googleDrive: googleDriveConfig } = require('../config');
 const clientAuth = require('../middleware/clientAuth');
+const apiKey = require('../middleware/apiKey');
 const dropboxService = require('../services/dropboxService');
 const slackService = require('../services/slackService');
+const googleDriveService = require('../services/googleDriveService');
 const supabaseService = require('../services/supabaseService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
@@ -65,6 +67,7 @@ router.get('/me', async (req, res) => {
     email: clientUser.email,
     dropboxConnected: connectionStatus.dropbox,
     slackConnected: connectionStatus.slack,
+    googleDriveConnected: connectionStatus.google_drive,
   });
 });
 
@@ -186,6 +189,88 @@ router.get('/slack/callback', async (req, res) => {
   } catch (err) {
     console.error('Slack callback error:', err.message);
     res.redirect('/portal.html?error=slack_failed');
+  }
+});
+
+/**
+ * GET /auth/google/start
+ *
+ * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
+ * Returns JSON { url } — portal.js redirects the browser there.
+ * Requests offline access so a refresh token is always returned.
+ */
+router.get('/google/start', clientAuth, (req, res) => {
+  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
+
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', googleDriveConfig.clientId);
+  authUrl.searchParams.set('redirect_uri', googleDriveConfig.redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/drive.readonly');
+  authUrl.searchParams.set('access_type', 'offline');
+  authUrl.searchParams.set('prompt', 'consent');
+  authUrl.searchParams.set('state', state);
+
+  res.json({ url: authUrl.toString() });
+});
+
+/**
+ * GET /auth/google/callback
+ *
+ * Google redirects here after the user clicks Allow.
+ * clientId comes from the server-generated state — never from the browser.
+ * Redirects to portal with clientId and connected/error params preserved.
+ */
+router.get('/google/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+
+  let clientId;
+  try {
+    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+    clientId = decoded.clientId;
+  } catch {
+    return res.status(400).json({ error: 'Invalid state param' });
+  }
+
+  if (error) {
+    return res.redirect(`/portal.html?clientId=${clientId}&error=google_drive_denied`);
+  }
+
+  if (!code || !state) {
+    return res.status(400).json({ error: 'Missing code or state param' });
+  }
+
+  try {
+    const tokenData = await googleDriveService.exchangeCodeForToken(code);
+    const { access_token, refresh_token, expires_in, scope } = tokenData;
+    const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
+
+    await supabaseService.upsertToken(clientId, 'google_drive', access_token, refresh_token || null, expiresAt, scope || null);
+
+    res.redirect(`/portal.html?clientId=${clientId}&connected=google_drive`);
+  } catch (err) {
+    console.error('Google Drive callback error:', err.message);
+    res.redirect(`/portal.html?clientId=${clientId}&error=google_drive_failed`);
+  }
+});
+
+/**
+ * GET /auth/status/:clientId
+ *
+ * Returns OAuth connection status for all providers.
+ * Protected by API key — intended for n8n/Inngest consumption.
+ */
+router.get('/status/:clientId', apiKey, async (req, res) => {
+  try {
+    const status = await supabaseService.getClientConnectionStatus(req.params.clientId);
+    res.json({
+      dropbox: status.dropbox,
+      google_drive: status.google_drive,
+      slack: status.slack,
+    });
+  } catch (err) {
+    console.error('Auth status error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

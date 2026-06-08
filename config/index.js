@@ -18,4 +18,9 @@ module.exports = {
     appSecret: process.env.SLACK_APP_SECRET,
     redirectUri: process.env.SLACK_REDIRECT_URI,
   },
+  googleDrive: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI,
+  },
 };
