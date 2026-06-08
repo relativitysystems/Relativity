@@ -94,21 +94,26 @@ async function deleteClient(clientId) {
 }
 
 async function deleteClientFull(clientId) {
-  // Get auth user id before deleting client_users
-  const { data: clientUser } = await supabase
-    .from('client_users')
-    .select('auth_user_id')
-    .eq('client_id', clientId)
-    .single();
+  // Get email and auth user id before deleting
+  const [{ data: clientRecord }, { data: clientUser }] = await Promise.all([
+    supabase.from('clients').select('email').eq('id', clientId).single(),
+    supabase.from('client_users').select('auth_user_id').eq('client_id', clientId).single(),
+  ]);
 
   // Delete related records
   await supabase.from('oauth_tokens').delete().eq('client_id', clientId);
   await supabase.from('client_users').delete().eq('client_id', clientId);
   await supabase.from('clients').delete().eq('id', clientId);
 
-  // Delete the Supabase auth user if one exists
-  if (clientUser?.auth_user_id) {
-    await supabase.auth.admin.deleteUser(clientUser.auth_user_id);
+  // Delete the Supabase auth user — use client_users link if present (accepted invite),
+  // otherwise find by email (pending invite that was never accepted)
+  let authUserId = clientUser?.auth_user_id;
+  if (!authUserId && clientRecord?.email) {
+    const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    authUserId = users.find(u => u.email === clientRecord.email)?.id;
+  }
+  if (authUserId) {
+    await supabase.auth.admin.deleteUser(authUserId);
   }
 }
 
