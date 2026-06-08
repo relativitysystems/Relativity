@@ -1,0 +1,162 @@
+/* Admin page — extends portal.css + login.css */
+
+/* Ensure hidden attribute always wins over display rules */
+[hidden] { display: none !important; }
+
+.admin-login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.admin-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px 32px;
+}
+
+.invite-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.invite-submit {
+  width: auto;
+  padding: 11px 28px;
+  margin-top: 20px;
+}
+
+/* ---- Client table ---- */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.admin-table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 0 16px 12px 0;
+}
+
+.admin-table tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.admin-table td {
+  padding: 16px 16px 16px 0;
+  vertical-align: middle;
+}
+
+.client-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.client-email {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.client-date {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* ---- Badges ---- */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 20px;
+}
+
+.badge--active {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.badge--pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warn);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+/* ---- Integration tags ---- */
+.integration-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.integration-tag {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.integration-tag--on {
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--success);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.btn-delete {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--error);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  transition: background var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .invite-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-table th:nth-child(3),
+  .admin-table td:nth-child(3),
+  .admin-table th:nth-child(4),
+  .admin-table td:nth-child(4) {
+    display: none;
+  }
+}

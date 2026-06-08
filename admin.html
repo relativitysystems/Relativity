@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="relativity_black.png" type="image/png">
+  <title>Admin — Relativity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="portal.css" />
+  <link rel="stylesheet" href="login.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="index.html" class="nav-logo"><img src="relativity_white.png" alt="Relativity" class="logo-img"></a>
+    <span class="nav-label">Admin</span>
+    <button class="btn-logout" id="logoutBtn" hidden>Sign Out</button>
+  </nav>
+
+  <main class="main">
+
+    <!-- Login view -->
+    <div id="loginView" class="admin-login-wrap">
+      <div class="login-card">
+        <h1 class="login-title">Admin Sign In</h1>
+        <p class="login-sub">Restricted access.</p>
+        <form id="adminLoginForm" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="adminPassword">Password</label>
+            <input
+              type="password"
+              id="adminPassword"
+              class="form-input"
+              placeholder="••••••••"
+              required
+              autocomplete="off"
+            />
+          </div>
+          <div id="loginError" class="login-error" hidden></div>
+          <button type="submit" id="loginBtn" class="btn-login">Sign In</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Dashboard view -->
+    <div id="dashboardView" hidden>
+
+      <div class="portal-header">
+        <h1 class="portal-title">Admin Dashboard</h1>
+        <p class="portal-subtitle">Manage client accounts and send invitations.</p>
+      </div>
+
+      <!-- Invite new client -->
+      <section class="portal-section">
+        <div class="section-label">Invite New Client</div>
+        <p class="section-desc">Creates a client record and sends a setup email with a link to activate their account.</p>
+
+        <div class="admin-card">
+          <form id="inviteForm" novalidate>
+            <div class="invite-fields">
+              <div class="form-group">
+                <label class="form-label" for="clientName">Client Name</label>
+                <input
+                  type="text"
+                  id="clientName"
+                  class="form-input"
+                  placeholder="Acme Corp"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="clientEmail">Email</label>
+                <input
+                  type="email"
+                  id="clientEmail"
+                  class="form-input"
+                  placeholder="contact@acme.com"
+                  required
+                />
+              </div>
+            </div>
+            <div id="inviteError" class="login-error" hidden></div>
+            <div id="inviteSuccess" class="banner banner--success" hidden></div>
+            <button type="submit" id="inviteBtn" class="btn-login invite-submit">Send Invite</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Client list -->
+      <section class="portal-section">
+        <div class="section-label">Clients</div>
+
+        <p id="clientsLoading" class="section-desc">Loading…</p>
+        <p id="clientsEmpty" class="section-desc" hidden>No clients yet. Send your first invite above.</p>
+        <p id="clientsError" class="section-desc" style="color: var(--error);" hidden></p>
+
+        <div id="clientsTable" hidden></div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <footer class="footer">
+    <span>&copy; 2025 Relativity Systems</span>
+    <a href="index.html">Back to site</a>
+  </footer>
+
+  <script src="admin.js"></script>
+</body>
+</html>

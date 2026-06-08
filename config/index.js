@@ -23,4 +23,5 @@ module.exports = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     redirectUri: process.env.GOOGLE_REDIRECT_URI,
   },
+  appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
 };

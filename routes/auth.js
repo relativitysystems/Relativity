@@ -255,6 +255,48 @@ router.get('/google/callback', async (req, res) => {
 });
 
 /**
+ * POST /auth/complete-invite
+ *
+ * Called by invite-claim.js after the user sets their password.
+ * Reads client_id from the JWT user metadata (set server-side during invite)
+ * and creates the client_users record linking this auth user to the client.
+ */
+router.post('/complete-invite', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
+
+  if (!token) return res.status(401).json({ error: 'Missing auth token' });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) return res.status(401).json({ error: 'Invalid token' });
+
+  const clientId = user.user_metadata?.client_id;
+  if (!clientId) return res.status(400).json({ error: 'No client linked to this invite' });
+
+  let client;
+  try {
+    client = await supabaseService.getClientById(clientId);
+  } catch {
+    return res.status(404).json({ error: 'Client not found' });
+  }
+
+  if (!client || !client.is_active) {
+    return res.status(403).json({ error: 'Client is inactive' });
+  }
+
+  try {
+    await supabaseService.createClientUser(user.id, clientId, user.email);
+  } catch (err) {
+    console.error('complete-invite error:', err.message);
+    return res.status(500).json({ error: 'Failed to link account' });
+  }
+
+  res.json({ success: true });
+});
+
+/**
  * GET /auth/status/:clientId
  *
  * Returns OAuth connection status for all providers.
