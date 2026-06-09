@@ -10,12 +10,12 @@ const app = express();
 
 app.use(express.json());
 
-// Local dev only — Vercel serves root-level static files directly from CDN
-app.use(express.static(path.join(__dirname)));
+// Local dev only — Vercel serves public/ as static files directly from CDN
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Root route: serve index.html if present, otherwise redirect to /portal.html
 app.get('/', (req, res) => {
-  const indexPath = path.join(__dirname, 'index.html');
+  const indexPath = path.join(__dirname, 'public', 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
