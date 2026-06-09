@@ -7,9 +7,12 @@
     }
   ],
   "routes": [
-    { "src": "/auth/(.*)",  "dest": "/server.js" },
-    { "src": "/api/(.*)",   "dest": "/server.js" },
-    { "src": "/admin/(.*)", "dest": "/server.js" },
-    { "src": "/(.*)",       "dest": "/$1" }
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
   ]
 }
