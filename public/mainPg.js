@@ -61,6 +61,22 @@ window.addEventListener('scroll', () => {
   nav.classList.toggle('scrolled', window.scrollY > 40);
 }, { passive: true });
 
+// === Mobile menu ===
+const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+const mobileNav = document.getElementById('mobileNav');
+
+mobileMenuBtn.addEventListener('click', () => {
+  const isOpen = nav.classList.toggle('menu-open');
+  mobileMenuBtn.setAttribute('aria-expanded', isOpen);
+});
+
+mobileNav.querySelectorAll('a').forEach(link => {
+  link.addEventListener('click', () => {
+    nav.classList.remove('menu-open');
+    mobileMenuBtn.setAttribute('aria-expanded', 'false');
+  });
+});
+
 // === Scroll-triggered fade-ins ===
 const fadeEls = document.querySelectorAll('.fade-in');
 const ioOptions = { threshold: 0.1, rootMargin: '0px 0px -48px 0px' };
