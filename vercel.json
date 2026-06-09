@@ -8,11 +8,24 @@
   ],
   "routes": [
     {
-      "handle": "filesystem"
+      "src": "/auth/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/",
+      "dest": "/index.html"
     },
     {
       "src": "/(.*)",
-      "dest": "/server.js"
+      "dest": "/$1"
     }
   ]
 }
