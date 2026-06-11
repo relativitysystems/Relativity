@@ -39,6 +39,9 @@ router.post('/leads', async (req, res) => {
   if (!email || !isValidEmail(email)) {
     return res.status(400).json({ error: 'A valid email address is required' });
   }
+  if (!phone) {
+    return res.status(400).json({ error: 'Phone number is required' });
+  }
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
   }

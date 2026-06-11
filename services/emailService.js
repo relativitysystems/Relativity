@@ -1,7 +1,7 @@
 const { email: emailConfig } = require('../config');
 
 function buildSubject(lead) {
-  return `New Relativity website lead: ${lead.name}`;
+  return `New Lead: ${lead.name}`;
 }
 
 function buildTextBody(lead) {
