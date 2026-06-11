@@ -62,4 +62,45 @@ router.delete('/clients/:clientId', adminAuth, async (req, res) => {
   }
 });
 
+router.get('/leads', adminAuth, async (req, res) => {
+  try {
+    const leads = await supabaseService.getAllLeads();
+    res.json(leads);
+  } catch (err) {
+    console.error('admin/leads GET error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/leads/:leadId', adminAuth, async (req, res) => {
+  const { leadId } = req.params;
+  const { status, notes, archived } = req.body;
+
+  try {
+    if (archived === true) {
+      await supabaseService.archiveLead(leadId);
+    } else if (typeof notes === 'string') {
+      await supabaseService.updateLeadNotes(leadId, notes);
+    } else if (status) {
+      await supabaseService.updateLeadStatus(leadId, status);
+    } else {
+      return res.status(400).json({ error: 'Provide status, notes, or archived:true' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('admin/leads PATCH error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/leads/:leadId', adminAuth, async (req, res) => {
+  try {
+    await supabaseService.archiveLead(req.params.leadId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('admin/leads DELETE error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

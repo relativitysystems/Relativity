@@ -24,4 +24,13 @@ module.exports = {
     redirectUri: process.env.GOOGLE_REDIRECT_URI,
   },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY,
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+    smtpUser: process.env.SMTP_USER,
+    smtpPass: process.env.SMTP_PASS,
+    leadNotificationEmail: process.env.LEAD_NOTIFICATION_EMAIL,
+    fromAddress: process.env.EMAIL_FROM || 'noreply@relativitysystems.ai',
+  },
 };

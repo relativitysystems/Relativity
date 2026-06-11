@@ -542,6 +542,10 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   color: rgba(255, 255, 255, 0.6);
 }
 
+.form-status.error {
+  color: var(--error);
+}
+
 /* === Footer === */
 footer {
   padding: 64px 0 40px;

@@ -5,6 +5,7 @@ const fs = require('fs');
 const authRoutes = require('./routes/auth');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
+const leadsRoutes = require('./routes/leads');
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.get('/', (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/api', apiRoutes);
+app.use('/api', leadsRoutes);
 app.use('/admin', adminRoutes);
 
 module.exports = app;

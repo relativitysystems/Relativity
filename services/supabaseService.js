@@ -153,6 +153,62 @@ async function getAllClientsWithStatus() {
   }));
 }
 
+async function createLead({ name, email, phone, company, message, source }) {
+  const { data, error } = await supabase
+    .from('leads')
+    .insert({
+      name,
+      email,
+      phone: phone || null,
+      company: company || null,
+      message,
+      source: source || 'website',
+    })
+    .select('id, created_at')
+    .single();
+
+  if (error) throw new Error(`createLead failed: ${error.message}`);
+  return data;
+}
+
+async function getAllLeads() {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('id, name, email, phone, company, message, notes, source, status, archived, created_at')
+    .eq('archived', false)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`getAllLeads failed: ${error.message}`);
+  return data || [];
+}
+
+async function updateLeadStatus(leadId, status) {
+  const { error } = await supabase
+    .from('leads')
+    .update({ status })
+    .eq('id', leadId);
+
+  if (error) throw new Error(`updateLeadStatus failed: ${error.message}`);
+}
+
+async function updateLeadNotes(leadId, notes) {
+  const { error } = await supabase
+    .from('leads')
+    .update({ notes })
+    .eq('id', leadId);
+
+  if (error) throw new Error(`updateLeadNotes failed: ${error.message}`);
+}
+
+async function archiveLead(leadId) {
+  const { error } = await supabase
+    .from('leads')
+    .update({ archived: true })
+    .eq('id', leadId);
+
+  if (error) throw new Error(`archiveLead failed: ${error.message}`);
+}
+
 async function createClientUser(authUserId, clientId, email) {
   const { error } = await supabase
     .from('client_users')
@@ -173,4 +229,9 @@ module.exports = {
   deleteClient,
   deleteClientFull,
   getAllClientsWithStatus,
+  createLead,
+  getAllLeads,
+  updateLeadStatus,
+  updateLeadNotes,
+  archiveLead,
 };

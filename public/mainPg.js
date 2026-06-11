@@ -103,7 +103,7 @@ const form = document.getElementById('contactForm');
 const status = document.getElementById('formStatus');
 const submitBtn = document.getElementById('submitBtn');
 
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   if (!form.checkValidity()) {
@@ -111,19 +111,43 @@ form.addEventListener('submit', (e) => {
     return;
   }
 
-  submitBtn.textContent = 'Sending...';
+  submitBtn.textContent = 'Sending…';
   submitBtn.disabled = true;
   status.textContent = '';
   status.className = 'form-status';
 
-  // Placeholder: swap this out for Formspree / backend endpoint
-  setTimeout(() => {
-    status.textContent = "Message received. We'll be in touch within 24 hours.";
-    status.classList.add('success');
-    form.reset();
-    submitBtn.textContent = 'Send Message';
-    submitBtn.disabled = false;
-  }, 900);
+  const data = {
+    name:    form.elements['name'].value,
+    email:   form.elements['email'].value,
+    phone:   form.elements['phone'].value,
+    company: form.elements['company'].value,
+    message: form.elements['message'].value,
+    website: form.elements['website'].value,
+  };
+
+  try {
+    const res = await fetch('/api/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (res.ok) {
+      status.textContent = "Message received. I'll reach out shortly.";
+      status.classList.add('success');
+      form.reset();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      status.textContent = body.error || 'Something went wrong. Please try again.';
+      status.classList.add('error');
+    }
+  } catch {
+    status.textContent = 'Network error. Please check your connection and try again.';
+    status.classList.add('error');
+  }
+
+  submitBtn.textContent = 'Send Message';
+  submitBtn.disabled = false;
 });
 
 // === Smooth scroll for anchor links ===
