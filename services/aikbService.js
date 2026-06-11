@@ -47,8 +47,7 @@ async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fil
 
 async function listDocuments(clientId) {
   try {
-    const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/documents`, {
-      params: { clientId },
+    const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/documents/${clientId}`, {
       headers: aikbHeaders(),
     });
     return res.data;
@@ -61,7 +60,7 @@ async function queryKnowledge(clientId, query) {
   try {
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/query`,
-      { clientId, query },
+      { clientId, question: query },
       { headers: aikbHeaders() }
     );
     return res.data;
@@ -72,18 +71,13 @@ async function queryKnowledge(clientId, query) {
 
 async function deleteDocument(clientId, sourceFileId) {
   try {
-    await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/document/${sourceFileId}`, {
-      params: { clientId },
+    await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/document/by-source`, {
       headers: aikbHeaders(),
+      data: { clientId, sourceFileId, sourceProvider: 'portal_upload' },
     });
   } catch (err) {
     throw new Error(`AIKB deleteDocument failed: ${extractAxiosError(err)}`);
   }
-
-  // Clean up storage — log but don't throw if this fails
-  const storagePath = `uploads/${clientId}/${sourceFileId}`;
-  const { error } = await getAikbSupabase().storage.from(aikbConfig.storageBucket).remove([storagePath]);
-  if (error) console.error(`AIKB storage delete failed for ${storagePath}:`, error.message);
 }
 
 module.exports = { uploadAndIngest, listDocuments, queryKnowledge, deleteDocument };
