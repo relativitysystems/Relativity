@@ -333,6 +333,7 @@
 
     const notesBtn = `<button class="btn-action btn-notes" data-lead-id="${esc(lead.id)}" data-current-notes="${esc(lead.notes || '')}">Edit Notes</button>`;
     const archiveBtn = `<button class="btn-action" data-lead-id="${esc(lead.id)}" data-payload="${esc(JSON.stringify({ archived: true }))}">Archive</button>`;
+    const deleteBtn = `<button class="btn-delete btn-lead-delete" data-lead-id="${esc(lead.id)}" data-lead-name="${esc(lead.name)}">Delete</button>`;
 
     return `
       <tr>
@@ -353,6 +354,7 @@
             ${statusActions}
             ${notesBtn}
             ${archiveBtn}
+            ${deleteBtn}
           </div>
         </td>
       </tr>
@@ -360,6 +362,33 @@
   }
 
   leadsTable.addEventListener('click', async (e) => {
+    // Hard delete
+    const deleteBtn = e.target.closest('.btn-lead-delete');
+    if (deleteBtn) {
+      const leadId = deleteBtn.dataset.leadId;
+      const leadName = deleteBtn.dataset.leadName;
+      if (!confirm(`Permanently delete lead from "${leadName}"? This cannot be undone.`)) return;
+
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Deleting…';
+
+      try {
+        const res = await adminFetch(`/admin/leads/${leadId}`, { method: 'DELETE' });
+        if (res.ok) {
+          loadLeads();
+        } else {
+          const body = await res.json().catch(() => ({}));
+          alert(body.error || 'Failed to delete lead.');
+          deleteBtn.disabled = false;
+          deleteBtn.textContent = 'Delete';
+        }
+      } catch {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Delete';
+      }
+      return;
+    }
+
     const btn = e.target.closest('.btn-action');
     if (!btn) return;
 

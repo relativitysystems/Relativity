@@ -95,7 +95,7 @@ router.patch('/leads/:leadId', adminAuth, async (req, res) => {
 
 router.delete('/leads/:leadId', adminAuth, async (req, res) => {
   try {
-    await supabaseService.archiveLead(req.params.leadId);
+    await supabaseService.deleteLead(req.params.leadId);
     res.json({ success: true });
   } catch (err) {
     console.error('admin/leads DELETE error:', err.message);

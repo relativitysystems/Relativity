@@ -209,6 +209,15 @@ async function archiveLead(leadId) {
   if (error) throw new Error(`archiveLead failed: ${error.message}`);
 }
 
+async function deleteLead(leadId) {
+  const { error } = await supabase
+    .from('leads')
+    .delete()
+    .eq('id', leadId);
+
+  if (error) throw new Error(`deleteLead failed: ${error.message}`);
+}
+
 async function createClientUser(authUserId, clientId, email) {
   const { error } = await supabase
     .from('client_users')
@@ -234,4 +243,5 @@ module.exports = {
   updateLeadStatus,
   updateLeadNotes,
   archiveLead,
+  deleteLead,
 };
