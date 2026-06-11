@@ -96,18 +96,43 @@
     <!-- 2. AI Knowledge Assistant -->
     <section class="portal-section" id="knowledge">
       <h2 class="section-label">AI Knowledge Assistant</h2>
-      <p class="section-desc">Search your company SOPs, documents, and knowledge base using AI.</p>
+      <p class="section-desc">Upload documents to your knowledge base and ask questions in natural language.</p>
 
       <div class="assistant-card">
+
+        <!-- Upload -->
+        <div class="kb-upload-row">
+          <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
+          <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
+          <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
+        </div>
+        <p id="kb-upload-status" class="kb-upload-status" hidden></p>
+
+        <!-- Indexed documents -->
+        <div class="kb-docs-section">
+          <div class="kb-docs-header">
+            <span class="kb-docs-title">Indexed Documents</span>
+            <span id="kb-docs-count" class="kb-docs-count"></span>
+          </div>
+          <div id="kb-docs-list" class="kb-docs-list"></div>
+        </div>
+
+        <!-- Query -->
         <div class="assistant-search">
           <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="search-input" placeholder="Ask a question or search your documents…" disabled />
-          <button class="search-btn" disabled>Ask</button>
+          <input type="text" id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" />
+          <button class="search-btn" id="kb-ask-btn">Ask</button>
         </div>
-        <div class="assistant-placeholder">
-          <span class="badge badge--soon">Coming Soon</span>
-          <p>Your AI knowledge assistant will be configured during onboarding. It will answer questions from your SOPs, internal documentation, and project notes in real time.</p>
+
+        <!-- Answer -->
+        <div id="kb-answer-area" class="kb-answer-area" hidden>
+          <p id="kb-answer-text" class="kb-answer-text"></p>
+          <div id="kb-sources-area" class="kb-sources" hidden>
+            <span class="kb-sources-label">Sources</span>
+            <ul id="kb-sources-list" class="kb-source-list"></ul>
+          </div>
         </div>
+
       </div>
     </section>
 

@@ -117,7 +117,200 @@
     });
   }
 
-  // 9. Logout button
+  // 9. Knowledge Base
+  const kbFileInput    = document.getElementById('kb-file-input');
+  const kbUploadBtn    = document.getElementById('kb-upload-btn');
+  const kbUploadStatus = document.getElementById('kb-upload-status');
+  const kbDocsList     = document.getElementById('kb-docs-list');
+  const kbDocsCount    = document.getElementById('kb-docs-count');
+  const kbQueryInput   = document.getElementById('kb-query-input');
+  const kbAskBtn       = document.getElementById('kb-ask-btn');
+  const kbAnswerArea   = document.getElementById('kb-answer-area');
+  const kbAnswerText   = document.getElementById('kb-answer-text');
+  const kbSourcesArea  = document.getElementById('kb-sources-area');
+  const kbSourcesList  = document.getElementById('kb-sources-list');
+
+  loadDocuments();
+
+  kbUploadBtn.addEventListener('click', () => kbFileInput.click());
+  kbFileInput.addEventListener('change', () => {
+    if (kbFileInput.files[0]) uploadDocument(kbFileInput.files[0]);
+  });
+
+  kbAskBtn.addEventListener('click', askQuestion);
+  kbQueryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') askQuestion();
+  });
+
+  kbDocsList.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-kb-delete');
+    if (!btn) return;
+
+    const sourceFileId = btn.dataset.sourceId;
+    const name = btn.dataset.name;
+    if (!confirm(`Delete "${name}" from your knowledge base? This cannot be undone.`)) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+
+    try {
+      const res = await fetch(`/api/knowledge/document/${encodeURIComponent(sourceFileId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) {
+        loadDocuments();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        showBanner('error', body.error || 'Failed to delete document.');
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
+    } catch {
+      showBanner('error', 'Network error. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+    }
+  });
+
+  async function loadDocuments() {
+    kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+
+    try {
+      const res = await fetch('/api/knowledge/documents', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
+        return;
+      }
+
+      const data = await res.json();
+      const documents = data.documents || data || [];
+
+      if (!documents.length) {
+        kbDocsCount.textContent = '';
+        kbDocsList.innerHTML = `<div class="empty-state"><span>No documents indexed yet. Upload your first document above.</span></div>`;
+        return;
+      }
+
+      kbDocsCount.textContent = `${documents.length} document${documents.length === 1 ? '' : 's'}`;
+      kbDocsList.innerHTML = documents.map(renderDocRow).join('');
+    } catch {
+      kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
+    }
+  }
+
+  function renderDocRow(doc) {
+    const status = doc.status || 'indexing';
+    const badgeClass = { indexed: 'badge--indexed', indexing: 'badge--indexing', failed: 'badge--failed' }[status] || 'badge--indexing';
+    const badge = `<span class="badge ${badgeClass}">${escHtml(status)}</span>`;
+
+    const fileName = doc.fileName || doc.file_name || doc.name || 'Untitled';
+    const sourceFileId = doc.sourceFileId || doc.source_file_id || doc.id || '';
+    const date = doc.created_at
+      ? new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '';
+
+    return `
+      <div class="kb-doc-row">
+        <div class="kb-doc-info">
+          <span class="kb-doc-name" title="${escHtml(fileName)}">${escHtml(fileName)}</span>
+          ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
+        </div>
+        ${badge}
+        <button class="btn-kb-delete" data-source-id="${escHtml(sourceFileId)}" data-name="${escHtml(fileName)}">Delete</button>
+      </div>
+    `;
+  }
+
+  async function uploadDocument(file) {
+    kbUploadStatus.textContent = `Uploading "${file.name}"…`;
+    kbUploadStatus.className = 'kb-upload-status';
+    kbUploadStatus.hidden = false;
+    kbUploadBtn.disabled = true;
+    kbFileInput.value = '';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/knowledge/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: formData,
+      });
+
+      if (res.ok) {
+        kbUploadStatus.textContent = `"${file.name}" uploaded. Indexing in progress…`;
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
+        loadDocuments();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        kbUploadStatus.textContent = body.error || 'Upload failed. Please try again.';
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+      }
+    } catch {
+      kbUploadStatus.textContent = 'Network error. Please try again.';
+      kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+    }
+
+    kbUploadBtn.disabled = false;
+  }
+
+  async function askQuestion() {
+    const query = kbQueryInput.value.trim();
+    if (!query) return;
+
+    kbAskBtn.disabled = true;
+    kbAskBtn.textContent = '…';
+    kbAnswerArea.hidden = true;
+
+    try {
+      const res = await fetch('/api/knowledge/query', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+
+      kbAnswerText.textContent = res.ok ? (body.answer || 'No answer returned.') : (body.error || 'Failed to get an answer.');
+      kbAnswerArea.hidden = false;
+
+      const sources = body.sources || [];
+      if (res.ok && sources.length) {
+        kbSourcesList.innerHTML = sources.map(s => {
+          const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
+          return `<li class="kb-source-item">${escHtml(name)}</li>`;
+        }).join('');
+        kbSourcesArea.hidden = false;
+      } else {
+        kbSourcesArea.hidden = true;
+      }
+    } catch {
+      kbAnswerText.textContent = 'Network error. Please try again.';
+      kbAnswerArea.hidden = false;
+      kbSourcesArea.hidden = true;
+    }
+
+    kbAskBtn.disabled = false;
+    kbAskBtn.textContent = 'Ask';
+  }
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // 10. Logout button
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {

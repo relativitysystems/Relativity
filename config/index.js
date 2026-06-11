@@ -3,9 +3,9 @@ require('dotenv').config();
 module.exports = {
   port: process.env.PORT || 3000,
   supabase: {
-    url: process.env.SUPABASE_URL,
-    serviceKey: process.env.SUPABASE_SERVICE_KEY,
-    anonKey: process.env.SUPABASE_ANON_KEY,
+    url: process.env.GLOBAL_SUPABASE_URL,
+    serviceKey: process.env.GLOBAL_SUPABASE_SERVICE_KEY,
+    anonKey: process.env.GLOBAL_SUPABASE_ANON_KEY,
   },
   dropbox: {
     appKey: process.env.DROPBOX_APP_KEY,
@@ -32,5 +32,12 @@ module.exports = {
     smtpPass: process.env.SMTP_PASS,
     leadNotificationEmail: process.env.LEAD_NOTIFICATION_EMAIL,
     fromAddress: process.env.EMAIL_FROM || 'noreply@relativitysystems.ai',
+  },
+  aikb: {
+    apiBaseUrl: process.env.AIKB_API_BASE_URL,
+    apiKey: process.env.AIKB_API_KEY,
+    supabaseUrl: process.env.AIKB_SUPABASE_URL,
+    supabaseServiceRoleKey: process.env.AIKB_SUPABASE_SERVICE_ROLE_KEY,
+    storageBucket: process.env.AIKB_STORAGE_BUCKET || 'aikb-documents',
   },
 };

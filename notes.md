@@ -110,9 +110,9 @@ portal.html / portal.js / portal.css
 
 ### Required Environment Variables
 ```
-SUPABASE_URL
-SUPABASE_SERVICE_KEY       # server-side only
-SUPABASE_ANON_KEY          # browser-safe, returned by /auth/config
+GLOBAL_SUPABASE_URL
+GLOBAL_SUPABASE_SERVICE_KEY       # server-side only
+GLOBAL_SUPABASE_ANON_KEY          # browser-safe, returned by /auth/config
 DROPBOX_APP_KEY
 DROPBOX_APP_SECRET
 DROPBOX_REDIRECT_URI

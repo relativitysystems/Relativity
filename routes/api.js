@@ -1,7 +1,23 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const crypto = require('crypto');
+const multer = require('multer');
 const apiKey = require('../middleware/apiKey');
+const clientAuth = require('../middleware/clientAuth');
 const googleDriveService = require('../services/googleDriveService');
+const aikbService = require('../services/aikbService');
+
+const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
+const MAX_FILE_MB = 20;
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_MB * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_EXTENSIONS.has(path.extname(file.originalname).toLowerCase()));
+  },
+});
 
 /**
  * GET /api/google-drive/files/:clientId
@@ -39,6 +55,75 @@ router.get('/google-drive/file/:clientId/:fileId', apiKey, async (req, res) => {
     driveResponse.data.pipe(res);
   } catch (err) {
     console.error('Google Drive file download error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Knowledge Base (portal_upload) ----
+
+router.post('/knowledge/upload', clientAuth, (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? `File too large. Maximum size is ${MAX_FILE_MB} MB.`
+        : (err.message || 'File upload error.');
+      return res.status(400).json({ error: msg });
+    }
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file provided or unsupported file type (.txt, .md, .pdf, .docx only).' });
+  }
+
+  const clientId = req.client.id;
+  const sourceFileId = crypto.randomUUID();
+
+  try {
+    await aikbService.uploadAndIngest({
+      clientId,
+      sourceFileId,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      fileBuffer: req.file.buffer,
+    });
+    res.status(201).json({ success: true, sourceFileId });
+  } catch (err) {
+    console.error('POST /api/knowledge/upload error:', err.message);
+    res.status(500).json({ error: 'Upload failed. Please try again.' });
+  }
+});
+
+router.get('/knowledge/documents', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.listDocuments(req.client.id);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/documents error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/knowledge/query', clientAuth, async (req, res) => {
+  const { query } = req.body;
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    return res.status(400).json({ error: 'query is required' });
+  }
+  try {
+    const data = await aikbService.queryKnowledge(req.client.id, query.trim());
+    res.json(data);
+  } catch (err) {
+    console.error('POST /api/knowledge/query error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/knowledge/document/:sourceFileId', clientAuth, async (req, res) => {
+  try {
+    await aikbService.deleteDocument(req.client.id, req.params.sourceFileId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/knowledge/document error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
