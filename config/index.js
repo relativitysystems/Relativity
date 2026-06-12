@@ -4,7 +4,7 @@ module.exports = {
   port: process.env.PORT || 3000,
   supabase: {
     url: process.env.GLOBAL_SUPABASE_URL,
-    serviceKey: process.env.GLOBAL_SUPABASE_SERVICE_KEY,
+    serviceKey: process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || process.env.GLOBAL_SUPABASE_SERVICE_KEY,
     anonKey: process.env.GLOBAL_SUPABASE_ANON_KEY,
   },
   dropbox: {
