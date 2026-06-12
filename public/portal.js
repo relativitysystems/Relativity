@@ -118,19 +118,23 @@
   }
 
   // 9. Knowledge Base
-  const kbFileInput    = document.getElementById('kb-file-input');
-  const kbUploadBtn    = document.getElementById('kb-upload-btn');
-  const kbUploadStatus = document.getElementById('kb-upload-status');
-  const kbDocsList     = document.getElementById('kb-docs-list');
-  const kbDocsCount    = document.getElementById('kb-docs-count');
-  const kbQueryInput   = document.getElementById('kb-query-input');
-  const kbAskBtn       = document.getElementById('kb-ask-btn');
-  const kbAnswerArea   = document.getElementById('kb-answer-area');
-  const kbAnswerText   = document.getElementById('kb-answer-text');
-  const kbSourcesArea  = document.getElementById('kb-sources-area');
-  const kbSourcesList  = document.getElementById('kb-sources-list');
+  const kbFileInput       = document.getElementById('kb-file-input');
+  const kbUploadBtn       = document.getElementById('kb-upload-btn');
+  const kbUploadStatus    = document.getElementById('kb-upload-status');
+  const kbDocsList        = document.getElementById('kb-docs-list');
+  const kbDocsCount       = document.getElementById('kb-docs-count');
+  const kbQueryInput      = document.getElementById('kb-query-input');
+  const kbAskBtn          = document.getElementById('kb-ask-btn');
+  const kbMessages        = document.getElementById('kb-messages');
+  const kbSessionsList    = document.getElementById('kb-sessions-list');
+  const kbNewChatBtn      = document.getElementById('kb-new-chat-btn');
+  const kbClearHistoryBtn = document.getElementById('kb-clear-history-btn');
+
+  let currentSessionId = null;
+  let chatSessions     = [];
 
   loadDocuments();
+  loadSessions();
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
@@ -140,6 +144,34 @@
   kbAskBtn.addEventListener('click', askQuestion);
   kbQueryInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') askQuestion();
+  });
+
+  kbNewChatBtn.addEventListener('click', () => {
+    currentSessionId = null;
+    kbMessages.innerHTML = '';
+    renderSessions(chatSessions);
+    kbQueryInput.focus();
+  });
+
+  kbClearHistoryBtn.addEventListener('click', async () => {
+    if (!confirm('Clear all chat history? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/knowledge/chat/history', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) {
+        chatSessions = [];
+        currentSessionId = null;
+        kbMessages.innerHTML = '';
+        renderSessions([]);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        showBanner('error', body.error || 'Failed to clear history.');
+      }
+    } catch {
+      showBanner('error', 'Network error. Please try again.');
+    }
   });
 
   kbDocsList.addEventListener('click', async (e) => {
@@ -173,6 +205,40 @@
     }
   });
 
+  kbSessionsList.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.btn-kb-session-delete');
+    if (deleteBtn) {
+      const sessionId = deleteBtn.dataset.sessionId;
+      if (!confirm('Delete this chat session?')) return;
+      try {
+        const res = await fetch(`/api/knowledge/chat/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) {
+          chatSessions = chatSessions.filter(s => (s.id || s.session_id) !== sessionId);
+          if (currentSessionId === sessionId) {
+            currentSessionId = null;
+            kbMessages.innerHTML = '';
+          }
+          renderSessions(chatSessions);
+        } else {
+          const body = await res.json().catch(() => ({}));
+          showBanner('error', body.error || 'Failed to delete session.');
+        }
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      }
+      return;
+    }
+
+    const item = e.target.closest('.kb-session-item');
+    if (item) {
+      const sessionId = item.dataset.sessionId;
+      await loadSessionMessages(sessionId);
+    }
+  });
+
   async function loadDocuments() {
     kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
 
@@ -200,6 +266,107 @@
     } catch {
       kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
     }
+  }
+
+  async function loadSessions() {
+    try {
+      const res = await fetch('/api/knowledge/chat/sessions', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) { renderSessions([]); return; }
+      const data = await res.json();
+      chatSessions = data.sessions || (Array.isArray(data) ? data : []);
+      renderSessions(chatSessions);
+    } catch {
+      renderSessions([]);
+    }
+  }
+
+  function renderSessions(sessions) {
+    if (!sessions.length) {
+      kbSessionsList.innerHTML = `<div class="empty-state kb-sessions-empty"><span>No previous chats yet.</span></div>`;
+      return;
+    }
+    kbSessionsList.innerHTML = sessions.map(s => {
+      const id = s.id || s.session_id || '';
+      const title = s.title || 'Chat session';
+      const rawDate = s.updated_at || s.created_at || null;
+      const dateStr = rawDate
+        ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '';
+      const isActive = id === currentSessionId ? ' kb-session-item--active' : '';
+      return `
+        <div class="kb-session-item${isActive}" data-session-id="${escHtml(id)}">
+          <span class="kb-session-title" title="${escHtml(title)}">${escHtml(title)}</span>
+          ${dateStr ? `<span class="kb-session-date">${escHtml(dateStr)}</span>` : ''}
+          <button class="btn-kb-session-delete" data-session-id="${escHtml(id)}" title="Delete session">&times;</button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function loadSessionMessages(sessionId) {
+    currentSessionId = sessionId;
+    kbMessages.innerHTML = `<div class="empty-state"><span>Loading messages…</span></div>`;
+    renderSessions(chatSessions);
+
+    try {
+      const res = await fetch(`/api/knowledge/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        kbMessages.innerHTML = `<div class="empty-state"><span>Failed to load messages.</span></div>`;
+        return;
+      }
+      const data = await res.json();
+      const messages = data.messages || (Array.isArray(data) ? data : []);
+      kbMessages.innerHTML = '';
+      messages.forEach(m => {
+        const role    = m.role === 'user' ? 'user' : 'assistant';
+        const content = m.content || '';
+        const sources = role === 'assistant' ? (m.sources || []) : [];
+        appendMessage(role, content, sources);
+      });
+    } catch {
+      kbMessages.innerHTML = `<div class="empty-state"><span>Failed to load messages.</span></div>`;
+    }
+  }
+
+  function appendMessage(role, content, sources) {
+    const wrap = document.createElement('div');
+    wrap.className = `kb-message kb-message--${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'kb-message-bubble';
+    bubble.textContent = content;
+    wrap.appendChild(bubble);
+
+    if (role === 'assistant' && shouldShowSourcesBox(content, sources)) {
+      const srcBox = document.createElement('div');
+      srcBox.className = 'kb-message-sources';
+      const label = document.createElement('span');
+      label.className = 'kb-message-sources-label';
+      label.textContent = 'Sources';
+      srcBox.appendChild(label);
+      const ul = document.createElement('ul');
+      sources.forEach(s => {
+        const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
+        const li = document.createElement('li');
+        li.textContent = name;
+        ul.appendChild(li);
+      });
+      srcBox.appendChild(ul);
+      wrap.appendChild(srcBox);
+    }
+
+    kbMessages.appendChild(wrap);
+    kbMessages.scrollTop = kbMessages.scrollHeight;
+  }
+
+  function shouldShowSourcesBox(answerText, sources) {
+    if (!sources || sources.length === 0) return false;
+    if (/Source:/i.test(answerText)) return false;
+    return true;
   }
 
   function renderDocRow(doc) {
@@ -263,9 +430,11 @@
     const query = kbQueryInput.value.trim();
     if (!query) return;
 
+    kbQueryInput.value = '';
     kbAskBtn.disabled = true;
     kbAskBtn.textContent = '…';
-    kbAnswerArea.hidden = true;
+
+    appendMessage('user', query, []);
 
     try {
       const res = await fetch('/api/knowledge/query', {
@@ -274,28 +443,24 @@
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, sessionId: currentSessionId }),
       });
 
       const body = await res.json().catch(() => ({}));
 
-      kbAnswerText.textContent = res.ok ? (body.answer || 'No answer returned.') : (body.error || 'Failed to get an answer.');
-      kbAnswerArea.hidden = false;
-
-      const sources = body.sources || [];
-      if (res.ok && sources.length) {
-        kbSourcesList.innerHTML = sources.map(s => {
-          const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
-          return `<li class="kb-source-item">${escHtml(name)}</li>`;
-        }).join('');
-        kbSourcesArea.hidden = false;
+      if (res.ok) {
+        const answer  = body.answer || 'No answer returned.';
+        const sources = body.sources || [];
+        appendMessage('assistant', answer, sources);
+        if (!currentSessionId && body.sessionId) {
+          currentSessionId = body.sessionId;
+        }
+        await loadSessions();
       } else {
-        kbSourcesArea.hidden = true;
+        appendMessage('assistant', body.error || 'Failed to get an answer.', []);
       }
     } catch {
-      kbAnswerText.textContent = 'Network error. Please try again.';
-      kbAnswerArea.hidden = false;
-      kbSourcesArea.hidden = true;
+      appendMessage('assistant', 'Network error. Please try again.', []);
     }
 
     kbAskBtn.disabled = false;

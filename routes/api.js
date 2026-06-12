@@ -105,15 +105,69 @@ router.get('/knowledge/documents', clientAuth, async (req, res) => {
 });
 
 router.post('/knowledge/query', clientAuth, async (req, res) => {
-  const { query } = req.body;
+  const { query, sessionId } = req.body;
   if (!query || typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'query is required' });
   }
   try {
-    const data = await aikbService.queryKnowledge(req.client.id, query.trim());
+    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null);
     res.json(data);
   } catch (err) {
     console.error('POST /api/knowledge/query error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.listChatSessions(req.client.id);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/chat/sessions error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/knowledge/chat/sessions/:sessionId/messages', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.listChatMessages(req.client.id, req.params.sessionId);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/chat/sessions/:sessionId/messages error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/knowledge/chat/sessions/:sessionId', clientAuth, async (req, res) => {
+  try {
+    await aikbService.deleteChatSession(req.client.id, req.params.sessionId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/knowledge/chat/sessions/:sessionId error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/knowledge/chat/history', clientAuth, async (req, res) => {
+  try {
+    await aikbService.clearChatHistory(req.client.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/knowledge/chat/history error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/knowledge/chat/sessions/:sessionId/title', clientAuth, async (req, res) => {
+  const { title } = req.body;
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'title is required' });
+  }
+  try {
+    const data = await aikbService.updateChatSessionTitle(req.client.id, req.params.sessionId, title.trim());
+    res.json(data);
+  } catch (err) {
+    console.error('PATCH /api/knowledge/chat/sessions/:sessionId/title error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

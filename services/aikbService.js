@@ -56,16 +56,77 @@ async function listDocuments(clientId) {
   }
 }
 
-async function queryKnowledge(clientId, query) {
+async function queryKnowledge(clientId, query, sessionId) {
   try {
+    const body = { clientId, question: query };
+    if (sessionId) body.sessionId = sessionId;
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/query`,
-      { clientId, question: query },
+      body,
       { headers: aikbHeaders() }
     );
     return res.data;
   } catch (err) {
     throw new Error(`AIKB query failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function listChatSessions(clientId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB listChatSessions failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function listChatMessages(clientId, sessionId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}/messages`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB listChatMessages failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function deleteChatSession(clientId, sessionId) {
+  try {
+    await axios.delete(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}`,
+      { headers: aikbHeaders() }
+    );
+  } catch (err) {
+    throw new Error(`AIKB deleteChatSession failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function clearChatHistory(clientId) {
+  try {
+    await axios.delete(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/chat/history/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+  } catch (err) {
+    throw new Error(`AIKB clearChatHistory failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function updateChatSessionTitle(clientId, sessionId, title) {
+  try {
+    const res = await axios.patch(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}/title`,
+      { title },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB updateChatSessionTitle failed: ${extractAxiosError(err)}`);
   }
 }
 
@@ -80,4 +141,14 @@ async function deleteDocument(clientId, sourceFileId) {
   }
 }
 
-module.exports = { uploadAndIngest, listDocuments, queryKnowledge, deleteDocument };
+module.exports = {
+  uploadAndIngest,
+  listDocuments,
+  queryKnowledge,
+  deleteDocument,
+  listChatSessions,
+  listChatMessages,
+  deleteChatSession,
+  clearChatHistory,
+  updateChatSessionTitle,
+};
