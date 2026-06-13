@@ -88,7 +88,7 @@ const io = new IntersectionObserver((entries) => {
       const parent = entry.target.parentElement;
       const siblings = [...parent.querySelectorAll('.fade-in')];
       const idx = siblings.indexOf(entry.target);
-      const isGrid = parent.classList.contains('services-grid') || parent.classList.contains('process-steps');
+      const isGrid = parent.classList.contains('services-grid') || parent.classList.contains('process-steps') || parent.classList.contains('use-cases-grid');
       const delay = isGrid ? idx * 80 : 0;
       setTimeout(() => entry.target.classList.add('visible'), delay);
       io.unobserve(entry.target);

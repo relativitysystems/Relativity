@@ -664,7 +664,7 @@ footer {
   }
 
   nav.menu-open .mobile-nav {
-    max-height: 420px;
+    max-height: 480px;
     border-top-color: var(--border);
   }
 
@@ -704,6 +704,10 @@ footer {
   }
 
   .services,
+  .solution,
+  .what-it-is,
+  .rag-explainer,
+  .use-cases,
   .process,
   .cta-banner,
   .contact {
@@ -729,10 +733,10 @@ footer {
 }
 
 /* ============================================================
-   EXAMPLES SECTION
+   DEMO SECTION (formerly #examples)
    ============================================================ */
 
-#examples {
+#demo {
   padding: 128px 0;
   border-top: 1px solid var(--border);
 }
@@ -894,11 +898,14 @@ footer {
   .flow-diagram {
     padding: 20px 16px;
   }
+  .use-cases-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* Responsive — mobile */
 @media (max-width: 700px) {
-  #examples {
+  #demo {
     padding: 80px 0;
   }
 
@@ -930,4 +937,110 @@ footer {
     transform-origin: left center;
     margin-left: 6px;
   }
+  .use-cases-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   NEW SECTIONS
+   ============================================================ */
+
+/* Solution (replaces Services) */
+.solution {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Demo Q&A mock block */
+.demo-qa {
+  margin-top: 28px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.demo-qa-question,
+.demo-qa-answer {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.demo-qa-role {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.demo-qa-question p,
+.demo-qa-answer p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.demo-qa-source {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* What Is An AI Knowledge Base */
+.what-it-is {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* RAG Explainer */
+.rag-explainer {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+.rag-explainer .section-header {
+  margin-bottom: 0;
+}
+
+/* Use Cases */
+.use-cases {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+.use-cases-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.use-case-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 24px;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.use-case-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #111;
+}
+
+.use-case-card h3 {
+  margin-bottom: 10px;
+}
+
+.use-case-card p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.7;
 }
