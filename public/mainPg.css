@@ -706,6 +706,8 @@ footer {
   .services,
   .solution,
   .what-it-is,
+  .what-you-get,
+  .trust-section,
   .rag-explainer,
   .use-cases,
   .process,
@@ -1012,6 +1014,13 @@ footer {
 
 /* Use Cases */
 .use-cases {
+  padding: 128px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* What You Get & Trust sections */
+.what-you-get,
+.trust-section {
   padding: 128px 0;
   border-top: 1px solid var(--border);
 }
