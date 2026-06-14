@@ -26,6 +26,11 @@
 
   const { clientId, clientName, email, dropboxConnected, slackConnected, googleDriveConnected } = me;
 
+  const identityName = document.getElementById('clientIdentityName');
+  const identityId   = document.getElementById('clientIdentityId');
+  if (identityName) identityName.textContent = clientName || 'Client';
+  if (identityId)   identityId.textContent   = clientId ? `Client ID: ${shortId(clientId)}` : '';
+
   // 4. Show initial connection state
   if (dropboxConnected) markConnected('dropbox');
   if (slackConnected) markConnected('slack');
@@ -465,6 +470,12 @@
 
     kbAskBtn.disabled = false;
     kbAskBtn.textContent = 'Ask';
+  }
+
+  function shortId(id) {
+    const value = String(id || '');
+    if (value.length <= 12) return value;
+    return `${value.slice(0, 8)}...${value.slice(-4)}`;
   }
 
   function escHtml(str) {

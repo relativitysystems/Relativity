@@ -95,6 +95,59 @@ body {
   line-height: 1.65;
 }
 
+/* ---- Portal Header: Two-column with identity card ---- */
+.portal-header--with-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+.portal-heading {
+  max-width: 620px;
+}
+
+.client-identity-card {
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.client-identity-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.client-identity-name {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.client-identity-id {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.banner--compact {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding: 9px 10px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
 /* ---- Banners ---- */
 .banner {
   display: flex;
@@ -952,6 +1005,16 @@ body {
 @media (max-width: 900px) {
   .overview-grid { grid-template-columns: repeat(2, 1fr); }
   .doc-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .portal-header--with-identity {
+    flex-direction: column;
+  }
+  .client-identity-card {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 640px) {

@@ -22,18 +22,27 @@
 
   <main class="main">
 
-    <div class="banner banner--success" id="bannerSuccess" hidden>
-      <span class="banner-icon">&#10003;</span>
-      <span id="bannerSuccessText">Successfully connected.</span>
-    </div>
-    <div class="banner banner--error" id="bannerError" hidden>
-      <span class="banner-icon">&#10005;</span>
-      <span id="bannerErrorText">Connection failed. Please try again.</span>
-    </div>
+    <div class="portal-header portal-header--with-identity">
+      <div class="portal-heading">
+        <h1 class="portal-title">Operations Hub</h1>
+        <p class="portal-subtitle">Your AI systems, workflow status, and support — all in one place.</p>
+      </div>
 
-    <div class="portal-header">
-      <h1 class="portal-title">Operations Hub</h1>
-      <p class="portal-subtitle">Your AI systems, workflow status, and support — all in one place.</p>
+      <div class="client-identity-card">
+        <span class="client-identity-label">Signed in as</span>
+        <span class="client-identity-name" id="clientIdentityName">Loading…</span>
+        <span class="client-identity-id" id="clientIdentityId"></span>
+
+        <div class="banner banner--success banner--compact" id="bannerSuccess" hidden>
+          <span class="banner-icon">&#10003;</span>
+          <span id="bannerSuccessText">Successfully connected.</span>
+        </div>
+
+        <div class="banner banner--error banner--compact" id="bannerError" hidden>
+          <span class="banner-icon">&#10005;</span>
+          <span id="bannerErrorText">Connection failed. Please try again.</span>
+        </div>
+      </div>
     </div>
 
     <!-- 1. Overview -->
