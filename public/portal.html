@@ -25,13 +25,13 @@
     <div class="portal-header portal-header--with-identity">
       <div class="portal-heading">
         <h1 class="portal-title">Operations Hub</h1>
-        <p class="portal-subtitle">Your AI systems, workflow status, and support — all in one place.</p>
+        <p class="portal-subtitle">Your AI knowledge base, document status, and support — all in one place.</p>
       </div>
 
-      <div class="client-identity-card">
-        <span class="client-identity-label">Signed in as</span>
-        <span class="client-identity-name" id="clientIdentityName">Loading…</span>
-        <span class="client-identity-id" id="clientIdentityId"></span>
+      <div class="portal-identity">
+        <span class="portal-identity-label">Signed in as</span>
+        <span class="portal-identity-name" id="clientIdentityName">Loading…</span>
+        <span class="portal-identity-id" id="clientIdentityId"></span>
 
         <div class="banner banner--success banner--compact" id="bannerSuccess" hidden>
           <span class="banner-icon">&#10003;</span>
@@ -242,79 +242,6 @@
           <span class="doc-name">Team Usage Guides</span>
           <span class="doc-status">Not uploaded yet</span>
         </div>
-      </div>
-    </section>
-
-    <!-- 5. Integrations & Access -->
-    <section class="portal-section" id="integrations">
-      <h2 class="section-label">Integrations & Access</h2>
-      <p class="section-desc">Connected services used by your automation stack. Setup is typically handled by the Relativity team during onboarding.</p>
-
-      <div class="integrations-list">
-
-        <div class="integration-row" id="card-dropbox">
-          <div class="integration-icon">
-            <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 4L16 9.5L8 15L0 9.5L8 4Z" fill="#0061FF"/>
-              <path d="M24 4L32 9.5L24 15L16 9.5L24 4Z" fill="#0061FF"/>
-              <path d="M0 20.5L8 15L16 20.5L8 26L0 20.5Z" fill="#0061FF"/>
-              <path d="M32 20.5L24 15L16 20.5L24 26L32 20.5Z" fill="#0061FF"/>
-              <path d="M8 27.5L16 22L24 27.5L16 32L8 27.5Z" fill="#0061FF"/>
-            </svg>
-          </div>
-          <div class="integration-info">
-            <span class="integration-name">Dropbox</span>
-            <span class="integration-desc">Document ingestion, RAG pipelines, file workflows</span>
-          </div>
-          <div class="integration-status" id="status-dropbox">
-            <span class="status-dot status-dot--disconnected"></span>
-            <span class="status-text">Not connected</span>
-          </div>
-          <a class="btn-integration" id="btn-dropbox" href="#">Connect</a>
-        </div>
-
-        <div class="integration-row" id="card-google_drive">
-          <div class="integration-icon">
-            <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10.667 4L16 13.333 5.333 13.333 0 4z" fill="#4285F4"/>
-              <path d="M21.333 4L32 4 26.667 13.333 16 13.333z" fill="#FBBC05"/>
-              <path d="M5.333 13.333L16 13.333 10.667 22.667 0 22.667z" fill="#34A853"/>
-              <path d="M16 13.333L26.667 13.333 21.333 22.667 10.667 22.667z" fill="#EA4335"/>
-              <path d="M10.667 22.667L16 32 21.333 22.667z" fill="#34A853"/>
-            </svg>
-          </div>
-          <div class="integration-info">
-            <span class="integration-name">Google Drive</span>
-            <span class="integration-desc">Document automation and knowledge base ingestion</span>
-          </div>
-          <div class="integration-status" id="status-google_drive">
-            <span class="status-dot status-dot--disconnected"></span>
-            <span class="status-text">Not connected</span>
-          </div>
-          <a class="btn-integration" id="btn-google_drive" href="#">Connect</a>
-        </div>
-
-        <div class="integration-row" id="card-slack">
-          <div class="integration-icon">
-            <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="0" y="12" width="8" height="8" rx="4" fill="#E01E5A"/>
-              <rect x="12" y="0" width="8" height="8" rx="4" fill="#36C5F0"/>
-              <rect x="12" y="12" width="8" height="8" rx="4" fill="#2EB67D"/>
-              <rect x="24" y="12" width="8" height="8" rx="4" fill="#ECB22E"/>
-              <rect x="12" y="24" width="8" height="8" rx="4" fill="#E01E5A"/>
-            </svg>
-          </div>
-          <div class="integration-info">
-            <span class="integration-name">Slack</span>
-            <span class="integration-desc">Automated notifications, summaries, and AI-generated updates</span>
-          </div>
-          <div class="integration-status" id="status-slack">
-            <span class="status-dot status-dot--disconnected"></span>
-            <span class="status-text">Not connected</span>
-          </div>
-          <a class="btn-integration" id="btn-slack" href="#">Connect</a>
-        </div>
-
       </div>
     </section>
 

@@ -24,105 +24,29 @@
     return;
   }
 
-  const { clientId, clientName, email, dropboxConnected, slackConnected, googleDriveConnected } = me;
+  const { clientId, clientName, email } = me;
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
   if (identityName) identityName.textContent = clientName || 'Client';
   if (identityId)   identityId.textContent   = clientId ? `Client ID: ${shortId(clientId)}` : '';
 
-  // 4. Show initial connection state
-  if (dropboxConnected) markConnected('dropbox');
-  if (slackConnected) markConnected('slack');
-  if (googleDriveConnected) markConnected('google_drive');
-
-  // 5. Handle post-OAuth redirect params (no clientId in URL)
+  // 4. Handle post-OAuth redirect params
   const params = new URLSearchParams(window.location.search);
   const connected = params.get('connected');
   const error = params.get('error');
 
   if (connected) {
-    const serviceNames = { dropbox: 'Dropbox', google_drive: 'Google Drive', slack: 'Slack' };
-    const name = serviceNames[connected] || connected;
-    showBanner('success', `${name} connected successfully. Your automations are ready.`);
-    markConnected(connected);
+    showBanner('success', 'Connection updated successfully.');
     window.history.replaceState({}, '', '/portal.html');
   }
 
   if (error) {
-    const messages = {
-      dropbox_denied: 'Dropbox authorization was cancelled. Click "Connect" to try again.',
-      dropbox_failed: 'Something went wrong connecting Dropbox. Please try again or contact support.',
-      slack_denied: 'Slack authorization was cancelled. Click "Connect" to try again.',
-      slack_failed: 'Something went wrong connecting Slack. Please try again or contact support.',
-      google_drive_denied: 'Google Drive authorization was cancelled. Click "Connect" to try again.',
-      google_drive_failed: 'Something went wrong connecting Google Drive. Please try again or contact support.',
-    };
-    showBanner('error', messages[error] || 'Connection failed. Please try again.');
+    showBanner('error', 'Connection failed. Please try again or contact support.');
     window.history.replaceState({}, '', '/portal.html');
   }
 
-  // 6. Wire Dropbox connect button — uses fetch + bearer token instead of a plain link
-  const dropboxBtn = document.getElementById('btn-dropbox');
-  if (dropboxBtn && !dropboxConnected) {
-    dropboxBtn.removeAttribute('href');
-    dropboxBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      try {
-        const res = await fetch('/auth/dropbox/start', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error('Failed to start Dropbox auth');
-        const { url } = await res.json();
-        window.location.href = url;
-      } catch (err) {
-        showBanner('error', 'Could not start Dropbox connection. Please try again.');
-        console.error('Dropbox start error:', err.message);
-      }
-    });
-  }
-
-  // 7. Wire Slack connect button
-  const slackBtn = document.getElementById('btn-slack');
-  if (slackBtn && !slackConnected) {
-    slackBtn.removeAttribute('href');
-    slackBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      try {
-        const res = await fetch('/auth/slack/start', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error('Failed to start Slack auth');
-        const { url } = await res.json();
-        window.location.href = url;
-      } catch (err) {
-        showBanner('error', 'Could not start Slack connection. Please try again.');
-        console.error('Slack start error:', err.message);
-      }
-    });
-  }
-
-  // 8. Wire Google Drive connect button
-  const googleDriveBtn = document.getElementById('btn-google_drive');
-  if (googleDriveBtn && !googleDriveConnected) {
-    googleDriveBtn.removeAttribute('href');
-    googleDriveBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      try {
-        const res = await fetch('/auth/google/start', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error('Failed to start Google Drive auth');
-        const { url } = await res.json();
-        window.location.href = url;
-      } catch (err) {
-        showBanner('error', 'Could not start Google Drive connection. Please try again.');
-        console.error('Google Drive start error:', err.message);
-      }
-    });
-  }
-
-  // 9. Knowledge Base
+  // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');
   const kbUploadBtn       = document.getElementById('kb-upload-btn');
   const kbUploadStatus    = document.getElementById('kb-upload-status');
@@ -507,23 +431,6 @@
     const body = `Client: ${clientName}\nEmail: ${email}\n\n`;
     window.location.href = `mailto:info@relativitysystems.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
-
-  // --- Helpers ---
-
-  function markConnected(provider) {
-    const btn = document.getElementById(`btn-${provider}`);
-    const card = document.getElementById(`card-${provider}`);
-    const statusDot = card && card.querySelector('.status-dot');
-    const statusText = card && card.querySelector('.status-text');
-
-    if (btn) {
-      btn.textContent = 'Connected';
-      btn.className = 'btn-integration btn-integration--connected';
-      btn.removeAttribute('href');
-    }
-    if (statusDot) statusDot.className = 'status-dot status-dot--connected';
-    if (statusText) statusText.textContent = 'Connected';
-  }
 
   function showBanner(type, message) {
     const banner = document.getElementById(type === 'success' ? 'bannerSuccess' : 'bannerError');
