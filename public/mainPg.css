@@ -735,7 +735,7 @@ footer {
 }
 
 /* ============================================================
-   DEMO SECTION (formerly #examples)
+   DEMO SECTION
    ============================================================ */
 
 #demo {
@@ -743,68 +743,23 @@ footer {
   border-top: 1px solid var(--border);
 }
 
-.examples-grid {
-  margin-top: 0;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  max-width: 860px;
-}
-
-/* Example Card */
-.example-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 40px 36px;
-  transition: border-color 0.25s ease, background 0.25s ease;
-}
-
-.example-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: #111;
-}
-
-.example-header {
+/* Outer layout column */
+.demo-layout {
+  max-width: 760px;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.example-number {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.example-card h3 {
-  font-size: 19px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.3;
-}
-
-.example-desc {
-  font-size: 15px;
-  color: var(--text-secondary);
-  line-height: 1.75;
-  margin-bottom: 32px;
-}
-
-/* Flow Diagram */
+/* Flow diagram — secondary, compact */
 .flow-diagram {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 24px 20px;
+  padding: 18px 20px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-bottom: 28px;
   overflow-x: auto;
 }
 
@@ -812,30 +767,25 @@ footer {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
-  min-width: 72px;
+  min-width: 68px;
 }
 
 .flow-node-box {
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--bg);
   flex-shrink: 0;
-  transition: border-color 0.25s ease;
-}
-
-.example-card:hover .flow-node-box {
-  border-color: #2a2a2a;
 }
 
 .flow-node-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   text-align: center;
   line-height: 1.4;
@@ -844,61 +794,197 @@ footer {
 .flow-connector {
   display: flex;
   align-items: center;
-  padding: 0 4px;
+  padding: 0 2px;
   flex-shrink: 0;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
-/* Feature Tags */
-.feature-tags {
+/* Chat window — primary product preview */
+.demo-chat-window {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.demo-chrome {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  background: #080808;
+  border-bottom: 1px solid var(--border);
 }
 
-.tag {
-  font-size: 11px;
+.demo-chrome-dots {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.demo-chrome-dots span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #252525;
+}
+
+.demo-chrome-title {
+  font-size: 0.72rem;
+  color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.04em;
-  padding: 5px 11px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: transparent;
-  transition: border-color 0.2s ease;
 }
 
-.example-card:hover .tag {
-  border-color: #2a2a2a;
+.demo-chat-body {
+  padding: 22px 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-/* Business Outcome */
-.business-outcome {
-  border-top: 1px solid var(--border);
-  padding-top: 20px;
-}
-
-.outcome-label {
+.demo-role {
   display: block;
-  font-size: 10px;
+  font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
-.business-outcome p {
-  font-size: 14px;
+.demo-message-user {
+  padding: 13px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid #252525;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 10px;
+}
+
+.demo-message-user p {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.65;
+}
+
+.demo-message-ai {
+  padding: 2px 0;
+}
+
+.demo-message-ai > p {
+  font-size: 0.875rem;
   color: var(--text-secondary);
-  line-height: 1.75;
+  line-height: 1.8;
+  margin-bottom: 14px;
+}
+
+/* Source pills */
+.demo-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.015);
+  font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: 0.01em;
+}
+
+.source-pill svg {
+  flex-shrink: 0;
+  color: #444;
+}
+
+/* Trust indicator */
+.trust-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 4px 9px;
+  width: fit-content;
+}
+
+.trust-badge svg {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.trust-preview > p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 560px;
+}
+
+/* Example prompts */
+.demo-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.demo-prompts-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.demo-prompts-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-pill {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 13px;
+  cursor: default;
+  transition: border-color 0.2s ease, color 0.2s ease;
+  background: transparent;
+  line-height: 1;
+}
+
+.prompt-pill:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 /* Responsive — tablet */
 @media (max-width: 960px) {
   .flow-diagram {
-    padding: 20px 16px;
+    padding: 16px 14px;
   }
   .use-cases-grid {
     grid-template-columns: 1fr 1fr;
@@ -911,14 +997,10 @@ footer {
     padding: 80px 0;
   }
 
-  .example-card {
-    padding: 28px 22px;
-  }
-
   .flow-diagram {
     flex-direction: column;
     align-items: flex-start;
-    padding: 20px;
+    padding: 18px;
   }
 
   .flow-node {
@@ -933,14 +1015,24 @@ footer {
   }
 
   .flow-connector {
-    padding: 4px 0 4px 16px;
+    padding: 4px 0 4px 13px;
     margin-bottom: 0;
     transform: rotate(90deg);
     transform-origin: left center;
-    margin-left: 6px;
+    margin-left: 5px;
   }
+
   .use-cases-grid {
     grid-template-columns: 1fr;
+  }
+
+  .demo-prompts-pills {
+    gap: 6px;
+  }
+
+  .prompt-pill {
+    font-size: 0.75rem;
+    padding: 6px 11px;
   }
 }
 
@@ -952,48 +1044,6 @@ footer {
 .solution {
   padding: 128px 0;
   border-top: 1px solid var(--border);
-}
-
-/* Demo Q&A mock block */
-.demo-qa {
-  margin-top: 28px;
-  border-top: 1px solid var(--border);
-  padding-top: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.demo-qa-question,
-.demo-qa-answer {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
-}
-
-.demo-qa-role {
-  display: block;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-
-.demo-qa-question p,
-.demo-qa-answer p {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
-.demo-qa-source {
-  margin-top: 10px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 /* What Is An AI Knowledge Base */

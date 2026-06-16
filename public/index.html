@@ -120,122 +120,134 @@
     </div>
   </section>
 
-  <!-- Demo (formerly Examples) -->
+  <!-- Demo Preview -->
   <section id="demo">
     <div class="container">
       <div class="section-header fade-in">
         <span class="label">Demo Preview</span>
-        <h2>See how an AI knowledge base works</h2>
-        <p class="section-sub">Your team asks a question. The assistant searches approved company knowledge, generates an answer, and shows the source it came from.</p>
+        <h2>See it in action</h2>
+        <p class="section-sub">Your team asks a question. The assistant searches your approved company documents and returns a clear answer — with the exact source document and page number it came from.</p>
       </div>
 
-      <div class="examples-grid">
+      <div class="demo-layout fade-in">
 
-        <div class="example-card fade-in">
-          <div class="example-header">
-            <span class="example-number">01</span>
-            <h3>Private AI Knowledge Base</h3>
-          </div>
-
-          <p class="example-desc">
-            Connect SOPs, FAQs, policies, training docs, PDFs, and client notes to an AI assistant your team can search in plain English.
-          </p>
-
-          <!-- Visual flow diagram -->
-          <div class="flow-diagram">
-            <div class="flow-node">
-              <div class="flow-node-box">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="3" y="2" width="10" height="13" rx="1" stroke="#555" stroke-width="1.2"/>
-                  <path d="M6 6h4M6 9h4M6 12h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
-                  <rect x="7" y="5" width="10" height="13" rx="1" fill="#0d0d0d" stroke="#333" stroke-width="1.2"/>
-                  <path d="M10 9h4M10 12h4M10 15h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <span class="flow-node-label">Documents<br>&amp; SOPs</span>
-            </div>
-
-            <div class="flow-connector">
-              <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
-                <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Flow diagram: secondary, above chat -->
+        <div class="flow-diagram">
+          <div class="flow-node">
+            <div class="flow-node-box">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="2" width="10" height="13" rx="1" stroke="#555" stroke-width="1.2"/>
+                <path d="M6 6h4M6 9h4M6 12h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
+                <rect x="7" y="5" width="10" height="13" rx="1" fill="#0d0d0d" stroke="#333" stroke-width="1.2"/>
+                <path d="M10 9h4M10 12h4M10 15h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
             </div>
+            <span class="flow-node-label">Documents<br>&amp; SOPs</span>
+          </div>
 
-            <div class="flow-node">
-              <div class="flow-node-box">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <ellipse cx="10" cy="5" rx="7" ry="2.5" stroke="#555" stroke-width="1.2"/>
-                  <path d="M3 5v5c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5V5" stroke="#555" stroke-width="1.2"/>
-                  <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5v-5" stroke="#555" stroke-width="1.2"/>
-                </svg>
-              </div>
-              <span class="flow-node-label">Knowledge<br>Index</span>
-            </div>
+          <div class="flow-connector">
+            <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
+              <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
 
-            <div class="flow-connector">
-              <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
-                <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <div class="flow-node">
+            <div class="flow-node-box">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="10" cy="5" rx="7" ry="2.5" stroke="#555" stroke-width="1.2"/>
+                <path d="M3 5v5c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5V5" stroke="#555" stroke-width="1.2"/>
+                <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5v-5" stroke="#555" stroke-width="1.2"/>
               </svg>
             </div>
+            <span class="flow-node-label">Company<br>Knowledge Base</span>
+          </div>
 
-            <div class="flow-node">
-              <div class="flow-node-box">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="10" cy="10" r="7" stroke="#555" stroke-width="1.2"/>
-                  <circle cx="10" cy="10" r="2.5" stroke="#555" stroke-width="1.2"/>
-                  <path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <span class="flow-node-label">AI<br>Assistant</span>
-            </div>
+          <div class="flow-connector">
+            <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
+              <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
 
-            <div class="flow-connector">
-              <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
-                <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <div class="flow-node">
+            <div class="flow-node-box">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="10" cy="10" r="7" stroke="#555" stroke-width="1.2"/>
+                <circle cx="10" cy="10" r="2.5" stroke="#555" stroke-width="1.2"/>
+                <path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke="#555" stroke-width="1.2" stroke-linecap="round"/>
               </svg>
             </div>
+            <span class="flow-node-label">AI<br>Assistant</span>
+          </div>
 
-            <div class="flow-node">
-              <div class="flow-node-box">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M3 4h14a1 1 0 011 1v7a1 1 0 01-1 1H7l-4 3V5a1 1 0 011-1z" stroke="#555" stroke-width="1.2" stroke-linejoin="round"/>
-                </svg>
-              </div>
-              <span class="flow-node-label">Source-Backed<br>Answers</span>
+          <div class="flow-connector">
+            <svg width="28" height="12" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="0" y1="6" x2="22" y2="6" stroke="#333" stroke-width="1.2"/>
+              <path d="M20 3l4 3-4 3" stroke="#333" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <div class="flow-node">
+            <div class="flow-node-box">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 4h14a1 1 0 011 1v7a1 1 0 01-1 1H7l-4 3V5a1 1 0 011-1z" stroke="#555" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
             </div>
+            <span class="flow-node-label">Source-Backed<br>Answers</span>
           </div>
-          <!-- End flow diagram -->
+        </div>
 
-          <div class="feature-tags">
-            <span class="tag">SOP Search</span>
-            <span class="tag">FAQ Retrieval</span>
-            <span class="tag">Policy Answers</span>
-            <span class="tag">Training Docs</span>
-            <span class="tag">Source Citations</span>
-            <span class="tag">Client Notes</span>
+        <!-- Chat window: primary focus -->
+        <div class="demo-chat-window">
+          <div class="demo-chrome">
+            <div class="demo-chrome-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span class="demo-chrome-title">AI Knowledge Base</span>
           </div>
-
-          <div class="business-outcome">
-            <span class="outcome-label">Business outcome</span>
-            <p>Employees get fast, accurate answers from approved company knowledge without digging through folders, PDFs, or old messages.</p>
-          </div>
-
-          <!-- Mock Q&A demo -->
-          <div class="demo-qa">
-            <div class="demo-qa-question">
-              <span class="demo-qa-role">Question</span>
+          <div class="demo-chat-body">
+            <div class="demo-message-user">
+              <span class="demo-role">Employee</span>
               <p>What should we do if a client asks to reschedule last minute?</p>
             </div>
-            <div class="demo-qa-answer">
-              <span class="demo-qa-role">Answer</span>
-              <p>According to the rescheduling policy, clients may reschedule once with at least 24 hours notice. Requests under 24 hours should be reviewed by a manager before confirmation.</p>
-              <div class="demo-qa-source">Source: Policies.md</div>
+            <div class="demo-message-ai">
+              <span class="demo-role">AI Assistant</span>
+              <p>According to company policy, clients may reschedule once with at least 24 hours notice. Requests under 24 hours must be reviewed by a manager before confirmation is given to the client.</p>
+              <div class="demo-sources">
+                <div class="source-pill">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Policies.pdf — Page 14
+                </div>
+                <div class="source-pill">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Client_FAQ.pdf — Page 8
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
+        <!-- Trust indicator -->
+        <div class="trust-preview">
+          <span class="trust-badge">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Verified Response
+          </span>
+          <p>Every answer is generated only from your approved company documents and can reference the exact source document and page number. The AI does not guess.</p>
+        </div>
+
+        <!-- Example prompts -->
+        <div class="demo-prompts">
+          <span class="demo-prompts-label">Example questions</span>
+          <div class="demo-prompts-pills">
+            <span class="prompt-pill">Where is our refund policy?</span>
+            <span class="prompt-pill">How do we onboard a new employee?</span>
+            <span class="prompt-pill">What is our cancellation procedure?</span>
+            <span class="prompt-pill">How do I process a customer reschedule?</span>
+          </div>
         </div>
 
       </div>
