@@ -61,6 +61,8 @@
 
   let currentSessionId = null;
   let chatSessions     = [];
+  const pendingDeletes = new Set();
+  const pendingUploads = new Map();
 
   loadDocuments();
   loadSessions();
@@ -111,26 +113,39 @@
     const name = btn.dataset.name;
     if (!confirm(`Delete "${name}" from your knowledge base? This cannot be undone.`)) return;
 
-    btn.disabled = true;
-    btn.textContent = 'Deleting…';
+    // Optimistically hide the document immediately
+    pendingDeletes.add(sourceFileId);
+    refreshDocuments();
 
     try {
       const res = await fetch(`/api/knowledge/document/${encodeURIComponent(sourceFileId)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+
       if (res.ok) {
-        loadDocuments();
+        // Poll until the document is confirmed gone from the server
+        const settled = await pollUntilSettled(async () => {
+          const docs = await fetchDocuments();
+          if (docs) renderDocuments(docs);
+          if (!docs) return false;
+          return !docs.find(d => (d.sourceFileId || d.source_file_id) === sourceFileId);
+        });
+        pendingDeletes.delete(sourceFileId);
+        if (!settled) {
+          showBanner('error', 'Delete is still processing. Refresh again in a moment.');
+        }
+        refreshDocuments();
       } else {
+        pendingDeletes.delete(sourceFileId);
         const body = await res.json().catch(() => ({}));
         showBanner('error', body.error || 'Failed to delete document.');
-        btn.disabled = false;
-        btn.textContent = 'Delete';
+        refreshDocuments();
       }
     } catch {
+      pendingDeletes.delete(sourceFileId);
       showBanner('error', 'Network error. Please try again.');
-      btn.disabled = false;
-      btn.textContent = 'Delete';
+      refreshDocuments();
     }
   });
 
@@ -168,33 +183,76 @@
     }
   });
 
-  async function loadDocuments() {
-    kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
-
+  async function fetchDocuments() {
     try {
       const res = await fetch('/api/knowledge/documents', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-
-      if (!res.ok) {
-        kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
-        return;
-      }
-
+      if (!res.ok) return null;
       const data = await res.json();
-      const documents = data.documents || data || [];
-
-      if (!documents.length) {
-        kbDocsCount.textContent = '';
-        kbDocsList.innerHTML = `<div class="empty-state"><span>No documents indexed yet. Upload your first document above.</span></div>`;
-        return;
-      }
-
-      kbDocsCount.textContent = `${documents.length} document${documents.length === 1 ? '' : 's'}`;
-      kbDocsList.innerHTML = documents.map(renderDocRow).join('');
+      return data.documents || (Array.isArray(data) ? data : []);
     } catch {
-      kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
+      return null;
     }
+  }
+
+  function renderDocuments(documents) {
+    if (documents === null) {
+      kbDocsList.innerHTML = `<div class="empty-state"><span>Failed to load documents.</span></div>`;
+      return;
+    }
+
+    const visible = documents.filter(d => {
+      const id = d.sourceFileId || d.source_file_id || '';
+      return !pendingDeletes.has(id);
+    });
+
+    const placeholders = [];
+    for (const [fileName] of pendingUploads) {
+      const alreadySettled = documents.find(d =>
+        (d.fileName || d.file_name || d.name) === fileName &&
+        (d.status === 'indexed' || d.status === 'failed')
+      );
+      if (!alreadySettled) {
+        placeholders.push({ fileName, status: 'indexing', _isPending: true });
+      }
+    }
+
+    const rows = [...placeholders, ...visible];
+
+    if (!rows.length) {
+      kbDocsCount.textContent = '';
+      kbDocsList.innerHTML = `<div class="empty-state"><span>No documents indexed yet. Upload your first document above.</span></div>`;
+      return;
+    }
+
+    kbDocsCount.textContent = `${rows.length} document${rows.length === 1 ? '' : 's'}`;
+    kbDocsList.innerHTML = rows.map(renderDocRow).join('');
+  }
+
+  async function refreshDocuments() {
+    const docs = await fetchDocuments();
+    renderDocuments(docs);
+    return docs;
+  }
+
+  function pollUntilSettled(predicate, intervalMs = 1500, timeoutMs = 45000) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = async () => {
+        if (Date.now() - start >= timeoutMs) { resolve(false); return; }
+        const done = await predicate().catch(() => false);
+        if (done) { resolve(true); return; }
+        setTimeout(tick, intervalMs);
+      };
+      setTimeout(tick, intervalMs);
+    });
+  }
+
+  async function loadDocuments() {
+    kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+    const docs = await fetchDocuments();
+    renderDocuments(docs);
   }
 
   async function loadSessions() {
@@ -280,8 +338,13 @@
       const ul = document.createElement('ul');
       sources.forEach(s => {
         const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
+        let display = name;
+        if (s && s.pages && s.pages.length > 0) {
+          const prefix = s.pages.length === 1 ? 'p.' : 'pp.';
+          display = `${name} — ${prefix} ${s.pages.join(', ')}`;
+        }
         const li = document.createElement('li');
-        li.textContent = name;
+        li.textContent = display;
         ul.appendChild(li);
       });
       srcBox.appendChild(ul);
@@ -304,10 +367,20 @@
     const badge = `<span class="badge ${badgeClass}">${escHtml(status)}</span>`;
 
     const fileName = doc.fileName || doc.file_name || doc.name || 'Untitled';
-    const sourceFileId = doc.sourceFileId || doc.source_file_id || doc.id || '';
+    const sourceFileId = doc.sourceFileId || doc.source_file_id || '';
     const date = doc.created_at
       ? new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
+
+    let deleteBtn = '';
+    if (!doc._isPending) {
+      if (sourceFileId) {
+        deleteBtn = `<button class="btn-kb-delete" data-source-id="${escHtml(sourceFileId)}" data-name="${escHtml(fileName)}">Delete</button>`;
+      } else {
+        console.warn('[portal] renderDocRow: missing sourceFileId for document', fileName, doc);
+        deleteBtn = `<button class="btn-kb-delete" disabled title="Cannot delete: document identifier is missing">Delete</button>`;
+      }
+    }
 
     return `
       <div class="kb-doc-row">
@@ -316,7 +389,7 @@
           ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
         </div>
         ${badge}
-        <button class="btn-kb-delete" data-source-id="${escHtml(sourceFileId)}" data-name="${escHtml(fileName)}">Delete</button>
+        ${deleteBtn}
       </div>
     `;
   }
@@ -341,7 +414,25 @@
       if (res.ok) {
         kbUploadStatus.textContent = `"${file.name}" uploaded. Indexing in progress…`;
         kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
-        loadDocuments();
+
+        // Show placeholder row immediately while indexing is in progress
+        pendingUploads.set(file.name, { fileName: file.name });
+        refreshDocuments();
+
+        // Poll until the document appears as indexed or failed
+        const settled = await pollUntilSettled(async () => {
+          const docs = await fetchDocuments();
+          if (docs) renderDocuments(docs);
+          if (!docs) return false;
+          const found = docs.find(d => (d.fileName || d.file_name || d.name) === file.name);
+          return !!(found && (found.status === 'indexed' || found.status === 'failed'));
+        });
+
+        pendingUploads.delete(file.name);
+        if (!settled) {
+          showBanner('error', 'Indexing is still processing. Refresh again in a moment.');
+        }
+        refreshDocuments();
       } else {
         const body = await res.json().catch(() => ({}));
         kbUploadStatus.textContent = body.error || 'Upload failed. Please try again.';
