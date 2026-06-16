@@ -64,6 +64,15 @@
   const pendingDeletes = new Set();
   const pendingUploads = new Map();
 
+  const MAX_QUERY_HEIGHT = 120;
+
+  function adjustQueryHeight() {
+    kbQueryInput.style.height = 'auto';
+    const nextHeight = Math.min(kbQueryInput.scrollHeight, MAX_QUERY_HEIGHT);
+    kbQueryInput.style.height = `${nextHeight}px`;
+    kbQueryInput.style.overflowY = kbQueryInput.scrollHeight > MAX_QUERY_HEIGHT ? 'auto' : 'hidden';
+  }
+
   loadDocuments();
   loadSessions();
 
@@ -73,11 +82,16 @@
   });
 
   kbAskBtn.addEventListener('click', askQuestion);
+  kbQueryInput.addEventListener('input', adjustQueryHeight);
   kbQueryInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') askQuestion();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      askQuestion();
+    }
   });
 
-  kbNewChatBtn.addEventListener('click', () => {
+  kbNewChatBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     currentSessionId = null;
     kbMessages.innerHTML = '';
     renderSessions(chatSessions);
@@ -451,6 +465,7 @@
     if (!query) return;
 
     kbQueryInput.value = '';
+    adjustQueryHeight();
     kbAskBtn.disabled = true;
     kbAskBtn.textContent = '…';
 

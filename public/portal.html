@@ -102,31 +102,28 @@
           <div id="kb-docs-list" class="kb-docs-list"></div>
         </div>
 
-        <!-- Chat layout: history sidebar + main chat -->
-        <div class="kb-chat-layout">
-
-          <!-- History sidebar -->
-          <div class="kb-history-sidebar">
-            <div class="kb-history-header">
-              <span class="kb-history-title">Chat History</span>
-              <button id="kb-new-chat-btn" class="btn-kb-new-chat" type="button">New Chat</button>
-            </div>
+        <!-- Chat history dropdown -->
+        <details class="kb-history-dropdown">
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Chat History</span>
+            <button id="kb-new-chat-btn" class="btn-kb-new-chat" type="button">New Chat</button>
+          </summary>
+          <div class="kb-history-body">
             <div id="kb-sessions-list" class="kb-sessions-list"></div>
             <div class="kb-history-footer">
               <button id="kb-clear-history-btn" class="btn-kb-clear-history" type="button">Clear All History</button>
             </div>
           </div>
+        </details>
 
-          <!-- Chat main -->
-          <div class="kb-chat-main">
-            <div id="kb-messages" class="kb-messages"></div>
-            <div class="assistant-search">
-              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" />
-              <button class="search-btn" id="kb-ask-btn">Ask</button>
-            </div>
-          </div>
+        <!-- Chat messages -->
+        <div id="kb-messages" class="kb-messages"></div>
 
+        <!-- Query input -->
+        <div class="assistant-search">
+          <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <textarea id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" rows="1"></textarea>
+          <button class="search-btn" id="kb-ask-btn">Ask</button>
         </div>
 
       </div>
