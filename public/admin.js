@@ -40,6 +40,7 @@
     logoutBtn.hidden = false;
     loadClients();
     loadLeads();
+    loadIssues();
   }
 
   // ---- Login form ----
@@ -441,6 +442,117 @@
     } catch {
       btn.disabled = false;
       btn.textContent = originalText;
+    }
+  });
+
+  // ---- Issues list ----
+
+  const issuesLoading = document.getElementById('issuesLoading');
+  const issuesEmpty   = document.getElementById('issuesEmpty');
+  const issuesError   = document.getElementById('issuesError');
+  const issuesTable   = document.getElementById('issuesTable');
+
+  async function loadIssues() {
+    issuesLoading.hidden = false;
+    issuesEmpty.hidden   = true;
+    issuesError.hidden   = true;
+    issuesTable.hidden   = true;
+
+    let res;
+    try {
+      res = await adminFetch('/admin/issues');
+    } catch {
+      return;
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      issuesError.textContent = body.error || 'Failed to load issues.';
+      issuesError.hidden = false;
+      issuesLoading.hidden = true;
+      return;
+    }
+
+    const issues = await res.json();
+    issuesLoading.hidden = true;
+
+    if (!Array.isArray(issues) || issues.length === 0) {
+      issuesEmpty.hidden = false;
+      return;
+    }
+
+    issuesTable.innerHTML = renderIssuesTable(issues);
+    issuesTable.hidden = false;
+  }
+
+  function renderIssuesTable(issues) {
+    const rows = issues.map(renderIssueRow).join('');
+    return `
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Client</th>
+            <th>Type</th>
+            <th>Message</th>
+            <th>Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderIssueRow(issue) {
+    const typeLabel = (issue.issue_type || 'other').replace(/_/g, ' ');
+    const msgPreview = issue.message.length > 80 ? issue.message.slice(0, 80) + '…' : issue.message;
+    const date = new Date(issue.created_at).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+
+    const statusSelect = `
+      <select class="issue-status-select" data-issue-id="${esc(issue.id)}">
+        <option value="open"      ${issue.status === 'open'      ? 'selected' : ''}>Open</option>
+        <option value="in_review" ${issue.status === 'in_review' ? 'selected' : ''}>In Review</option>
+        <option value="resolved"  ${issue.status === 'resolved'  ? 'selected' : ''}>Resolved</option>
+      </select>
+    `;
+
+    return `
+      <tr>
+        <td><div class="client-name">${esc(issue.subject)}</div></td>
+        <td><div class="client-email">${esc(issue.client_name || issue.client_id)}</div></td>
+        <td><div class="client-email">${esc(typeLabel)}</div></td>
+        <td><div class="lead-message" title="${esc(issue.message)}">${esc(msgPreview)}</div></td>
+        <td class="client-date">${date}</td>
+        <td>${statusSelect}</td>
+      </tr>
+    `;
+  }
+
+  issuesTable.addEventListener('change', async (e) => {
+    const select = e.target.closest('.issue-status-select');
+    if (!select) return;
+
+    const issueId = select.dataset.issueId;
+    const status  = select.value;
+    select.disabled = true;
+
+    try {
+      const res = await adminFetch(`/admin/issues/${issueId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Failed to update status.');
+        loadIssues();
+      }
+    } catch {
+      loadIssues();
+    } finally {
+      select.disabled = false;
     }
   });
 

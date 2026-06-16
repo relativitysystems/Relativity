@@ -510,18 +510,57 @@
     });
   }
 
-  // 10. Request handler (uses client name + email instead of clientId)
-  window.openRequest = function (type) {
-    const subjects = {
-      'new-automation': 'New Automation Request',
-      'report-issue': 'Issue Report',
-      'kb-update': 'Knowledge Base Update Request',
-      'workflow-change': 'Workflow Change Request',
-    };
-    const subject = subjects[type] || 'Portal Request';
-    const body = `Client: ${clientName}\nEmail: ${email}\n\n`;
-    window.location.href = `mailto:info@relativitysystems.ai?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
+  // 10. Issue report form
+  const issueForm = document.getElementById('issue-form');
+  if (issueForm) {
+    issueForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const subject   = document.getElementById('issue-subject').value.trim();
+      const issueType = document.getElementById('issue-type').value;
+      const message   = document.getElementById('issue-message').value.trim();
+      const errorEl   = document.getElementById('issue-error');
+      const successEl = document.getElementById('issue-success');
+      const submitBtn = document.getElementById('issue-submit');
+
+      errorEl.hidden   = true;
+      successEl.hidden = true;
+
+      if (!subject || !issueType || !message) {
+        errorEl.textContent = 'Please fill in all fields.';
+        errorEl.hidden = false;
+        return;
+      }
+
+      submitBtn.disabled    = true;
+      submitBtn.textContent = 'Submitting…';
+
+      try {
+        const res = await fetch('/api/portal/issues', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ subject, issueType, message }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Submission failed. Please try again.');
+        }
+
+        successEl.textContent = "Issue submitted. We'll be in touch within one business day.";
+        successEl.hidden = false;
+        issueForm.reset();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
+      } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Submit Issue';
+      }
+    });
+  }
 
   function showBanner(type, message) {
     const banner = document.getElementById(type === 'success' ? 'bannerSuccess' : 'bannerError');

@@ -218,6 +218,52 @@ async function deleteLead(leadId) {
   if (error) throw new Error(`deleteLead failed: ${error.message}`);
 }
 
+async function createPortalIssue({ clientId, submittedBy, submittedEmail, subject, issueType, message }) {
+  const { data, error } = await supabase
+    .from('client_portal_issues')
+    .insert({
+      client_id: clientId,
+      submitted_by: submittedBy || null,
+      submitted_email: submittedEmail || null,
+      subject,
+      issue_type: issueType,
+      message,
+    })
+    .select('id, created_at')
+    .single();
+
+  if (error) throw new Error(`createPortalIssue failed: ${error.message}`);
+  return data;
+}
+
+async function getAllPortalIssues() {
+  const { data: issues, error } = await supabase
+    .from('client_portal_issues')
+    .select('id, subject, issue_type, status, priority, message, admin_notes, created_at, updated_at, client_id')
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`getAllPortalIssues failed: ${error.message}`);
+  if (!issues || issues.length === 0) return [];
+
+  const clientIds = [...new Set(issues.map(i => i.client_id))];
+  const { data: clients } = await supabase
+    .from('clients')
+    .select('id, name')
+    .in('id', clientIds);
+
+  const clientMap = Object.fromEntries((clients || []).map(c => [c.id, c.name]));
+  return issues.map(i => ({ ...i, client_name: clientMap[i.client_id] || i.client_id }));
+}
+
+async function updatePortalIssueStatus(issueId, status) {
+  const { error } = await supabase
+    .from('client_portal_issues')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', issueId);
+
+  if (error) throw new Error(`updatePortalIssueStatus failed: ${error.message}`);
+}
+
 async function createClientUser(authUserId, clientId, email) {
   const { error } = await supabase
     .from('client_users')
@@ -244,4 +290,7 @@ module.exports = {
   updateLeadNotes,
   archiveLead,
   deleteLead,
+  createPortalIssue,
+  getAllPortalIssues,
+  updatePortalIssueStatus,
 };

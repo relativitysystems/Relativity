@@ -49,54 +49,30 @@
     <section class="portal-section" id="overview">
       <h2 class="section-label">Overview</h2>
 
-      <div class="overview-grid">
-        <div class="stat-card">
-          <span class="stat-label">Active Systems</span>
-          <span class="stat-value">—</span>
-          <span class="stat-sub">Workflows deployed</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Workflow Health</span>
-          <span class="stat-value">—</span>
-          <span class="stat-sub">All monitored</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Knowledge Base</span>
-          <span class="stat-value">—</span>
-          <span class="stat-sub">Documents indexed</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Open Requests</span>
-          <span class="stat-value">—</span>
-          <span class="stat-sub">Pending review</span>
-        </div>
-      </div>
-
       <div class="overview-panels">
         <div class="panel">
           <div class="panel-header">
             <span class="panel-title">Recent Updates</span>
           </div>
-          <div class="panel-body">
-            <div class="empty-state">
-              <span class="empty-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              </span>
-              <span>No recent updates</span>
-            </div>
+          <div class="panel-body panel-body--top">
+            <ul class="update-list">
+              <li>Knowledge base upload system is active</li>
+              <li>Document indexing and source citations are enabled</li>
+              <li>Report an Issue is available for support requests</li>
+            </ul>
           </div>
         </div>
         <div class="panel">
           <div class="panel-header">
             <span class="panel-title">Action Items</span>
           </div>
-          <div class="panel-body">
-            <div class="empty-state">
-              <span class="empty-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              </span>
-              <span>No pending actions</span>
-            </div>
+          <div class="panel-body panel-body--top">
+            <ul class="action-list">
+              <li>Upload your first 5–15 SOP, FAQ, pricing, policy, or training documents</li>
+              <li>Ask 3 test questions from your knowledge base</li>
+              <li>Review answers and confirm the source citations look correct</li>
+              <li>Send Relativity Systems any missing FAQ/SOP gaps</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -156,93 +132,35 @@
       </div>
     </section>
 
-    <!-- 3. Requests & Support -->
+    <!-- 3. Report an Issue -->
     <section class="portal-section" id="requests">
-      <h2 class="section-label">Requests & Support</h2>
-      <p class="section-desc">Submit a request and the Relativity team will respond within one business day.</p>
+      <h2 class="section-label">Report an Issue</h2>
+      <p class="section-desc">Something isn't working as expected? Let us know and we'll respond within one business day.</p>
 
-      <div class="request-grid">
-        <button class="request-card" onclick="openRequest('new-automation')">
-          <div class="request-icon">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </div>
-          <div class="request-body">
-            <span class="request-title">Request New Automation</span>
-            <span class="request-sub">Describe a workflow you'd like automated</span>
-          </div>
-          <svg class="request-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
-
-        <button class="request-card" onclick="openRequest('report-issue')">
-          <div class="request-icon request-icon--warn">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          </div>
-          <div class="request-body">
-            <span class="request-title">Report an Issue</span>
-            <span class="request-sub">Something isn't working as expected</span>
-          </div>
-          <svg class="request-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
-
-        <button class="request-card" onclick="openRequest('kb-update')">
-          <div class="request-icon">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-          </div>
-          <div class="request-body">
-            <span class="request-title">Update Knowledge Base</span>
-            <span class="request-sub">Add or update documents, SOPs, or data</span>
-          </div>
-          <svg class="request-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
-
-        <button class="request-card" onclick="openRequest('workflow-change')">
-          <div class="request-icon">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          </div>
-          <div class="request-body">
-            <span class="request-title">Workflow Change</span>
-            <span class="request-sub">Modify or adjust an existing automation</span>
-          </div>
-          <svg class="request-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </button>
-      </div>
-    </section>
-
-    <!-- 4. Documentation -->
-    <section class="portal-section" id="documentation">
-      <h2 class="section-label">Documentation</h2>
-      <p class="section-desc">Reference materials for your team — SOPs, workflow maps, and usage guides.</p>
-
-      <div class="doc-grid">
-        <div class="doc-card">
-          <div class="doc-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </div>
-          <span class="doc-name">SOPs</span>
-          <span class="doc-status">Not uploaded yet</span>
+      <form id="issue-form" class="issue-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="issue-subject">Subject</label>
+          <input type="text" id="issue-subject" class="form-input" placeholder="Brief description of the issue" required />
         </div>
-        <div class="doc-card">
-          <div class="doc-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          </div>
-          <span class="doc-name">Workflow Maps</span>
-          <span class="doc-status">Not uploaded yet</span>
+        <div class="form-group">
+          <label class="form-label" for="issue-type">Issue Type</label>
+          <select id="issue-type" class="form-input" required>
+            <option value="">Select a type…</option>
+            <option value="bug">Bug</option>
+            <option value="question">Question</option>
+            <option value="document_issue">Document Issue</option>
+            <option value="account_issue">Account Issue</option>
+            <option value="other">Other</option>
+          </select>
         </div>
-        <div class="doc-card">
-          <div class="doc-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <span class="doc-name">Onboarding Notes</span>
-          <span class="doc-status">Not uploaded yet</span>
+        <div class="form-group">
+          <label class="form-label" for="issue-message">Message</label>
+          <textarea id="issue-message" class="form-input issue-textarea" rows="4" placeholder="Describe the issue in detail…" required></textarea>
         </div>
-        <div class="doc-card">
-          <div class="doc-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          </div>
-          <span class="doc-name">Team Usage Guides</span>
-          <span class="doc-status">Not uploaded yet</span>
-        </div>
-      </div>
+        <div id="issue-error" class="banner banner--error" hidden></div>
+        <div id="issue-success" class="banner banner--success" hidden></div>
+        <button type="submit" id="issue-submit" class="btn-submit-issue">Submit Issue</button>
+      </form>
     </section>
 
   </main>

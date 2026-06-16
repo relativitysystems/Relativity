@@ -873,6 +873,119 @@ body {
   color: var(--text-muted);
 }
 
+/* ---- Panel body top-aligned variant ---- */
+.panel-body--top {
+  align-items: flex-start;
+}
+
+/* ---- Static content lists (Recent Updates, Action Items) ---- */
+.update-list,
+.action-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-list li,
+.action-list li {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.update-list li::before {
+  content: "•";
+  color: var(--success);
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.action-list li::before {
+  content: "→";
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ---- Issue form ---- */
+.issue-form {
+  max-width: 540px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.form-input {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  padding: 10px 14px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition);
+}
+
+.form-input:focus {
+  border-color: var(--border-hover);
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+select.form-input {
+  appearance: none;
+  cursor: pointer;
+}
+
+.issue-textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.btn-submit-issue {
+  margin-top: 4px;
+  padding: 9px 20px;
+  background: var(--text-primary);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.btn-submit-issue:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-submit-issue:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---- Footer ---- */
 .footer {
   padding: 20px 40px;

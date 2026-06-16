@@ -7,6 +7,7 @@ const apiKey = require('../middleware/apiKey');
 const clientAuth = require('../middleware/clientAuth');
 const googleDriveService = require('../services/googleDriveService');
 const aikbService = require('../services/aikbService');
+const supabaseService = require('../services/supabaseService');
 
 const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
 const MAX_FILE_MB = 20;
@@ -178,6 +179,27 @@ router.delete('/knowledge/document/:sourceFileId', clientAuth, async (req, res) 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/document error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/portal/issues', clientAuth, async (req, res) => {
+  const { subject, issueType, message } = req.body;
+  if (!subject || !issueType || !message) {
+    return res.status(400).json({ error: 'subject, issueType, and message are required.' });
+  }
+  try {
+    const issue = await supabaseService.createPortalIssue({
+      clientId: req.client.id,
+      submittedBy: req.user?.id || null,
+      submittedEmail: req.user?.email || null,
+      subject,
+      issueType,
+      message,
+    });
+    res.status(201).json(issue);
+  } catch (err) {
+    console.error('portal/issues POST error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

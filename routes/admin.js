@@ -103,4 +103,29 @@ router.delete('/leads/:leadId', adminAuth, async (req, res) => {
   }
 });
 
+router.get('/issues', adminAuth, async (req, res) => {
+  try {
+    const issues = await supabaseService.getAllPortalIssues();
+    res.json(issues);
+  } catch (err) {
+    console.error('admin/issues GET error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/issues/:issueId', adminAuth, async (req, res) => {
+  const { status } = req.body;
+  const validStatuses = ['open', 'in_review', 'resolved'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+  }
+  try {
+    await supabaseService.updatePortalIssueStatus(req.params.issueId, status);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('admin/issues PATCH error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
