@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig, appBaseUrl } = require('../config');
 const adminAuth = require('../middleware/adminAuth');
 const supabaseService = require('../services/supabaseService');
+const aikbService = require('../services/aikbService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -59,6 +60,72 @@ router.delete('/clients/:clientId', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('admin/delete client error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/clients/:clientId/aikb-health', adminAuth, async (req, res) => {
+  const { clientId } = req.params;
+  const [statsR, jobsR, issueR] = await Promise.allSettled([
+    aikbService.getClientDocumentStats(clientId),
+    aikbService.listIngestionJobs(clientId),
+    supabaseService.getClientIssueCount(clientId),
+  ]);
+
+  const stats = statsR.status === 'fulfilled' ? statsR.value : {};
+  const jobs = jobsR.status === 'fulfilled'
+    ? (jobsR.value.jobs || (Array.isArray(jobsR.value) ? jobsR.value : []))
+    : [];
+  const latestJob = jobs[0] || null;
+
+  res.json({
+    documentCount: stats.documentCount ?? null,
+    indexedCount: stats.indexedCount ?? null,
+    failedCount: stats.failedCount ?? null,
+    latestJobStatus: latestJob?.status ?? null,
+    lastActivity: latestJob?.updated_at || latestJob?.created_at || null,
+    issueCount: issueR.status === 'fulfilled' ? issueR.value : null,
+  });
+});
+
+router.get('/analytics', adminAuth, async (req, res) => {
+  try {
+    const [clients, issueSummary] = await Promise.all([
+      supabaseService.getAllClientsWithStatus(),
+      supabaseService.getPortalIssueSummary(),
+    ]);
+
+    const aikbStats = await Promise.allSettled(
+      clients.map(c => aikbService.getClientDocumentStats(c.id))
+    );
+
+    let totalDocuments = 0;
+    let totalIndexed = 0;
+    let totalFailed = 0;
+    let aikbDataAvailable = true;
+
+    aikbStats.forEach(result => {
+      if (result.status === 'fulfilled' && result.value.documentCount !== null) {
+        totalDocuments += result.value.documentCount;
+        totalIndexed += result.value.indexedCount;
+        totalFailed += result.value.failedCount;
+      } else {
+        aikbDataAvailable = false;
+      }
+    });
+
+    res.json({
+      clientCount: clients.length,
+      totalIssues: issueSummary.total,
+      openIssues: issueSummary.open,
+      totalDocuments: aikbDataAvailable ? totalDocuments : null,
+      totalIndexed: aikbDataAvailable ? totalIndexed : null,
+      totalFailed: aikbDataAvailable ? totalFailed : null,
+      // TODO: totalQuestions — needs a dedicated AIKB analytics endpoint
+      totalQuestions: null,
+    });
+  } catch (err) {
+    console.error('admin/analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to load analytics.' });
   }
 });
 

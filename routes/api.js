@@ -8,9 +8,10 @@ const clientAuth = require('../middleware/clientAuth');
 const googleDriveService = require('../services/googleDriveService');
 const aikbService = require('../services/aikbService');
 const supabaseService = require('../services/supabaseService');
+const config = require('../config');
 
 const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
-const MAX_FILE_MB = 20;
+const MAX_FILE_MB = config.limits.maxFileSizeMb;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -80,6 +81,17 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
   const clientId = req.client.id;
   const sourceFileId = crypto.randomUUID();
 
+  // Enforce document count limit before accepting the upload
+  try {
+    const existing = await aikbService.listDocuments(clientId);
+    const count = (existing.documents || (Array.isArray(existing) ? existing : [])).length;
+    if (count >= config.limits.maxDocuments) {
+      return res.status(429).json({
+        error: `Document limit reached (${config.limits.maxDocuments} max). Delete some documents to upload new ones.`,
+      });
+    }
+  } catch { /* non-blocking — proceed if count check fails */ }
+
   try {
     await aikbService.uploadAndIngest({
       clientId,
@@ -101,7 +113,32 @@ router.get('/knowledge/documents', clientAuth, async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('GET /api/knowledge/documents error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not load your documents. Please try again.' });
+  }
+});
+
+router.get('/knowledge/jobs', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.listIngestionJobs(req.client.id);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/jobs error:', err.message);
+    res.json({ jobs: [] }); // graceful fallback — endpoint may not exist on AIKB yet
+  }
+});
+
+router.get('/knowledge/usage', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.listDocuments(req.client.id);
+    const docs = data.documents || (Array.isArray(data) ? data : []);
+    res.json({
+      documentCount: docs.length,
+      maxDocuments: config.limits.maxDocuments,
+      maxFileSizeMb: config.limits.maxFileSizeMb,
+    });
+  } catch (err) {
+    console.error('GET /api/knowledge/usage error:', err.message);
+    res.status(500).json({ error: 'Could not load usage data.' });
   }
 });
 
@@ -115,7 +152,7 @@ router.post('/knowledge/query', clientAuth, async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('POST /api/knowledge/query error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not get an answer. Please try again.' });
   }
 });
 
@@ -125,7 +162,7 @@ router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error('GET /api/knowledge/chat/sessions error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not load chat history.' });
   }
 });
 
@@ -135,7 +172,7 @@ router.get('/knowledge/chat/sessions/:sessionId/messages', clientAuth, async (re
     res.json(data);
   } catch (err) {
     console.error('GET /api/knowledge/chat/sessions/:sessionId/messages error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not load messages.' });
   }
 });
 
@@ -145,7 +182,7 @@ router.delete('/knowledge/chat/sessions/:sessionId', clientAuth, async (req, res
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/chat/sessions/:sessionId error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not delete session.' });
   }
 });
 
@@ -155,7 +192,7 @@ router.delete('/knowledge/chat/history', clientAuth, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/chat/history error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not clear history.' });
   }
 });
 
@@ -169,7 +206,7 @@ router.patch('/knowledge/chat/sessions/:sessionId/title', clientAuth, async (req
     res.json(data);
   } catch (err) {
     console.error('PATCH /api/knowledge/chat/sessions/:sessionId/title error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not update session title.' });
   }
 });
 
@@ -179,7 +216,7 @@ router.delete('/knowledge/document/:sourceFileId', clientAuth, async (req, res) 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/document error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not delete document. Please try again.' });
   }
 });
 
@@ -200,7 +237,7 @@ router.post('/portal/issues', clientAuth, async (req, res) => {
     res.status(201).json(issue);
   } catch (err) {
     console.error('portal/issues POST error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not submit your issue. Please try again.' });
   }
 });
 

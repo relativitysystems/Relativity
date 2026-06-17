@@ -32,17 +32,17 @@
         <span class="portal-identity-label">Signed in as</span>
         <span class="portal-identity-name" id="clientIdentityName">Loading…</span>
         <span class="portal-identity-id" id="clientIdentityId"></span>
-
-        <!-- <div class="banner banner--success banner--compact" id="bannerSuccess" hidden>
-          <span class="banner-icon">&#10003;</span>
-          <span id="bannerSuccessText">Successfully connected.</span>
-        </div>
-
-        <div class="banner banner--error banner--compact" id="bannerError" hidden>
-          <span class="banner-icon">&#10005;</span>
-          <span id="bannerErrorText">Connection failed. Please try again.</span>
-        </div> -->
       </div>
+    </div>
+
+    <div class="banner banner--success" id="bannerSuccess" hidden>
+      <span class="banner-icon">&#10003;</span>
+      <span id="bannerSuccessText">Successfully connected.</span>
+    </div>
+
+    <div class="banner banner--error" id="bannerError" hidden>
+      <span class="banner-icon">&#10005;</span>
+      <span id="bannerErrorText">Connection failed. Please try again.</span>
     </div>
 
     <!-- 1. Overview -->
@@ -52,26 +52,22 @@
       <div class="overview-panels">
         <div class="panel">
           <div class="panel-header">
-            <span class="panel-title">Recent Updates</span>
+            <span class="panel-title">Setup Progress</span>
           </div>
-          <div class="panel-body panel-body--top">
-            <ul class="update-list">
-              <li>Knowledge base upload system is active</li>
-              <li>Document indexing and source citations are enabled</li>
-              <li>Report an Issue is available for support requests</li>
-            </ul>
+          <div class="panel-body panel-body--top" id="progress-checklist">
+            <div class="empty-state"><span>Loading…</span></div>
           </div>
         </div>
         <div class="panel">
           <div class="panel-header">
-            <span class="panel-title">Action Items</span>
+            <span class="panel-title">Quick Tips</span>
           </div>
           <div class="panel-body panel-body--top">
-            <ul class="action-list">
-              <li>Upload your first 5–15 SOP, FAQ, pricing, policy, or training documents</li>
-              <li>Ask 3 test questions from your knowledge base</li>
-              <li>Review answers and confirm the source citations look correct</li>
-              <li>Send Relativity Systems any missing FAQ/SOP gaps</li>
+            <ul class="update-list">
+              <li>Upload SOP, FAQ, pricing, or training documents</li>
+              <li>Ask test questions to verify your knowledge base</li>
+              <li>Check source citations to confirm accuracy</li>
+              <li>Report any gaps or issues using the form below</li>
             </ul>
           </div>
         </div>
@@ -100,6 +96,14 @@
             <span id="kb-docs-count" class="kb-docs-count"></span>
           </div>
           <div id="kb-docs-list" class="kb-docs-list"></div>
+        </div>
+
+        <!-- Ingestion Jobs -->
+        <div class="kb-jobs-section">
+          <div class="kb-docs-header">
+            <span class="kb-docs-title">Recent Ingestion Jobs</span>
+          </div>
+          <div id="kb-jobs-list" class="kb-docs-list"></div>
         </div>
 
         <!-- Chat history dropdown -->

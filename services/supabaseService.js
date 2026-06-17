@@ -272,6 +272,29 @@ async function createClientUser(authUserId, clientId, email) {
   if (error) throw new Error(`Supabase createClientUser failed: ${error.message}`);
 }
 
+async function getClientIssueCount(clientId) {
+  const { count, error } = await supabase
+    .from('client_portal_issues')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId);
+
+  if (error) throw new Error(`getClientIssueCount failed: ${error.message}`);
+  return count || 0;
+}
+
+async function getPortalIssueSummary() {
+  const { data, error } = await supabase
+    .from('client_portal_issues')
+    .select('status');
+
+  if (error) throw new Error(`getPortalIssueSummary failed: ${error.message}`);
+  const all = data || [];
+  return {
+    total: all.length,
+    open: all.filter(i => i.status === 'open').length,
+  };
+}
+
 module.exports = {
   upsertToken,
   getToken,
@@ -293,4 +316,6 @@ module.exports = {
   createPortalIssue,
   getAllPortalIssues,
   updatePortalIssueStatus,
+  getClientIssueCount,
+  getPortalIssueSummary,
 };

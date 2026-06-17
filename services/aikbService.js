@@ -141,6 +141,33 @@ async function deleteDocument(clientId, sourceFileId) {
   }
 }
 
+async function listIngestionJobs(clientId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/jobs/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    if (err.response?.status === 404) return { jobs: [] };
+    throw new Error(`AIKB listIngestionJobs failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function getClientDocumentStats(clientId) {
+  try {
+    const data = await listDocuments(clientId);
+    const docs = data.documents || (Array.isArray(data) ? data : []);
+    return {
+      documentCount: docs.length,
+      indexedCount: docs.filter(d => d.status === 'indexed').length,
+      failedCount: docs.filter(d => d.status === 'failed').length,
+    };
+  } catch {
+    return { documentCount: null, indexedCount: null, failedCount: null };
+  }
+}
+
 module.exports = {
   uploadAndIngest,
   listDocuments,
@@ -151,4 +178,6 @@ module.exports = {
   deleteChatSession,
   clearChatHistory,
   updateChatSessionTitle,
+  listIngestionJobs,
+  getClientDocumentStats,
 };

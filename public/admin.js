@@ -38,6 +38,7 @@
     loginView.hidden = true;
     dashboardView.hidden = false;
     logoutBtn.hidden = false;
+    loadAnalytics();
     loadClients();
     loadLeads();
     loadIssues();
@@ -83,6 +84,150 @@
     clearToken();
     showLogin();
   });
+
+  // ---- Analytics ----
+
+  const analyticsLoading = document.getElementById('analyticsLoading');
+  const analyticsError   = document.getElementById('analyticsError');
+  const analyticsPanel   = document.getElementById('analyticsPanel');
+
+  async function loadAnalytics() {
+    analyticsLoading.hidden = false;
+    analyticsError.hidden = true;
+    analyticsPanel.hidden = true;
+
+    let res;
+    try {
+      res = await adminFetch('/admin/analytics');
+    } catch {
+      return;
+    }
+
+    analyticsLoading.hidden = true;
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      analyticsError.textContent = body.error || 'Failed to load analytics.';
+      analyticsError.hidden = false;
+      return;
+    }
+
+    const data = await res.json();
+
+    const stat = (val, label, note) => `
+      <div class="analytics-card">
+        <div class="analytics-value">${val !== null && val !== undefined ? esc(String(val)) : '—'}</div>
+        <div class="analytics-label">${esc(label)}${note ? `<span class="analytics-todo">${esc(note)}</span>` : ''}</div>
+      </div>
+    `;
+
+    analyticsPanel.innerHTML = `
+      <div class="analytics-grid">
+        ${stat(data.clientCount,    'Total Clients')}
+        ${stat(data.totalDocuments, 'Total Documents')}
+        ${stat(data.totalIndexed,   'Indexed')}
+        ${stat(data.totalFailed,    'Failed Documents')}
+        ${stat(data.openIssues,     'Open Issues')}
+        ${stat(data.totalQuestions, 'Total Questions', 'coming soon')}
+      </div>
+    `;
+    analyticsPanel.hidden = false;
+  }
+
+  // ---- AIKB Health ----
+
+  const aikbHealthLoading = document.getElementById('aikbHealthLoading');
+  const aikbHealthEmpty   = document.getElementById('aikbHealthEmpty');
+  const aikbHealthError   = document.getElementById('aikbHealthError');
+  const aikbHealthTable   = document.getElementById('aikbHealthTable');
+
+  document.getElementById('loadAikbHealthBtn').addEventListener('click', loadAikbHealth);
+
+  async function loadAikbHealth() {
+    aikbHealthLoading.hidden = false;
+    aikbHealthEmpty.hidden   = true;
+    aikbHealthError.hidden   = true;
+    aikbHealthTable.hidden   = true;
+
+    // Re-use client list rather than making a separate call
+    let clients;
+    let res;
+    try {
+      res = await adminFetch('/admin/clients');
+      clients = await res.json();
+    } catch {
+      aikbHealthLoading.hidden = true;
+      return;
+    }
+
+    if (!Array.isArray(clients) || clients.length === 0) {
+      aikbHealthLoading.hidden = true;
+      aikbHealthEmpty.hidden = false;
+      return;
+    }
+
+    // Fetch health for each client in parallel
+    const healthResults = await Promise.allSettled(
+      clients.map(c =>
+        adminFetch(`/admin/clients/${encodeURIComponent(c.id)}/aikb-health`)
+          .then(r => r.json())
+          .catch(() => ({}))
+      )
+    );
+
+    aikbHealthLoading.hidden = true;
+
+    const jobStatusBadge = (status) => {
+      if (!status) return '—';
+      const cls = {
+        completed: 'badge--active',
+        running:   'badge--pending',
+        queued:    'badge--pending',
+        failed:    'badge--closed_lost',
+      }[status] || '';
+      return `<span class="badge ${cls}">${esc(status)}</span>`;
+    };
+
+    const rows = clients.map((c, i) => {
+      const h = healthResults[i].status === 'fulfilled' ? (healthResults[i].value || {}) : {};
+      const lastActivity = h.lastActivity
+        ? new Date(h.lastActivity).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '—';
+
+      return `
+        <tr>
+          <td>
+            <div class="client-name">${esc(c.name)}</div>
+            <div class="client-email">${esc(c.email)}</div>
+          </td>
+          <td>${h.documentCount ?? '—'}</td>
+          <td>${h.indexedCount  ?? '—'}</td>
+          <td>${h.failedCount   ?? '—'}</td>
+          <td>${jobStatusBadge(h.latestJobStatus)}</td>
+          <td class="client-date">${lastActivity}</td>
+          <td>${h.issueCount ?? '—'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    aikbHealthTable.innerHTML = `
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Docs</th>
+            <th>Indexed</th>
+            <th>Failed</th>
+            <th>Latest Job</th>
+            <th>Last Activity</th>
+            <th>Issues</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+    aikbHealthTable.hidden = false;
+  }
 
   // ---- Invite form ----
 

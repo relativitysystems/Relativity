@@ -64,6 +64,10 @@
   const pendingDeletes = new Set();
   const pendingUploads = new Map();
 
+  // Shared state for onboarding progress — updated as docs and sessions load
+  let loadedDocs     = null;
+  let loadedSessions = null;
+
   const MAX_QUERY_HEIGHT = 120;
 
   function adjustQueryHeight() {
@@ -75,6 +79,7 @@
 
   loadDocuments();
   loadSessions();
+  loadJobs();
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
@@ -107,9 +112,11 @@
       });
       if (res.ok) {
         chatSessions = [];
+        loadedSessions = [];
         currentSessionId = null;
         kbMessages.innerHTML = '';
         renderSessions([]);
+        maybeUpdateProgress();
       } else {
         const body = await res.json().catch(() => ({}));
         showBanner('error', body.error || 'Failed to clear history.');
@@ -175,11 +182,13 @@
         });
         if (res.ok) {
           chatSessions = chatSessions.filter(s => (s.id || s.session_id) !== sessionId);
+          loadedSessions = chatSessions;
           if (currentSessionId === sessionId) {
             currentSessionId = null;
             kbMessages.innerHTML = '';
           }
           renderSessions(chatSessions);
+          maybeUpdateProgress();
         } else {
           const body = await res.json().catch(() => ({}));
           showBanner('error', body.error || 'Failed to delete session.');
@@ -266,7 +275,9 @@
   async function loadDocuments() {
     kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
     const docs = await fetchDocuments();
+    loadedDocs = docs || [];
     renderDocuments(docs);
+    maybeUpdateProgress();
   }
 
   async function loadSessions() {
@@ -274,13 +285,119 @@
       const res = await fetch('/api/knowledge/chat/sessions', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (!res.ok) { renderSessions([]); return; }
+      if (!res.ok) { loadedSessions = []; renderSessions([]); maybeUpdateProgress(); return; }
       const data = await res.json();
       chatSessions = data.sessions || (Array.isArray(data) ? data : []);
+      loadedSessions = chatSessions;
       renderSessions(chatSessions);
+      maybeUpdateProgress();
     } catch {
+      loadedSessions = [];
       renderSessions([]);
+      maybeUpdateProgress();
     }
+  }
+
+  // ---- Onboarding Progress ----
+
+  function maybeUpdateProgress() {
+    if (loadedDocs !== null) {
+      renderOnboardingProgress(loadedDocs, loadedSessions || []);
+    }
+  }
+
+  function renderOnboardingProgress(docs, sessions) {
+    const el = document.getElementById('progress-checklist');
+    if (!el) return;
+
+    const hasUploaded = docs.length > 0;
+    const hasIndexed  = docs.some(d => d.status === 'indexed');
+    const hasAsked    = sessions.length > 0;
+    const isReady     = hasUploaded && hasIndexed && hasAsked;
+
+    const steps = [
+      { label: 'Account created',           done: true },
+      { label: 'First document uploaded',   done: hasUploaded },
+      { label: 'Documents indexed',         done: hasIndexed },
+      { label: 'First test question asked', done: hasAsked },
+      { label: 'Ready for review',          done: isReady },
+    ];
+
+    const doneCount = steps.filter(s => s.done).length;
+
+    el.innerHTML = `
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" style="width:${Math.round((doneCount / steps.length) * 100)}%"></div>
+      </div>
+      <ul class="progress-steps">
+        ${steps.map(s => `
+          <li class="progress-step ${s.done ? 'progress-step--done' : 'progress-step--pending'}">
+            <span class="progress-icon">${s.done ? '✓' : '○'}</span>
+            <span>${escHtml(s.label)}</span>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  }
+
+  // ---- Ingestion Jobs ----
+
+  async function loadJobs() {
+    const jobsList = document.getElementById('kb-jobs-list');
+    if (!jobsList) return;
+    jobsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+
+    try {
+      const res = await fetch('/api/knowledge/jobs', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) { renderJobs([]); return; }
+      const data = await res.json();
+      const jobs = data.jobs || (Array.isArray(data) ? data : []);
+      renderJobs(jobs);
+    } catch {
+      renderJobs([]);
+    }
+  }
+
+  function renderJobs(jobs) {
+    const jobsList = document.getElementById('kb-jobs-list');
+    if (!jobsList) return;
+
+    if (!jobs.length) {
+      jobsList.innerHTML = `<div class="empty-state"><span>No ingestion jobs yet.</span></div>`;
+      return;
+    }
+
+    const recent = jobs.slice(0, 5);
+    jobsList.innerHTML = recent.map(job => {
+      const status = job.status || 'unknown';
+      const statusClass = {
+        completed: 'badge--indexed',
+        running:   'badge--indexing',
+        queued:    'badge--indexing',
+        failed:    'badge--failed',
+      }[status] || 'badge--indexing';
+
+      const name = job.fileName || job.file_name || job.sourceFileId || job.source_file_id || 'Unknown file';
+      const date = job.created_at
+        ? new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '';
+      const errorHtml = status === 'failed' && job.error_message
+        ? `<span class="kb-doc-meta kb-job-error">${escHtml(job.error_message)}</span>`
+        : '';
+
+      return `
+        <div class="kb-doc-row">
+          <div class="kb-doc-info">
+            <span class="kb-doc-name">${escHtml(name)}</span>
+            ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
+            ${errorHtml}
+          </div>
+          <span class="badge ${statusClass}">${escHtml(status)}</span>
+        </div>
+      `;
+    }).join('');
   }
 
   function renderSessions(sessions) {
@@ -425,6 +542,15 @@
         body: formData,
       });
 
+      const body = await res.json().catch(() => ({}));
+
+      if (res.status === 429) {
+        kbUploadStatus.textContent = body.error || 'Document limit reached.';
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+        kbUploadBtn.disabled = false;
+        return;
+      }
+
       if (res.ok) {
         kbUploadStatus.textContent = `"${file.name}" uploaded. Indexing in progress…`;
         kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
@@ -436,7 +562,11 @@
         // Poll until the document appears as indexed or failed
         const settled = await pollUntilSettled(async () => {
           const docs = await fetchDocuments();
-          if (docs) renderDocuments(docs);
+          if (docs) {
+            loadedDocs = docs;
+            renderDocuments(docs);
+            maybeUpdateProgress();
+          }
           if (!docs) return false;
           const found = docs.find(d => (d.fileName || d.file_name || d.name) === file.name);
           return !!(found && (found.status === 'indexed' || found.status === 'failed'));
@@ -446,9 +576,10 @@
         if (!settled) {
           showBanner('error', 'Indexing is still processing. Refresh again in a moment.');
         }
-        refreshDocuments();
+        const finalDocs = await refreshDocuments();
+        if (finalDocs) { loadedDocs = finalDocs; maybeUpdateProgress(); }
+        loadJobs();
       } else {
-        const body = await res.json().catch(() => ({}));
         kbUploadStatus.textContent = body.error || 'Upload failed. Please try again.';
         kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
       }
