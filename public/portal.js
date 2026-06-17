@@ -349,12 +349,10 @@
   // ---- Ingestion Jobs ----
 
   async function loadJobs() {
-    const jobsList     = document.getElementById('kb-jobs-list');
-    const overviewList = document.getElementById('overview-jobs-list');
+    const jobsList = document.getElementById('kb-jobs-list');
     const loading = `<div class="empty-state"><span>Loading…</span></div>`;
-    if (jobsList)     jobsList.innerHTML     = loading;
-    if (overviewList) overviewList.innerHTML = loading;
-    if (!jobsList && !overviewList) return;
+    if (jobsList) jobsList.innerHTML = loading;
+    if (!jobsList) return;
 
     try {
       const res = await fetch('/api/knowledge/jobs', {
@@ -384,13 +382,11 @@
   }
 
   function renderJobs(jobs) {
-    const jobsList     = document.getElementById('kb-jobs-list');
-    const overviewList = document.getElementById('overview-jobs-list');
+    const jobsList = document.getElementById('kb-jobs-list');
 
     if (!jobs.length) {
       const empty = `<div class="empty-state"><span>No ingestion jobs yet.</span></div>`;
-      if (jobsList)     jobsList.innerHTML     = empty;
-      if (overviewList) overviewList.innerHTML = empty;
+      if (jobsList) jobsList.innerHTML = empty;
       return;
     }
 
@@ -424,8 +420,7 @@
       `;
     }).join('');
 
-    if (jobsList)     jobsList.innerHTML     = html;
-    if (overviewList) overviewList.innerHTML = html;
+    if (jobsList) jobsList.innerHTML = html;
   }
 
   function renderSessions(sessions) {

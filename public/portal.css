@@ -577,6 +577,10 @@ body {
   animation: kb-slide-down 0.18s ease;
 }
 
+.kb-collapsible-pad {
+  padding: 12px 14px;
+}
+
 @keyframes kb-slide-down {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }

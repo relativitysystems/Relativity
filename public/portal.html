@@ -71,14 +71,6 @@
             </ul>
           </div>
         </div>
-        <div class="panel">
-          <div class="panel-header">
-            <span class="panel-title">Recent Ingestion Jobs</span>
-          </div>
-          <div class="panel-body panel-body--top" id="overview-jobs-list">
-            <div class="empty-state"><span>Loading…</span></div>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -98,21 +90,29 @@
         <p id="kb-upload-status" class="kb-upload-status" hidden></p>
 
         <!-- Indexed documents -->
-        <div class="kb-docs-section">
-          <div class="kb-docs-header">
-            <span class="kb-docs-title">Indexed Documents</span>
+        <details class="kb-history-dropdown" open>
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Indexed Documents</span>
             <span id="kb-docs-count" class="kb-docs-count"></span>
+          </summary>
+          <div class="kb-history-body">
+            <div class="kb-collapsible-pad">
+              <div id="kb-docs-list" class="kb-docs-list"></div>
+            </div>
           </div>
-          <div id="kb-docs-list" class="kb-docs-list"></div>
-        </div>
+        </details>
 
         <!-- Ingestion Jobs -->
-        <div class="kb-jobs-section">
-          <div class="kb-docs-header">
-            <span class="kb-docs-title">Recent Ingestion Jobs</span>
+        <details class="kb-history-dropdown" open>
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Recent Ingestion Jobs</span>
+          </summary>
+          <div class="kb-history-body">
+            <div class="kb-collapsible-pad">
+              <div id="kb-jobs-list" class="kb-docs-list"></div>
+            </div>
           </div>
-          <div id="kb-jobs-list" class="kb-docs-list"></div>
-        </div>
+        </details>
 
         <!-- Chat history dropdown -->
         <details class="kb-history-dropdown">
