@@ -154,6 +154,32 @@ async function listIngestionJobs(clientId) {
   }
 }
 
+async function getClientSummary(clientId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/summary/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    if (err.response?.status === 404) return {};
+    throw new Error(`AIKB getClientSummary failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function getClientAnalytics(clientId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/analytics/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    if (err.response?.status === 404) return {};
+    throw new Error(`AIKB getClientAnalytics failed: ${extractAxiosError(err)}`);
+  }
+}
+
 async function getClientDocumentStats(clientId) {
   try {
     const data = await listDocuments(clientId);
@@ -179,5 +205,7 @@ module.exports = {
   clearChatHistory,
   updateChatSessionTitle,
   listIngestionJobs,
+  getClientSummary,
+  getClientAnalytics,
   getClientDocumentStats,
 };

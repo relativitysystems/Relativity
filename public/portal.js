@@ -65,8 +65,9 @@
   const pendingUploads = new Map();
 
   // Shared state for onboarding progress — updated as docs and sessions load
-  let loadedDocs     = null;
-  let loadedSessions = null;
+  let loadedDocs      = null;
+  let loadedSessions  = null;
+  let loadedAnalytics = null;
 
   const MAX_QUERY_HEIGHT = 120;
 
@@ -80,6 +81,7 @@
   loadDocuments();
   loadSessions();
   loadJobs();
+  loadAnalytics();
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
@@ -302,17 +304,21 @@
 
   function maybeUpdateProgress() {
     if (loadedDocs !== null) {
-      renderOnboardingProgress(loadedDocs, loadedSessions || []);
+      renderOnboardingProgress(loadedDocs, loadedSessions || [], loadedAnalytics);
     }
   }
 
-  function renderOnboardingProgress(docs, sessions) {
+  function renderOnboardingProgress(docs, sessions, analytics) {
     const el = document.getElementById('progress-checklist');
     if (!el) return;
 
     const hasUploaded = docs.length > 0;
-    const hasIndexed  = docs.some(d => d.status === 'indexed');
-    const hasAsked    = sessions.length > 0;
+    const hasIndexed  = analytics
+      ? (analytics.indexedDocuments ?? analytics.indexed_documents ?? 0) > 0
+      : docs.some(d => d.status === 'indexed');
+    const hasAsked    = analytics
+      ? (analytics.totalQuestions ?? analytics.total_questions ?? 0) > 0
+      : sessions.length > 0;
     const isReady     = hasUploaded && hasIndexed && hasAsked;
 
     const steps = [
@@ -343,9 +349,12 @@
   // ---- Ingestion Jobs ----
 
   async function loadJobs() {
-    const jobsList = document.getElementById('kb-jobs-list');
-    if (!jobsList) return;
-    jobsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+    const jobsList     = document.getElementById('kb-jobs-list');
+    const overviewList = document.getElementById('overview-jobs-list');
+    const loading = `<div class="empty-state"><span>Loading…</span></div>`;
+    if (jobsList)     jobsList.innerHTML     = loading;
+    if (overviewList) overviewList.innerHTML = loading;
+    if (!jobsList && !overviewList) return;
 
     try {
       const res = await fetch('/api/knowledge/jobs', {
@@ -360,17 +369,33 @@
     }
   }
 
+  async function loadAnalytics() {
+    try {
+      const res = await fetch('/api/knowledge/analytics', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) { loadedAnalytics = null; maybeUpdateProgress(); return; }
+      loadedAnalytics = await res.json();
+      maybeUpdateProgress();
+    } catch {
+      loadedAnalytics = null;
+      maybeUpdateProgress();
+    }
+  }
+
   function renderJobs(jobs) {
-    const jobsList = document.getElementById('kb-jobs-list');
-    if (!jobsList) return;
+    const jobsList     = document.getElementById('kb-jobs-list');
+    const overviewList = document.getElementById('overview-jobs-list');
 
     if (!jobs.length) {
-      jobsList.innerHTML = `<div class="empty-state"><span>No ingestion jobs yet.</span></div>`;
+      const empty = `<div class="empty-state"><span>No ingestion jobs yet.</span></div>`;
+      if (jobsList)     jobsList.innerHTML     = empty;
+      if (overviewList) overviewList.innerHTML = empty;
       return;
     }
 
     const recent = jobs.slice(0, 5);
-    jobsList.innerHTML = recent.map(job => {
+    const html = recent.map(job => {
       const status = job.status || 'unknown';
       const statusClass = {
         completed: 'badge--indexed',
@@ -398,6 +423,9 @@
         </div>
       `;
     }).join('');
+
+    if (jobsList)     jobsList.innerHTML     = html;
+    if (overviewList) overviewList.innerHTML = html;
   }
 
   function renderSessions(sessions) {

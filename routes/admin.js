@@ -65,25 +65,31 @@ router.delete('/clients/:clientId', adminAuth, async (req, res) => {
 
 router.get('/clients/:clientId/aikb-health', adminAuth, async (req, res) => {
   const { clientId } = req.params;
-  const [statsR, jobsR, issueR] = await Promise.allSettled([
-    aikbService.getClientDocumentStats(clientId),
+  const [summaryR, analyticsR, jobsR, issueR] = await Promise.allSettled([
+    aikbService.getClientSummary(clientId),
+    aikbService.getClientAnalytics(clientId),
     aikbService.listIngestionJobs(clientId),
     supabaseService.getClientIssueCount(clientId),
   ]);
 
-  const stats = statsR.status === 'fulfilled' ? statsR.value : {};
-  const jobs = jobsR.status === 'fulfilled'
+  const summary   = summaryR.status   === 'fulfilled' ? (summaryR.value   || {}) : {};
+  const analytics = analyticsR.status === 'fulfilled' ? (analyticsR.value || {}) : {};
+  const jobs      = jobsR.status      === 'fulfilled'
     ? (jobsR.value.jobs || (Array.isArray(jobsR.value) ? jobsR.value : []))
     : [];
   const latestJob = jobs[0] || null;
 
   res.json({
-    documentCount: stats.documentCount ?? null,
-    indexedCount: stats.indexedCount ?? null,
-    failedCount: stats.failedCount ?? null,
-    latestJobStatus: latestJob?.status ?? null,
-    lastActivity: latestJob?.updated_at || latestJob?.created_at || null,
-    issueCount: issueR.status === 'fulfilled' ? issueR.value : null,
+    totalDocuments:     summary.totalDocuments     ?? summary.documentCount   ?? null,
+    indexedDocuments:   summary.indexedDocuments   ?? summary.indexedCount    ?? null,
+    failedDocuments:    summary.failedDocuments     ?? summary.failedCount     ?? null,
+    indexingDocuments:  summary.indexingDocuments   ?? null,
+    totalQuestions:     analytics.totalQuestions    ?? null,
+    totalKnowledgeGaps: analytics.totalKnowledgeGaps ?? analytics.knowledgeGaps ?? null,
+    latestIngestionJob: latestJob ? { status: latestJob.status, created_at: latestJob.created_at } : null,
+    lastQuestionAt:     analytics.lastQuestionAt   ?? null,
+    lastIndexedAt:      summary.lastIndexedAt      ?? null,
+    issueCount:         issueR.status === 'fulfilled' ? issueR.value : null,
   });
 });
 

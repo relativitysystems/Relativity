@@ -177,7 +177,12 @@
 
     aikbHealthLoading.hidden = true;
 
-    const jobStatusBadge = (status) => {
+    const fmtDate = (val) => val
+      ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+
+    const jobStatusBadge = (job) => {
+      const status = job?.status;
       if (!status) return '—';
       const cls = {
         completed: 'badge--active',
@@ -190,9 +195,12 @@
 
     const rows = clients.map((c, i) => {
       const h = healthResults[i].status === 'fulfilled' ? (healthResults[i].value || {}) : {};
-      const lastActivity = h.lastActivity
-        ? new Date(h.lastActivity).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : '—';
+
+      const lastActiveTimestamp = [
+        h.lastQuestionAt,
+        h.latestIngestionJob?.created_at,
+        h.lastIndexedAt,
+      ].filter(Boolean).sort().at(-1) || null;
 
       return `
         <tr>
@@ -200,11 +208,16 @@
             <div class="client-name">${esc(c.name)}</div>
             <div class="client-email">${esc(c.email)}</div>
           </td>
-          <td>${h.documentCount ?? '—'}</td>
-          <td>${h.indexedCount  ?? '—'}</td>
-          <td>${h.failedCount   ?? '—'}</td>
-          <td>${jobStatusBadge(h.latestJobStatus)}</td>
-          <td class="client-date">${lastActivity}</td>
+          <td>${h.totalDocuments    ?? '—'}</td>
+          <td>${h.indexedDocuments  ?? '—'}</td>
+          <td>${h.failedDocuments   ?? '—'}</td>
+          <td>${h.indexingDocuments ?? '—'}</td>
+          <td>${h.totalQuestions    ?? '—'}</td>
+          <td>${h.totalKnowledgeGaps ?? '—'}</td>
+          <td>${jobStatusBadge(h.latestIngestionJob)}</td>
+          <td class="client-date">${fmtDate(h.lastQuestionAt)}</td>
+          <td class="client-date">${fmtDate(h.lastIndexedAt)}</td>
+          <td class="client-date">${fmtDate(lastActiveTimestamp)}</td>
           <td>${h.issueCount ?? '—'}</td>
         </tr>
       `;
@@ -215,11 +228,16 @@
         <thead>
           <tr>
             <th>Client</th>
-            <th>Docs</th>
+            <th>Total Docs</th>
             <th>Indexed</th>
             <th>Failed</th>
+            <th>Indexing</th>
+            <th>Questions</th>
+            <th>Gaps</th>
             <th>Latest Job</th>
-            <th>Last Activity</th>
+            <th>Last Question</th>
+            <th>Last Indexed</th>
+            <th>Last Active</th>
             <th>Issues</th>
           </tr>
         </thead>

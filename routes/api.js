@@ -127,6 +127,26 @@ router.get('/knowledge/jobs', clientAuth, async (req, res) => {
   }
 });
 
+router.get('/knowledge/summary', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.getClientSummary(req.client.id);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/summary error:', err.message);
+    res.status(500).json({ error: 'Could not load your AI knowledge base data. Please try again.' });
+  }
+});
+
+router.get('/knowledge/analytics', clientAuth, async (req, res) => {
+  try {
+    const data = await aikbService.getClientAnalytics(req.client.id);
+    res.json(data);
+  } catch (err) {
+    console.error('GET /api/knowledge/analytics error:', err.message);
+    res.status(500).json({ error: 'Could not load analytics. Please try again.' });
+  }
+});
+
 router.get('/knowledge/usage', clientAuth, async (req, res) => {
   try {
     const data = await aikbService.listDocuments(req.client.id);
