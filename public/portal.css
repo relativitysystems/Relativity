@@ -1061,7 +1061,7 @@ select.form-input {
 
 .progress-bar {
   height: 100%;
-  background: var(--success);
+  background: var(--warn);
   border-radius: 2px;
   transition: width 0.4s ease;
 }
@@ -1091,7 +1091,7 @@ select.form-input {
   width: 16px;
   text-align: center;
   flex-shrink: 0;
-  color: var(--success);
+  color: var(--warn);
 }
 
 .progress-step--pending .progress-icon { color: var(--text-muted); }

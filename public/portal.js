@@ -313,9 +313,11 @@
     if (!el) return;
 
     const hasUploaded = docs.length > 0;
-    const hasIndexed  = analytics
+    const docsIndexed     = docs.some(d => d.status === 'indexed');
+    const analyticsIndexed = analytics
       ? (analytics.indexedDocuments ?? analytics.indexed_documents ?? 0) > 0
-      : docs.some(d => d.status === 'indexed');
+      : false;
+    const hasIndexed  = docsIndexed || analyticsIndexed;
     const hasAsked    = analytics
       ? (analytics.totalQuestions ?? analytics.total_questions ?? 0) > 0
       : sessions.length > 0;
@@ -517,8 +519,8 @@
 
   function renderDocRow(doc) {
     const status = doc.status || 'indexing';
-    const badgeClass = { indexed: 'badge--indexed', indexing: 'badge--indexing', failed: 'badge--failed' }[status] || 'badge--indexing';
-    const badge = `<span class="badge ${badgeClass}">${escHtml(status)}</span>`;
+    const badgeClass = { indexing: 'badge--indexing', failed: 'badge--failed' }[status];
+    const badge = badgeClass ? `<span class="badge ${badgeClass}">${escHtml(status)}</span>` : '';
 
     const fileName = doc.fileName || doc.file_name || doc.name || 'Untitled';
     const sourceFileId = doc.sourceFileId || doc.source_file_id || '';
