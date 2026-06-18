@@ -24,12 +24,19 @@
     return;
   }
 
-  const { clientId, clientName, email } = me;
+  const { clientId, clientName, email, memberId, memberRole } = me;
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
   if (identityName) identityName.textContent = clientName || 'Client';
   if (identityId)   identityId.textContent   = clientId ? `Client ID: ${shortId(clientId)}` : '';
+
+  // Show team section for owner and admin roles
+  if (memberRole === 'owner' || memberRole === 'admin') {
+    const teamSection = document.getElementById('section-team');
+    if (teamSection) teamSection.style.display = '';
+    initTeamSection();
+  }
 
   // 4. Handle post-OAuth redirect params
   const params = new URLSearchParams(window.location.search);
@@ -738,6 +745,206 @@
       text.textContent = message;
       banner.hidden = false;
     }
+  }
+
+  // ── Team Section ────────────────────────────────────────────────────────────
+
+  function initTeamSection() {
+    const tbody       = document.getElementById('team-members-tbody');
+    const modal       = document.getElementById('team-invite-modal');
+    const inviteBtn   = document.getElementById('btn-team-invite');
+    const cancelBtn   = document.getElementById('team-invite-cancel');
+    const inviteForm  = document.getElementById('team-invite-form');
+    const emailInput  = document.getElementById('team-invite-email');
+    const roleSelect  = document.getElementById('team-invite-role');
+    const inviteError = document.getElementById('team-invite-error');
+    const submitBtn   = document.getElementById('team-invite-submit');
+
+    if (!tbody) return;
+
+    function statusBadge(status) {
+      const labels = { invited: 'Invited', active: 'Active', disabled: 'Disabled', revoked: 'Revoked' };
+      const cls    = { invited: 'invited', active: 'active', disabled: 'disabled', revoked: 'disabled' };
+      return `<span class="team-status-badge team-status-badge--${cls[status] || 'disabled'}">${labels[status] || status}</span>`;
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    async function loadTeamMembers() {
+      try {
+        const res = await fetch('/api/team/members', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to load members');
+        const members = await res.json();
+        renderMembers(members);
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="team-empty-state">Could not load team members.</td></tr>`;
+      }
+    }
+
+    function renderMembers(members) {
+      if (!members.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="team-empty-state">No team members yet. Invite your first member.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = members.map(m => {
+        const isCurrentUser = m.id === memberId;
+        const isOwner       = m.role === 'owner';
+        const isPending     = m.status === 'invited';
+        const isDisabled    = m.status === 'disabled' || m.status === 'revoked';
+        const nameOrEmail   = m.full_name
+          ? `<span class="team-member-name">${esc(m.full_name)}</span><br><span class="team-member-email">${esc(m.email)}</span>`
+          : `<span class="team-member-email">${esc(m.email)}</span>`;
+
+        const roleOptions = ['owner','admin','member','viewer']
+          .map(r => `<option value="${r}"${r === m.role ? ' selected' : ''}>${r.charAt(0).toUpperCase()+r.slice(1)}</option>`)
+          .join('');
+
+        let actions = '';
+        if (!isCurrentUser) {
+          if (isPending) {
+            actions += `<button class="btn-team-action" data-action="resend" data-id="${m.id}">Resend</button>`;
+            actions += `<button class="btn-team-action btn-team-action--danger" data-action="revoke" data-id="${m.id}">Revoke</button>`;
+          } else if (!isDisabled) {
+            actions += `<button class="btn-team-action btn-team-action--danger" data-action="disable" data-id="${m.id}">Disable</button>`;
+          }
+        }
+        if (isCurrentUser) {
+          actions = '<span class="team-you-label">You</span>';
+        }
+
+        const roleCell = isCurrentUser || isOwner
+          ? `<span class="team-role-label">${m.role.charAt(0).toUpperCase()+m.role.slice(1)}</span>`
+          : `<select class="team-role-select" data-id="${m.id}">${roleOptions}</select>`;
+
+        return `<tr>
+          <td>${nameOrEmail}</td>
+          <td>${roleCell}</td>
+          <td>${statusBadge(m.status)}</td>
+          <td>${fmtDate(m.invited_at)}</td>
+          <td>${fmtDate(m.last_active_at)}</td>
+          <td class="team-actions-cell">${actions}</td>
+        </tr>`;
+      }).join('');
+
+      // Role change handlers
+      tbody.querySelectorAll('.team-role-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const mid  = sel.dataset.id;
+          const role = sel.value;
+          sel.disabled = true;
+          try {
+            const res = await fetch(`/api/team/members/${mid}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+              body: JSON.stringify({ role }),
+            });
+            if (!res.ok) {
+              const d = await res.json().catch(() => ({}));
+              alert(d.error || 'Could not update role');
+              await loadTeamMembers();
+            }
+          } catch { alert('Could not update role'); await loadTeamMembers(); }
+          sel.disabled = false;
+        });
+      });
+
+      // Action button handlers
+      tbody.querySelectorAll('.btn-team-action').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.dataset.action;
+          const mid    = btn.dataset.id;
+          btn.disabled = true;
+
+          try {
+            if (action === 'resend') {
+              const res = await fetch('/api/team/invites/resend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+                body: JSON.stringify({ memberId: mid }),
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+              alert('Invite resent.');
+            } else if (action === 'revoke') {
+              if (!confirm('Revoke this invitation?')) { btn.disabled = false; return; }
+              const res = await fetch('/api/team/invites/revoke', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+                body: JSON.stringify({ memberId: mid }),
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+            } else if (action === 'disable') {
+              if (!confirm('Disable this member? They will no longer be able to access the portal.')) { btn.disabled = false; return; }
+              const res = await fetch(`/api/team/members/${mid}/disable`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+            }
+            await loadTeamMembers();
+          } catch (err) {
+            alert(err.message || 'Action failed');
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    function esc(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Modal open/close
+    inviteBtn.addEventListener('click', () => {
+      inviteError.hidden = true;
+      inviteForm.reset();
+      modal.hidden = false;
+    });
+    cancelBtn.addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+
+    // Invite form submit
+    inviteForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      inviteError.hidden = true;
+      const email = emailInput.value.trim();
+      const role  = roleSelect.value;
+
+      if (!email) {
+        inviteError.textContent = 'Email is required.';
+        inviteError.hidden = false;
+        return;
+      }
+
+      submitBtn.disabled    = true;
+      submitBtn.textContent = 'Sending…';
+
+      try {
+        const res = await fetch('/api/team/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ email, role }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not send invite');
+
+        modal.hidden = true;
+        await loadTeamMembers();
+      } catch (err) {
+        inviteError.textContent = err.message;
+        inviteError.hidden = false;
+      } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Send Invite';
+      }
+    });
+
+    loadTeamMembers();
   }
 
 })();

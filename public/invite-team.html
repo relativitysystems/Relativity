@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="shortcut icon" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <title>Accept Team Invitation — Relativity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="portal.css" />
+  <link rel="stylesheet" href="login.css" />
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="index.html" class="nav-logo"><img src="relativity_white.png" alt="Relativity" class="logo-img"></a>
+    <span class="nav-label">Client Portal</span>
+  </nav>
+
+  <main class="main login-main">
+    <div class="login-card">
+
+      <div id="loadingState">
+        <h1 class="login-title">Verifying invitation…</h1>
+        <p class="login-sub">Please wait a moment.</p>
+      </div>
+
+      <div id="invalidState" hidden>
+        <h1 class="login-title">Invalid Invitation</h1>
+        <p id="invalidMessage" class="login-sub">This invite link is invalid, expired, or has already been used.</p>
+      </div>
+
+      <!-- Shown for a new user who needs to create an account -->
+      <div id="signupContainer" hidden>
+        <h1 class="login-title">Join <span id="companyNameSignup"></span></h1>
+        <p class="login-sub" id="signupSubtext"></p>
+
+        <form id="signupForm" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="signupEmail">Email</label>
+            <input
+              type="email"
+              id="signupEmail"
+              class="form-input"
+              readonly
+              autocomplete="email"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="signupName">Full Name</label>
+            <input
+              type="text"
+              id="signupName"
+              class="form-input"
+              placeholder="Your name"
+              required
+              autocomplete="name"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="signupPassword">Password</label>
+            <input
+              type="password"
+              id="signupPassword"
+              class="form-input"
+              placeholder="At least 8 characters"
+              required
+              autocomplete="new-password"
+            />
+          </div>
+
+          <div id="signupError" class="login-error" hidden></div>
+
+          <button type="submit" id="signupBtn" class="btn-login">Create Account &amp; Accept</button>
+        </form>
+
+        <p class="login-sub" style="margin-top:16px;font-size:13px">
+          Already have an account? <a id="switchToLoginLink" href="#" style="color:#FF6B2B">Sign in instead</a>
+        </p>
+      </div>
+
+      <!-- Shown for existing users who are already logged in or want to sign in -->
+      <div id="loginContainer" hidden>
+        <h1 class="login-title">Join <span id="companyNameLogin"></span></h1>
+        <p class="login-sub" id="loginSubtext"></p>
+
+        <div id="alreadyLoggedIn" hidden>
+          <p class="login-sub">You're signed in as <strong id="loggedInEmail"></strong>.</p>
+          <div id="loginError" class="login-error" hidden></div>
+          <button id="acceptBtn" class="btn-login">Accept Invitation</button>
+          <p class="login-sub" style="margin-top:12px;font-size:13px">
+            <a id="switchToSignupLink" href="#" style="color:#FF6B2B">Use a different account</a>
+          </p>
+        </div>
+
+        <div id="loginForm" hidden>
+          <form id="signinForm" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="loginEmail">Email</label>
+              <input
+                type="email"
+                id="loginEmail"
+                class="form-input"
+                readonly
+                autocomplete="email"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="loginPassword">Password</label>
+              <input
+                type="password"
+                id="loginPassword"
+                class="form-input"
+                placeholder="Your password"
+                required
+                autocomplete="current-password"
+              />
+            </div>
+
+            <div id="signinError" class="login-error" hidden></div>
+
+            <button type="submit" id="signinBtn" class="btn-login">Sign In &amp; Accept</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <span>&copy; 2026 Relativity Systems</span>
+    <a href="index.html">Back to site</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="invite-team.js"></script>
+</body>
+</html>

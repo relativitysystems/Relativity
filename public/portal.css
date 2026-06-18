@@ -1105,3 +1105,191 @@ select.form-input {
 }
 
 .kb-job-error { color: var(--error) !important; }
+
+/* ── Team Section ───────────────────────────────────────────────────── */
+
+.team-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.btn-team-invite {
+  flex-shrink: 0;
+  background: #FF6B2B;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-team-invite:hover { opacity: 0.88; }
+
+.team-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.team-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.team-table th {
+  text-align: left;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--bg-card);
+}
+
+.team-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.team-table tr:last-child td { border-bottom: none; }
+.team-table tr:hover td { background: var(--bg-card-hover); }
+
+.team-empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px 16px !important;
+}
+
+.team-member-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.team-member-email {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.team-status-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.team-status-badge--active  { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.team-status-badge--invited { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.team-status-badge--disabled { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+
+.team-role-label {
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+}
+
+.team-role-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.team-role-select:focus { outline: none; border-color: var(--border-hover); }
+
+.team-actions-cell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.btn-team-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+.btn-team-action:hover { border-color: var(--border-hover); color: var(--text-primary); }
+.btn-team-action--danger { border-color: rgba(239, 68, 68, 0.3); color: #ef4444; }
+.btn-team-action--danger:hover { border-color: #ef4444; }
+
+.team-you-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* Invite modal */
+.team-invite-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.team-invite-modal[hidden] { display: none; }
+
+.team-invite-modal-inner {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.team-modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.team-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.btn-team-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+.btn-team-cancel:hover { border-color: var(--border-hover); }
+
+.btn-team-invite-submit {
+  background: #FF6B2B;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-team-invite-submit:hover { opacity: 0.88; }
+.btn-team-invite-submit:disabled { opacity: 0.5; cursor: not-allowed; }

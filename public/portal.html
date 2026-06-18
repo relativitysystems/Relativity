@@ -141,7 +141,63 @@
       </div>
     </section>
 
-    <!-- 3. Report an Issue -->
+    <!-- 3. Team Members (owner/admin only) -->
+    <section class="portal-section" id="section-team" style="display:none">
+      <div class="team-section-header">
+        <div>
+          <h2 class="section-label">Team Members</h2>
+          <p class="section-desc">Manage who has access to your company's AI knowledge base.</p>
+        </div>
+        <button class="btn-team-invite" id="btn-team-invite" type="button">+ Invite Member</button>
+      </div>
+
+      <!-- Members table -->
+      <div class="team-table-wrap">
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Name / Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Invited</th>
+              <th>Last Active</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="team-members-tbody">
+            <tr><td colspan="6" class="team-empty-state">Loading team…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Invite modal -->
+      <div id="team-invite-modal" class="team-invite-modal" hidden>
+        <div class="team-invite-modal-inner">
+          <h3 class="team-modal-title">Invite Team Member</h3>
+          <form id="team-invite-form" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="team-invite-email">Email Address</label>
+              <input type="email" id="team-invite-email" class="form-input" placeholder="colleague@company.com" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="team-invite-role">Role</label>
+              <select id="team-invite-role" class="form-input">
+                <option value="member">Member — can chat and upload</option>
+                <option value="admin">Admin — can manage team</option>
+                <option value="viewer">Viewer — can chat only</option>
+              </select>
+            </div>
+            <div id="team-invite-error" class="login-error" hidden></div>
+            <div class="team-modal-actions">
+              <button type="button" id="team-invite-cancel" class="btn-team-cancel">Cancel</button>
+              <button type="submit" id="team-invite-submit" class="btn-team-invite-submit">Send Invite</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Report an Issue -->
     <section class="portal-section" id="requests">
       <h2 class="section-label">Report an Issue</h2>
       <p class="section-desc">Something isn't working as expected? Let us know and we'll respond within one business day.</p>

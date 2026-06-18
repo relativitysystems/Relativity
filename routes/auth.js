@@ -58,6 +58,17 @@ router.get('/me', async (req, res) => {
 
   if (!client || !client.is_active) return res.json({ authenticated: false });
 
+  const { data: member } = await supabase
+    .from('client_members')
+    .select('id, role, status')
+    .eq('auth_user_id', user.id)
+    .eq('client_id', client.id)
+    .single();
+
+  if (!member || member.status === 'disabled' || member.status === 'revoked') {
+    return res.json({ authenticated: false });
+  }
+
   const connectionStatus = await supabaseService.getClientConnectionStatus(client.id);
 
   res.json({
@@ -65,6 +76,8 @@ router.get('/me', async (req, res) => {
     clientId: client.id,
     clientName: client.name,
     email: clientUser.email,
+    memberId: member.id,
+    memberRole: member.role,
     dropboxConnected: connectionStatus.dropbox,
     slackConnected: connectionStatus.slack,
     googleDriveConnected: connectionStatus.google_drive,
@@ -288,9 +301,61 @@ router.post('/complete-invite', async (req, res) => {
 
   try {
     await supabaseService.createClientUser(user.id, clientId, user.email);
+    // Ensure this user has an owner member row (backfill for new signups)
+    await supabaseService.upsertOwnerMember(clientId, user.id, user.email);
   } catch (err) {
     console.error('complete-invite error:', err.message);
     return res.status(500).json({ error: 'Failed to link account' });
+  }
+
+  res.json({ success: true });
+});
+
+/**
+ * POST /auth/accept-team-invite
+ *
+ * Called by invite-team.js after the invited user signs up or logs in.
+ * Body: { token: string }
+ * Links the auth user to the pending client_members row.
+ */
+router.post('/accept-team-invite', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const jwtToken = authHeader && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
+
+  if (!jwtToken) return res.status(401).json({ error: 'Missing auth token' });
+
+  const { inviteToken } = req.body;
+  if (!inviteToken) return res.status(400).json({ error: 'inviteToken is required' });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(jwtToken);
+  if (authError || !user) return res.status(401).json({ error: 'Invalid auth token' });
+
+  let invite;
+  try {
+    invite = await supabaseService.getTeamInviteByToken(inviteToken);
+  } catch (err) {
+    console.error('accept-team-invite lookup error:', err.message);
+    return res.status(500).json({ error: 'Could not look up invite' });
+  }
+
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  if (invite.revoked_at) return res.status(400).json({ error: 'This invite has been revoked' });
+  if (invite.accepted_at) return res.status(400).json({ error: 'This invite has already been accepted' });
+  if (new Date(invite.expires_at) < new Date()) return res.status(400).json({ error: 'This invite has expired' });
+  if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
+    return res.status(403).json({ error: 'This invite was sent to a different email address' });
+  }
+
+  try {
+    // Ensure client_users row exists (needed by clientAuth middleware)
+    await supabaseService.createClientUser(user.id, invite.client_id, user.email);
+    // Accept the invite — updates client_members row
+    await supabaseService.acceptTeamInvite(inviteToken, user.id);
+  } catch (err) {
+    console.error('accept-team-invite error:', err.message);
+    return res.status(500).json({ error: 'Failed to accept invite' });
   }
 
   res.json({ success: true });

@@ -64,6 +64,11 @@ router.get('/google-drive/file/:clientId/:fileId', apiKey, async (req, res) => {
 // ---- Knowledge Base (portal_upload) ----
 
 router.post('/knowledge/upload', clientAuth, (req, res, next) => {
+  if (req.member && req.member.role === 'viewer') {
+    return res.status(403).json({ error: 'Viewers cannot upload documents' });
+  }
+  next();
+}, (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
       const msg = err.code === 'LIMIT_FILE_SIZE'
@@ -169,6 +174,12 @@ router.post('/knowledge/query', clientAuth, async (req, res) => {
   }
   try {
     const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null);
+    // Record which member owns this session in the local mapping table
+    const returnedSessionId = data.sessionId || data.session_id;
+    if (returnedSessionId && req.member?.id) {
+      supabaseService.createMemberSession(req.client.id, req.member.id, returnedSessionId)
+        .catch(err => console.error('createMemberSession failed:', err.message));
+    }
     res.json(data);
   } catch (err) {
     console.error('POST /api/knowledge/query error:', err.message);
@@ -178,8 +189,14 @@ router.post('/knowledge/query', clientAuth, async (req, res) => {
 
 router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
   try {
-    const data = await aikbService.listChatSessions(req.client.id);
-    res.json(data);
+    const [allSessions, memberSessionIds] = await Promise.all([
+      aikbService.listChatSessions(req.client.id),
+      supabaseService.getMemberSessionIds(req.client.id, req.member.id),
+    ]);
+    const idSet = new Set(memberSessionIds);
+    const sessions = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
+    const filtered = sessions.filter(s => idSet.has(s.id || s.session_id));
+    res.json(filtered);
   } catch (err) {
     console.error('GET /api/knowledge/chat/sessions error:', err.message);
     res.status(500).json({ error: 'Could not load chat history.' });
@@ -187,8 +204,14 @@ router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
 });
 
 router.get('/knowledge/chat/sessions/:sessionId/messages', clientAuth, async (req, res) => {
+  const { sessionId } = req.params;
   try {
-    const data = await aikbService.listChatMessages(req.client.id, req.params.sessionId);
+    // Verify ownership via local mapping
+    const memberSessionIds = await supabaseService.getMemberSessionIds(req.client.id, req.member.id);
+    if (!memberSessionIds.includes(sessionId)) {
+      return res.status(403).json({ error: 'Session not found' });
+    }
+    const data = await aikbService.listChatMessages(req.client.id, sessionId);
     res.json(data);
   } catch (err) {
     console.error('GET /api/knowledge/chat/sessions/:sessionId/messages error:', err.message);
@@ -197,8 +220,14 @@ router.get('/knowledge/chat/sessions/:sessionId/messages', clientAuth, async (re
 });
 
 router.delete('/knowledge/chat/sessions/:sessionId', clientAuth, async (req, res) => {
+  const { sessionId } = req.params;
   try {
-    await aikbService.deleteChatSession(req.client.id, req.params.sessionId);
+    const memberSessionIds = await supabaseService.getMemberSessionIds(req.client.id, req.member.id);
+    if (!memberSessionIds.includes(sessionId)) {
+      return res.status(403).json({ error: 'Session not found' });
+    }
+    await aikbService.deleteChatSession(req.client.id, sessionId);
+    await supabaseService.deleteMemberSession(req.client.id, req.member.id, sessionId);
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/chat/sessions/:sessionId error:', err.message);
@@ -208,7 +237,14 @@ router.delete('/knowledge/chat/sessions/:sessionId', clientAuth, async (req, res
 
 router.delete('/knowledge/chat/history', clientAuth, async (req, res) => {
   try {
-    await aikbService.clearChatHistory(req.client.id);
+    const memberSessionIds = await supabaseService.getMemberSessionIds(req.client.id, req.member.id);
+    // Delete each of this member's sessions from AIKB
+    await Promise.all(
+      memberSessionIds.map(sid =>
+        aikbService.deleteChatSession(req.client.id, sid).catch(() => {})
+      )
+    );
+    await supabaseService.deleteMemberAllSessions(req.client.id, req.member.id);
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/knowledge/chat/history error:', err.message);
@@ -218,11 +254,16 @@ router.delete('/knowledge/chat/history', clientAuth, async (req, res) => {
 
 router.patch('/knowledge/chat/sessions/:sessionId/title', clientAuth, async (req, res) => {
   const { title } = req.body;
+  const { sessionId } = req.params;
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'title is required' });
   }
   try {
-    const data = await aikbService.updateChatSessionTitle(req.client.id, req.params.sessionId, title.trim());
+    const memberSessionIds = await supabaseService.getMemberSessionIds(req.client.id, req.member.id);
+    if (!memberSessionIds.includes(sessionId)) {
+      return res.status(403).json({ error: 'Session not found' });
+    }
+    const data = await aikbService.updateChatSessionTitle(req.client.id, sessionId, title.trim());
     res.json(data);
   } catch (err) {
     console.error('PATCH /api/knowledge/chat/sessions/:sessionId/title error:', err.message);

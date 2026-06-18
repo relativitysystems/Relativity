@@ -42,7 +42,23 @@ module.exports = async (req, res, next) => {
     return res.status(403).json({ error: 'Account is not active' });
   }
 
+  const { data: member, error: memberError } = await supabase
+    .from('client_members')
+    .select('id, role, status, full_name')
+    .eq('auth_user_id', user.id)
+    .eq('client_id', client.id)
+    .single();
+
+  if (memberError || !member) {
+    return res.status(401).json({ error: 'No team member record found for this user' });
+  }
+
+  if (member.status === 'disabled' || member.status === 'revoked') {
+    return res.status(403).json({ error: 'Account is disabled' });
+  }
+
   req.user = { id: user.id, email: clientUser.email };
   req.client = client;
+  req.member = member;
   next();
 };

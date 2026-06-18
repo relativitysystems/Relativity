@@ -91,4 +91,77 @@ async function sendLeadNotification(lead) {
   }
 }
 
-module.exports = { sendLeadNotification };
+// ─────────────────────────────────────────────
+// Team invite email
+// ─────────────────────────────────────────────
+
+function buildInviteSubject(companyName) {
+  return `You've been invited to join ${companyName} on Relativity Systems`;
+}
+
+function buildInviteHtml({ companyName, inviterName, role, acceptUrl }) {
+  const e = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  return `
+<div style="font-family:sans-serif;font-size:15px;color:#111;max-width:520px">
+  <p style="margin:0 0 16px">
+    <strong>${e(inviterName)}</strong> has invited you to join
+    <strong>${e(companyName)}</strong> on Relativity Systems as a <strong>${e(roleLabel)}</strong>.
+  </p>
+  <p style="margin:0 0 24px">
+    Click the button below to accept your invitation and set up your account.
+    This link expires in 7 days.
+  </p>
+  <a href="${e(acceptUrl)}"
+     style="display:inline-block;padding:12px 24px;background:#FF6B2B;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
+    Accept Invitation
+  </a>
+  <p style="margin:24px 0 0;font-size:13px;color:#666">
+    If you weren't expecting this invitation you can safely ignore this email.
+  </p>
+</div>
+  `.trim();
+}
+
+function buildInviteText({ companyName, inviterName, role, acceptUrl }) {
+  return [
+    `${inviterName} has invited you to join ${companyName} on Relativity Systems as a ${role}.`,
+    ``,
+    `Accept your invitation here (link expires in 7 days):`,
+    acceptUrl,
+    ``,
+    `If you weren't expecting this, you can safely ignore this email.`,
+  ].join('\n');
+}
+
+async function sendTeamInviteEmail({ toEmail, companyName, inviterName, role, acceptUrl }) {
+  const subject = buildInviteSubject(companyName);
+  const html = buildInviteHtml({ companyName, inviterName, role, acceptUrl });
+  const text = buildInviteText({ companyName, inviterName, role, acceptUrl });
+
+  try {
+    if (emailConfig.resendApiKey) {
+      const { Resend } = require('resend');
+      const client = new Resend(emailConfig.resendApiKey);
+      await client.emails.send({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      return;
+    }
+    if (emailConfig.smtpHost) {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: emailConfig.smtpHost,
+        port: emailConfig.smtpPort,
+        secure: emailConfig.smtpPort === 465,
+        auth: { user: emailConfig.smtpUser, pass: emailConfig.smtpPass },
+      });
+      await transporter.sendMail({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      return;
+    }
+    console.warn('[emailService] No email provider configured — skipping team invite email');
+  } catch (err) {
+    console.error('[emailService] Failed to send team invite email:', err.message);
+    throw err;
+  }
+}
+
+module.exports = { sendLeadNotification, sendTeamInviteEmail };
