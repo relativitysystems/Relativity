@@ -918,7 +918,7 @@ body {
 
 .update-list li::before {
   content: "•";
-  color: var(--success);
+  color: var(--warn);
   flex-shrink: 0;
   font-weight: 700;
 }
