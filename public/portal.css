@@ -564,8 +564,8 @@ body {
 }
 .kb-history-summary-label::after {
   content: "▾";
-  font-size: 0.7rem;
-  opacity: 0.6;
+  font-size: 0.95rem;
+  opacity: 0.85;
   transition: transform var(--transition);
 }
 .kb-history-dropdown[open] .kb-history-summary-label::after {

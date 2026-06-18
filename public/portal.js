@@ -312,23 +312,21 @@
     const el = document.getElementById('progress-checklist');
     if (!el) return;
 
-    const hasUploaded = docs.length > 0;
+    const uploadedCount   = docs.length;
     const docsIndexed     = docs.some(d => d.status === 'indexed');
     const analyticsIndexed = analytics
       ? (analytics.indexedDocuments ?? analytics.indexed_documents ?? 0) > 0
       : false;
     const hasIndexed  = docsIndexed || analyticsIndexed;
-    const hasAsked    = analytics
-      ? (analytics.totalQuestions ?? analytics.total_questions ?? 0) > 0
-      : sessions.length > 0;
-    const isReady     = hasUploaded && hasIndexed && hasAsked;
+    const questionCount = analytics
+      ? (analytics.totalQuestions ?? analytics.total_questions ?? 0)
+      : sessions.length;
 
     const steps = [
-      { label: 'Account created',           done: true },
-      { label: 'First document uploaded',   done: hasUploaded },
-      { label: 'Documents indexed',         done: hasIndexed },
-      { label: 'First test question asked', done: hasAsked },
-      { label: 'Ready for review',          done: isReady },
+      { label: 'Account created',              done: true },
+      { label: `Documents uploaded (${Math.min(uploadedCount, 3)}/3)`,  done: uploadedCount >= 3 },
+      { label: 'Documents indexed',            done: hasIndexed },
+      { label: `Questions asked (${Math.min(questionCount, 3)}/3)`,     done: questionCount >= 3 },
     ];
 
     const doneCount = steps.filter(s => s.done).length;
