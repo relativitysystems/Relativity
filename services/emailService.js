@@ -143,7 +143,8 @@ async function sendTeamInviteEmail({ toEmail, companyName, inviterName, role, ac
     if (emailConfig.resendApiKey) {
       const { Resend } = require('resend');
       const client = new Resend(emailConfig.resendApiKey);
-      await client.emails.send({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      const result = await client.emails.send({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      console.log('[emailService] Team invite email sent via Resend:', result?.data?.id || result?.id || result);
       return;
     }
     if (emailConfig.smtpHost) {
@@ -157,7 +158,7 @@ async function sendTeamInviteEmail({ toEmail, companyName, inviterName, role, ac
       await transporter.sendMail({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
       return;
     }
-    console.warn('[emailService] No email provider configured — skipping team invite email');
+    throw new Error('No email provider configured for team invite email. Set RESEND_API_KEY or SMTP_HOST.');
   } catch (err) {
     console.error('[emailService] Failed to send team invite email:', err.message);
     throw err;
