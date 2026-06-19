@@ -236,7 +236,7 @@
 
     const visible = documents.filter(d => {
       const id = d.sourceFileId || d.source_file_id || '';
-      return !pendingDeletes.has(id);
+      return !pendingDeletes.has(id) && d.status !== 'deleted';
     });
 
     const placeholders = [];
@@ -296,7 +296,7 @@
       });
       if (!res.ok) { loadedSessions = []; renderSessions([]); maybeUpdateProgress(); return; }
       const data = await res.json();
-      chatSessions = data.sessions || (Array.isArray(data) ? data : []);
+      chatSessions = (data.sessions || (Array.isArray(data) ? data : [])).filter(s => !s.deleted_at);
       loadedSessions = chatSessions;
       renderSessions(chatSessions);
       maybeUpdateProgress();
@@ -467,7 +467,7 @@
         return;
       }
       const data = await res.json();
-      const messages = data.messages || (Array.isArray(data) ? data : []);
+      const messages = (data.messages || (Array.isArray(data) ? data : [])).filter(m => !m.deleted_at);
       kbMessages.innerHTML = '';
       messages.forEach(m => {
         const role    = m.role === 'user' ? 'user' : 'assistant';

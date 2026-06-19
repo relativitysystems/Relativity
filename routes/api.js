@@ -89,7 +89,7 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
   // Enforce document count limit before accepting the upload
   try {
     const existing = await aikbService.listDocuments(clientId);
-    const count = (existing.documents || (Array.isArray(existing) ? existing : [])).length;
+    const count = (existing.documents || (Array.isArray(existing) ? existing : [])).filter(d => d.status !== 'deleted').length;
     if (count >= config.limits.maxDocuments) {
       return res.status(429).json({
         error: `Document limit reached (${config.limits.maxDocuments} max). Delete some documents to upload new ones.`,
@@ -155,7 +155,7 @@ router.get('/knowledge/analytics', clientAuth, async (req, res) => {
 router.get('/knowledge/usage', clientAuth, async (req, res) => {
   try {
     const data = await aikbService.listDocuments(req.client.id);
-    const docs = data.documents || (Array.isArray(data) ? data : []);
+    const docs = (data.documents || (Array.isArray(data) ? data : [])).filter(d => d.status !== 'deleted');
     res.json({
       documentCount: docs.length,
       maxDocuments: config.limits.maxDocuments,

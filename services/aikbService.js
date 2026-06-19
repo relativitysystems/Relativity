@@ -183,7 +183,8 @@ async function getClientAnalytics(clientId) {
 async function getClientDocumentStats(clientId) {
   try {
     const data = await listDocuments(clientId);
-    const docs = data.documents || (Array.isArray(data) ? data : []);
+    const allDocs = data.documents || (Array.isArray(data) ? data : []);
+    const docs = allDocs.filter(d => d.status !== 'deleted');
     return {
       documentCount: docs.length,
       indexedCount: docs.filter(d => d.status === 'indexed').length,
