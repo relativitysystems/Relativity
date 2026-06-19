@@ -293,6 +293,14 @@ body {
   padding: 28px;
 }
 
+.chat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin-top: 10px;
+}
+
 .assistant-search {
   display: flex;
   align-items: flex-end;
