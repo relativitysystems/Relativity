@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { appBaseUrl, supabase: supabaseConfig } = require('../config');
 const clientAuth = require('../middleware/clientAuth');
 const supabaseService = require('../services/supabaseService');
+const { sendTeamInviteEmail } = require('../services/emailService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -124,14 +125,14 @@ router.post('/team/invite', clientAuth, requireRole(...OWNER_ADMIN), async (req,
       invitedBy: req.member.id,
     });
 
-    // Send invite email via Supabase (same delivery path as the admin client invite)
     const acceptUrl = `${appBaseUrl}/invite-team.html?token=${token}`;
-    const { error: emailError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
-      redirectTo: acceptUrl,
+    await sendTeamInviteEmail({
+      toEmail: normalizedEmail,
+      companyName: req.client.name || 'your company',
+      inviterName: req.member.full_name || req.user?.email || 'A team admin',
+      role,
+      acceptUrl,
     });
-    if (emailError) {
-      console.error('[team/invite] Supabase invite email failed:', emailError.message);
-    }
 
     res.status(201).json({ success: true, member });
   } catch (err) {
@@ -176,12 +177,13 @@ router.post('/team/invites/resend', clientAuth, requireRole(...OWNER_ADMIN), asy
     const invite = await supabaseService.regenerateTeamInvite(memberId, req.client.id, newToken, newExpiresAt);
 
     const acceptUrl = `${appBaseUrl}/invite-team.html?token=${newToken}`;
-    const { error: emailError } = await supabase.auth.admin.inviteUserByEmail(member.email, {
-      redirectTo: acceptUrl,
+    await sendTeamInviteEmail({
+      toEmail: member.email,
+      companyName: req.client.name || 'your company',
+      inviterName: req.member.full_name || req.user?.email || 'A team admin',
+      role: member.role,
+      acceptUrl,
     });
-    if (emailError) {
-      console.error('[team/resend] Supabase invite email failed:', emailError.message);
-    }
 
     res.json({ success: true });
   } catch (err) {
