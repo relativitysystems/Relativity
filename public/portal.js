@@ -28,8 +28,11 @@
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
-  if (identityName) identityName.textContent = clientName || 'Client';
-  if (identityId)   identityId.textContent   = clientId ? `Client ID: ${shortId(clientId)}` : '';
+  if (identityName) identityName.textContent = email || 'User';
+  if (identityId) {
+  const roleLabel = memberRole ? memberRole.charAt(0).toUpperCase() + memberRole.slice(1) : 'Member';
+  identityId.textContent = `${clientName || 'Client'} • ${roleLabel}`;
+}
 
   // Show team section for owner and admin roles
   if (memberRole === 'owner' || memberRole === 'admin') {
