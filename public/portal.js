@@ -95,7 +95,11 @@
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
-    if (kbFileInput.files[0]) uploadDocument(kbFileInput.files[0]);
+    if (kbFileInput.files[0]) {
+      kbUploadStatus.hidden = true;
+      kbUploadStatus.textContent = '';
+      uploadDocument(kbFileInput.files[0]);
+    }
   });
 
   kbAskBtn.addEventListener('click', askQuestion);
@@ -111,9 +115,20 @@
     e.stopPropagation();
     currentSessionId = null;
     kbMessages.innerHTML = '';
+    updateChatWelcome();
     renderSessions(chatSessions);
     kbQueryInput.focus();
   });
+
+  // Chat welcome chips — fill textarea on click, no auto-submit
+  document.querySelectorAll('.chat-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      kbQueryInput.value = chip.textContent.trim();
+      adjustQueryHeight();
+      kbQueryInput.focus();
+    });
+  });
+  updateChatWelcome();
 
   kbClearHistoryBtn.addEventListener('click', async () => {
     if (!confirm('Clear all chat history? This cannot be undone.')) return;
@@ -127,6 +142,7 @@
         loadedSessions = [];
         currentSessionId = null;
         kbMessages.innerHTML = '';
+        updateChatWelcome();
         renderSessions([]);
         maybeUpdateProgress();
       } else {
@@ -257,7 +273,12 @@
 
     if (!rows.length) {
       kbDocsCount.textContent = '';
-      kbDocsList.innerHTML = `<div class="empty-state"><span>No documents indexed yet. Upload your first document above.</span></div>`;
+      kbDocsList.innerHTML = `
+        <div class="empty-state-card">
+          <span class="empty-state-icon">📄</span>
+          <span class="empty-state-title">No documents uploaded yet</span>
+          <span class="empty-state-desc">Upload SOPs, FAQs, pricing sheets, or training docs to build your knowledge base.</span>
+        </div>`;
       return;
     }
 
@@ -285,7 +306,21 @@
   }
 
   async function loadDocuments() {
-    kbDocsList.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+    kbDocsList.innerHTML = `
+      <div class="kb-doc-row loading-row">
+        <div class="kb-doc-info">
+          <div class="skeleton skeleton-line" style="width:52%"></div>
+          <div class="skeleton skeleton-line skeleton-line--sm" style="width:28%"></div>
+        </div>
+        <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
+      </div>
+      <div class="kb-doc-row loading-row">
+        <div class="kb-doc-info">
+          <div class="skeleton skeleton-line" style="width:41%"></div>
+          <div class="skeleton skeleton-line skeleton-line--sm" style="width:22%"></div>
+        </div>
+        <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
+      </div>`;
     const docs = await fetchDocuments();
     loadedDocs = docs || [];
     renderDocuments(docs);
@@ -360,9 +395,21 @@
 
   async function loadJobs() {
     const jobsList = document.getElementById('kb-jobs-list');
-    const loading = `<div class="empty-state"><span>Loading…</span></div>`;
-    if (jobsList) jobsList.innerHTML = loading;
     if (!jobsList) return;
+    jobsList.innerHTML = `
+      <div class="kb-doc-row loading-row">
+        <div class="kb-doc-info">
+          <div class="skeleton skeleton-line" style="width:48%"></div>
+          <div class="skeleton skeleton-line skeleton-line--sm" style="width:20%"></div>
+        </div>
+        <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
+      </div>
+      <div class="kb-doc-row loading-row">
+        <div class="kb-doc-info">
+          <div class="skeleton skeleton-line" style="width:60%"></div>
+        </div>
+        <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
+      </div>`;
 
     try {
       const res = await fetch('/api/knowledge/jobs', {
@@ -395,8 +442,12 @@
     const jobsList = document.getElementById('kb-jobs-list');
 
     if (!jobs.length) {
-      const empty = `<div class="empty-state"><span>No ingestion jobs yet.</span></div>`;
-      if (jobsList) jobsList.innerHTML = empty;
+      if (jobsList) jobsList.innerHTML = `
+        <div class="empty-state-card">
+          <span class="empty-state-icon">⏱</span>
+          <span class="empty-state-title">No processing history yet</span>
+          <span class="empty-state-desc">Your recent uploads and indexing status will appear here.</span>
+        </div>`;
       return;
     }
 
@@ -435,7 +486,11 @@
 
   function renderSessions(sessions) {
     if (!sessions.length) {
-      kbSessionsList.innerHTML = `<div class="empty-state kb-sessions-empty"><span>No previous chats yet.</span></div>`;
+      kbSessionsList.innerHTML = `
+        <div class="empty-state-card empty-state-card--compact">
+          <span class="empty-state-title">No chats yet</span>
+          <span class="empty-state-desc">Ask your first question after uploading a document.</span>
+        </div>`;
       return;
     }
     kbSessionsList.innerHTML = sessions.map(s => {
@@ -458,7 +513,8 @@
 
   async function loadSessionMessages(sessionId) {
     currentSessionId = sessionId;
-    kbMessages.innerHTML = `<div class="empty-state"><span>Loading messages…</span></div>`;
+    kbMessages.innerHTML = `<div class="empty-state"><span>Loading…</span></div>`;
+    updateChatWelcome();
     renderSessions(chatSessions);
 
     try {
@@ -467,6 +523,7 @@
       });
       if (!res.ok) {
         kbMessages.innerHTML = `<div class="empty-state"><span>Failed to load messages.</span></div>`;
+        updateChatWelcome();
         return;
       }
       const data = await res.json();
@@ -478,8 +535,10 @@
         const sources = role === 'assistant' ? (m.sources || []) : [];
         appendMessage(role, content, sources);
       });
+      updateChatWelcome();
     } catch {
       kbMessages.innerHTML = `<div class="empty-state"><span>Failed to load messages.</span></div>`;
+      updateChatWelcome();
     }
   }
 
@@ -517,6 +576,7 @@
 
     kbMessages.appendChild(wrap);
     kbMessages.scrollTop = kbMessages.scrollHeight;
+    updateChatWelcome();
   }
 
   function shouldShowSourcesBox(answerText, sources) {
@@ -559,38 +619,58 @@
   }
 
   async function uploadDocument(file) {
-    kbUploadStatus.textContent = `Uploading "${file.name}"…`;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.textContent = '';
     kbUploadStatus.className = 'kb-upload-status';
-    kbUploadStatus.hidden = false;
     kbUploadBtn.disabled = true;
     kbFileInput.value = '';
+
+    showUploadPhase('Preparing upload…', 0, file.name);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const res = await fetch('/api/knowledge/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: formData,
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.min(Math.round((e.loaded / e.total) * 100), 99);
+            showUploadPhase('Uploading…', pct, file.name);
+          }
+        };
+
+        xhr.onload = () => {
+          try {
+            resolve({ status: xhr.status, body: JSON.parse(xhr.responseText) });
+          } catch {
+            resolve({ status: xhr.status, body: {} });
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error. Please try again.'));
+
+        xhr.open('POST', '/api/knowledge/upload');
+        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+        xhr.send(formData);
       });
 
-      const body = await res.json().catch(() => ({}));
-
-      if (res.status === 429) {
-        kbUploadStatus.textContent = body.error || 'Document limit reached.';
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
-        kbUploadBtn.disabled = false;
+      if (result.status === 429) {
+        kbUploadStatus.textContent = result.body.error || 'Document limit reached.';
+        kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.hidden      = false;
         return;
       }
 
-      if (res.ok) {
-        kbUploadStatus.textContent = `"${file.name}" uploaded. Indexing in progress…`;
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
+      if (result.status >= 200 && result.status < 300) {
+        showUploadPhase('Processing document…', 100, file.name);
 
         // Show placeholder row immediately while indexing is in progress
         pendingUploads.set(file.name, { fileName: file.name });
         refreshDocuments();
+
+        showUploadPhase('Indexing in knowledge base…', 100, file.name);
 
         // Poll until the document appears as indexed or failed
         const settled = await pollUntilSettled(async () => {
@@ -606,22 +686,50 @@
         });
 
         pendingUploads.delete(file.name);
+
         if (!settled) {
-          showBanner('error', 'Indexing is still processing. Refresh again in a moment.');
+          showBanner('error', 'Indexing is taking longer than expected. Refresh in a moment.');
+        } else {
+          kbUploadStatus.textContent = `"${file.name}" is ready in your knowledge base.`;
+          kbUploadStatus.className   = 'kb-upload-status kb-upload-status--success';
+          kbUploadStatus.hidden      = false;
         }
+
         const finalDocs = await refreshDocuments();
         if (finalDocs) { loadedDocs = finalDocs; maybeUpdateProgress(); }
         loadJobs();
       } else {
-        kbUploadStatus.textContent = body.error || 'Upload failed. Please try again.';
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.textContent = result.body.error || 'Upload failed. Please try again.';
+        kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.hidden      = false;
       }
-    } catch {
-      kbUploadStatus.textContent = 'Network error. Please try again.';
-      kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+    } catch (err) {
+      kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
+      kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
+      kbUploadStatus.hidden      = false;
+    } finally {
+      hideUploadPanel();
+      kbUploadBtn.disabled = false;
     }
+  }
 
-    kbUploadBtn.disabled = false;
+  function showUploadPhase(phase, pct, fileName) {
+    const panel   = document.getElementById('upload-progress-panel');
+    const bar     = document.getElementById('upload-progress-bar');
+    const pctEl   = document.getElementById('upload-percent-text');
+    const phaseEl = document.getElementById('upload-phase-text');
+    const nameEl  = document.getElementById('upload-file-name');
+    if (!panel) return;
+    if (nameEl)  nameEl.textContent  = fileName;
+    if (bar)     bar.style.width     = `${pct}%`;
+    if (pctEl)   pctEl.textContent   = `${pct}%`;
+    if (phaseEl) phaseEl.textContent = phase;
+    panel.hidden = false;
+  }
+
+  function hideUploadPanel() {
+    const panel = document.getElementById('upload-progress-panel');
+    if (panel) panel.hidden = true;
   }
 
   async function askQuestion() {
@@ -634,6 +742,7 @@
     kbAskBtn.textContent = '…';
 
     appendMessage('user', query, []);
+    const loadingBubble = appendLoadingBubble();
 
     try {
       const res = await fetch('/api/knowledge/query', {
@@ -646,6 +755,7 @@
       });
 
       const body = await res.json().catch(() => ({}));
+      loadingBubble.remove();
 
       if (res.ok) {
         const answer  = body.answer || 'No answer returned.';
@@ -659,6 +769,7 @@
         appendMessage('assistant', body.error || 'Failed to get an answer.', []);
       }
     } catch {
+      loadingBubble.remove();
       appendMessage('assistant', 'Network error. Please try again.', []);
     }
 
@@ -742,12 +853,36 @@
   }
 
   function showBanner(type, message) {
-    const banner = document.getElementById(type === 'success' ? 'bannerSuccess' : 'bannerError');
-    const text = document.getElementById(type === 'success' ? 'bannerSuccessText' : 'bannerErrorText');
-    if (banner && text) {
-      text.textContent = message;
-      banner.hidden = false;
-    }
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${type}`;
+    toast.innerHTML = `<span class="toast-icon">${type === 'success' ? '✓' : '✕'}</span><span class="toast-text">${escHtml(message)}</span>`;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast--visible'));
+    setTimeout(() => {
+      toast.classList.remove('toast--visible');
+      toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    }, 4000);
+  }
+
+  function appendLoadingBubble() {
+    const wrap = document.createElement('div');
+    wrap.className = 'kb-message kb-message--assistant';
+    const bubble = document.createElement('div');
+    bubble.className = 'kb-message-bubble';
+    bubble.innerHTML = '<span class="loading-dots"><span></span><span></span><span></span></span>';
+    wrap.appendChild(bubble);
+    kbMessages.appendChild(wrap);
+    kbMessages.scrollTop = kbMessages.scrollHeight;
+    updateChatWelcome();
+    return wrap;
+  }
+
+  function updateChatWelcome() {
+    const welcome = document.getElementById('chat-welcome');
+    if (!welcome) return;
+    welcome.hidden = kbMessages.children.length > 0;
   }
 
   // ── Team Section ────────────────────────────────────────────────────────────
@@ -777,6 +912,23 @@
     }
 
     async function loadTeamMembers() {
+      tbody.innerHTML = `
+        <tr class="loading-row">
+          <td><div class="skeleton skeleton-line" style="width:70%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:50%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:40%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:55%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:45%"></div></td>
+          <td></td>
+        </tr>
+        <tr class="loading-row">
+          <td><div class="skeleton skeleton-line" style="width:60%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:45%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:35%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:50%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:40%"></div></td>
+          <td></td>
+        </tr>`;
       try {
         const res = await fetch('/api/team/members', {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -791,7 +943,13 @@
 
     function renderMembers(members) {
       if (!members.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="team-empty-state">No team members yet. Invite your first member.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6">
+          <div class="empty-state-card">
+            <span class="empty-state-icon">👥</span>
+            <span class="empty-state-title">No team members yet</span>
+            <span class="empty-state-desc">Invite your first teammate so they can access the company knowledge base.</span>
+          </div>
+        </td></tr>`;
         return;
       }
 

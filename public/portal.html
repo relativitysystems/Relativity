@@ -87,6 +87,16 @@
           <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
           <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
         </div>
+        <div id="upload-progress-panel" class="upload-progress-panel" hidden>
+          <div class="upload-progress-header">
+            <span id="upload-file-name" class="upload-file-name"></span>
+            <span id="upload-percent-text" class="upload-percent-text">0%</span>
+          </div>
+          <div class="upload-progress-track">
+            <div id="upload-progress-bar" class="upload-progress-fill"></div>
+          </div>
+          <span id="upload-phase-text" class="upload-phase-text">Preparing upload…</span>
+        </div>
         <p id="kb-upload-status" class="kb-upload-status" hidden></p>
 
         <!-- Indexed documents -->
@@ -135,6 +145,15 @@
 
         <!-- Chat messages -->
         <div id="kb-messages" class="kb-messages"></div>
+        <div id="chat-welcome" class="chat-welcome">
+          <div class="chat-welcome-title">Ask your company knowledge base</div>
+          <p class="chat-welcome-desc">Get instant answers from your uploaded documents.</p>
+          <div class="chat-welcome-chips">
+            <button class="chat-chip" type="button">What is our refund policy?</button>
+            <button class="chat-chip" type="button">Summarize our onboarding process</button>
+            <button class="chat-chip" type="button">How should we respond to a pricing question?</button>
+          </div>
+        </div>
 
         <!-- Query input -->
         <div class="assistant-search">
@@ -227,8 +246,8 @@
           <label class="form-label" for="issue-message">Message</label>
           <textarea id="issue-message" class="form-input issue-textarea" rows="4" placeholder="Describe the issue in detail…" required></textarea>
         </div>
-        <!-- <div id="issue-error" class="banner banner--error" hidden></div>
-        <div id="issue-success" class="banner banner--success" hidden></div> -->
+        <div id="issue-error" class="issue-feedback issue-feedback--error" hidden></div>
+        <div id="issue-success" class="issue-feedback issue-feedback--success" hidden></div>
         <button type="submit" id="issue-submit" class="btn-submit-issue">Submit Issue</button>
       </form>
     </section>
@@ -240,6 +259,7 @@
     <a href="index.html">Back to site</a>
   </footer>
 
+  <div id="toast-container" class="toast-container"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="portal.js"></script>
 </body>

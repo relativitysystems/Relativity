@@ -1047,6 +1047,7 @@ select.form-input {
 
 @media (max-width: 640px) {
   .nav { padding: 16px 20px; }
+  .nav-label { display: none; }
   .main { padding: 36px 20px 64px; }
   .overview-grid { grid-template-columns: repeat(2, 1fr); }
   .overview-panels { grid-template-columns: 1fr; }
@@ -1055,7 +1056,300 @@ select.form-input {
   .footer { padding: 16px 20px; }
   .kb-sessions-list { max-height: 160px; }
   .kb-messages { max-height: 300px; }
+  .kb-upload-row { flex-wrap: wrap; gap: 10px; }
+  .search-btn { min-width: 52px; }
+  .toast-container { left: 16px; right: 16px; bottom: 16px; }
+  .toast { max-width: none; }
+  .team-table { min-width: 560px; }
 }
+
+@media (max-width: 480px) {
+  .chat-welcome { padding: 24px 16px 12px; }
+  .chat-welcome-chips { gap: 6px; }
+  .chat-chip { font-size: 0.74rem; padding: 6px 12px; }
+}
+
+/* ---- Skeleton Loading ---- */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease infinite;
+  border-radius: 4px;
+  display: block;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-line {
+  height: 13px;
+  width: 100%;
+  margin: 3px 0;
+}
+
+.skeleton-line--sm {
+  height: 10px;
+  opacity: 0.65;
+}
+
+.loading-row { pointer-events: none; }
+
+/* ---- Loading Dots (chat thinking bubble) ---- */
+.loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+}
+
+.loading-dots span {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: loading-dot-pulse 1.3s ease infinite;
+}
+
+.loading-dots span:nth-child(2) { animation-delay: 0.18s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes loading-dot-pulse {
+  0%, 70%, 100% { transform: scale(0.7); opacity: 0.4; }
+  35%            { transform: scale(1);   opacity: 1;   }
+}
+
+/* ---- Toast Notifications ---- */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  max-width: 360px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: auto;
+  line-height: 1.4;
+}
+
+.toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast--success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: var(--success);
+}
+
+.toast--error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--error);
+}
+
+.toast-icon { font-weight: 700; flex-shrink: 0; }
+.toast-text { flex: 1; }
+
+/* ---- Upload Progress Panel ---- */
+.upload-progress-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.upload-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.upload-file-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.upload-percent-text {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--warn);
+  flex-shrink: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.upload-progress-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 9px;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--warn), #ff9d3a);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.upload-phase-text {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* ---- Enhanced Empty States ---- */
+.empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 20px;
+  gap: 7px;
+  width: 100%;
+}
+
+.empty-state-card--compact {
+  padding: 16px 14px;
+}
+
+.empty-state-icon {
+  font-size: 1.35rem;
+  opacity: 0.5;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.empty-state-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.empty-state-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 300px;
+  display: block;
+}
+
+/* ---- Chat Welcome Card ---- */
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 20px 20px;
+  gap: 10px;
+}
+
+.chat-welcome[hidden] { display: none; }
+
+.chat-welcome-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+}
+
+.chat-welcome-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 280px;
+  margin: 0;
+}
+
+.chat-welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+  max-width: 500px;
+}
+
+.chat-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  padding: 7px 14px;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.chat-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+/* ---- Issue Inline Feedback ---- */
+.issue-feedback {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.issue-feedback[hidden] { display: none; }
+
+.issue-feedback--error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--error);
+}
+
+.issue-feedback--success {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+/* ---- Visual Polish ---- */
+.assistant-card { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.chat-card { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.kb-doc-row:hover { background: rgba(255, 255, 255, 0.025); }
 
 /* ---- Onboarding Progress ---- */
 .progress-bar-wrap {
