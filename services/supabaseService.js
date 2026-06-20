@@ -45,6 +45,7 @@ async function getClientById(clientId) {
   return data;
 }
 
+// @deprecated — no longer called at runtime; use client_members for identity resolution
 async function getClientByAuthUserId(authUserId) {
   const { data: clientUser, error: cuError } = await supabase
     .from('client_users')
@@ -94,10 +95,10 @@ async function deleteClient(clientId) {
 }
 
 async function deleteClientFull(clientId) {
-  // Get email and auth user id before deleting
-  const [{ data: clientRecord }, { data: clientUser }] = await Promise.all([
+  // Get email and owner auth_user_id before deleting
+  const [{ data: clientRecord }, { data: ownerMember }] = await Promise.all([
     supabase.from('clients').select('email').eq('id', clientId).single(),
-    supabase.from('client_users').select('auth_user_id').eq('client_id', clientId).single(),
+    supabase.from('client_members').select('auth_user_id').eq('client_id', clientId).eq('role', 'owner').limit(1).single(),
   ]);
 
   // Delete related records
@@ -105,9 +106,9 @@ async function deleteClientFull(clientId) {
   await supabase.from('client_users').delete().eq('client_id', clientId);
   await supabase.from('clients').delete().eq('id', clientId);
 
-  // Delete the Supabase auth user — use client_users link if present (accepted invite),
+  // Delete the Supabase auth user — use owner member link if present (accepted invite),
   // otherwise find by email (pending invite that was never accepted)
-  let authUserId = clientUser?.auth_user_id;
+  let authUserId = ownerMember?.auth_user_id;
   if (!authUserId && clientRecord?.email) {
     const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
     authUserId = users.find(u => u.email === clientRecord.email)?.id;
@@ -128,12 +129,12 @@ async function getAllClientsWithStatus() {
 
   const clientIds = clients.map(c => c.id);
 
-  const [{ data: clientUsers }, { data: tokens }] = await Promise.all([
-    supabase.from('client_users').select('client_id').in('client_id', clientIds),
+  const [{ data: activeMembers }, { data: tokens }] = await Promise.all([
+    supabase.from('client_members').select('client_id').not('auth_user_id', 'is', null).in('client_id', clientIds),
     supabase.from('oauth_tokens').select('client_id, provider').in('client_id', clientIds),
   ]);
 
-  const acceptedSet = new Set((clientUsers || []).map(cu => cu.client_id));
+  const acceptedSet = new Set((activeMembers || []).map(m => m.client_id));
   const tokenMap = {};
   (tokens || []).forEach(t => {
     if (!tokenMap[t.client_id]) tokenMap[t.client_id] = {};
@@ -264,6 +265,7 @@ async function updatePortalIssueStatus(issueId, status) {
   if (error) throw new Error(`updatePortalIssueStatus failed: ${error.message}`);
 }
 
+// @deprecated — no longer called at runtime; identity is established via client_members
 async function createClientUser(authUserId, clientId, email) {
   const { error } = await supabase
     .from('client_users')

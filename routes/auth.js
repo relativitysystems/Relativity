@@ -42,32 +42,23 @@ router.get('/me', async (req, res) => {
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   if (authError || !user) return res.json({ authenticated: false });
 
-  const { data: clientUser } = await supabase
-    .from('client_users')
-    .select('client_id, email')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (!clientUser) return res.json({ authenticated: false });
-
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, name, is_active')
-    .eq('id', clientUser.client_id)
-    .single();
-
-  if (!client || !client.is_active) return res.json({ authenticated: false });
-
   const { data: member } = await supabase
     .from('client_members')
-    .select('id, role, status')
+    .select('id, client_id, email, role, status')
     .eq('auth_user_id', user.id)
-    .eq('client_id', client.id)
     .single();
 
   if (!member || member.status === 'disabled' || member.status === 'revoked') {
     return res.json({ authenticated: false });
   }
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, name, is_active')
+    .eq('id', member.client_id)
+    .single();
+
+  if (!client || !client.is_active) return res.json({ authenticated: false });
 
   const connectionStatus = await supabaseService.getClientConnectionStatus(client.id);
 
@@ -75,7 +66,7 @@ router.get('/me', async (req, res) => {
     authenticated: true,
     clientId: client.id,
     clientName: client.name,
-    email: clientUser.email,
+    email: member.email,
     memberId: member.id,
     memberRole: member.role,
     dropboxConnected: connectionStatus.dropbox,
@@ -272,7 +263,7 @@ router.get('/google/callback', async (req, res) => {
  *
  * Called by invite-claim.js after the user sets their password.
  * Reads client_id from the JWT user metadata (set server-side during invite)
- * and creates the client_users record linking this auth user to the client.
+ * and upserts the owner row in client_members.
  */
 router.post('/complete-invite', async (req, res) => {
   const authHeader = req.headers['authorization'];
@@ -300,8 +291,6 @@ router.post('/complete-invite', async (req, res) => {
   }
 
   try {
-    await supabaseService.createClientUser(user.id, clientId, user.email);
-    // Ensure this user has an owner member row (backfill for new signups)
     await supabaseService.upsertOwnerMember(clientId, user.id, user.email);
   } catch (err) {
     console.error('complete-invite error:', err.message);
@@ -349,9 +338,6 @@ router.post('/accept-team-invite', async (req, res) => {
   }
 
   try {
-    // Ensure client_users row exists (needed by clientAuth middleware)
-    await supabaseService.createClientUser(user.id, invite.client_id, user.email);
-    // Accept the invite — updates client_members row
     await supabaseService.acceptTeamInvite(inviteToken, user.id);
   } catch (err) {
     console.error('accept-team-invite error:', err.message);
