@@ -19,7 +19,62 @@ router.post('/login', (req, res) => {
 router.get('/clients', adminAuth, async (req, res) => {
   try {
     const clients = await supabaseService.getAllClientsWithStatus();
-    res.json(clients);
+    if (!clients || clients.length === 0) return res.json([]);
+
+    const clientIds = clients.map(c => c.id);
+
+    const membersData = await supabaseService.getClientMembersByClientIds(clientIds).catch(() => []);
+    const membersByClient = {};
+    membersData.forEach(m => {
+      if (!membersByClient[m.client_id]) membersByClient[m.client_id] = [];
+      membersByClient[m.client_id].push(m);
+    });
+
+    const healthResults = await Promise.allSettled(
+      clients.map(async (c) => {
+        const [summaryR, analyticsR, jobsR, issueR] = await Promise.allSettled([
+          aikbService.getClientSummary(c.id),
+          aikbService.getClientAnalytics(c.id),
+          aikbService.listIngestionJobs(c.id),
+          supabaseService.getClientIssueCount(c.id),
+        ]);
+
+        const summary   = summaryR.status   === 'fulfilled' ? (summaryR.value   || {}) : {};
+        const analytics = analyticsR.status === 'fulfilled' ? (analyticsR.value || {}) : {};
+        const jobs      = jobsR.status      === 'fulfilled'
+          ? (jobsR.value.jobs || (Array.isArray(jobsR.value) ? jobsR.value : []))
+          : [];
+        const latestJob = jobs[0] || null;
+
+        return {
+          totalDocuments:     summary.totalDocuments     ?? summary.documentCount   ?? null,
+          indexedDocuments:   summary.indexedDocuments   ?? summary.indexedCount    ?? null,
+          failedDocuments:    summary.failedDocuments    ?? summary.failedCount     ?? null,
+          indexingDocuments:  summary.indexingDocuments  ?? null,
+          totalQuestions:     analytics.totalQuestions   ?? null,
+          totalKnowledgeGaps: analytics.totalKnowledgeGaps ?? analytics.knowledgeGaps ?? null,
+          latestIngestionJob: latestJob ? { status: latestJob.status, created_at: latestJob.created_at } : null,
+          lastQuestionAt:     analytics.lastQuestionAt   ?? null,
+          lastIndexedAt:      summary.lastIndexedAt      ?? null,
+          issueCount:         issueR.status === 'fulfilled' ? issueR.value : null,
+        };
+      })
+    );
+
+    const enriched = clients.map((c, i) => {
+      const members = membersByClient[c.id] || [];
+      const health  = healthResults[i].status === 'fulfilled' ? healthResults[i].value : null;
+      return {
+        ...c,
+        teamMembers:        members,
+        teamCount:          members.length,
+        activeMemberCount:  members.filter(m => m.status === 'active').length,
+        pendingMemberCount: members.filter(m => m.status === 'pending').length,
+        aikbHealth:         health,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     console.error('admin/clients error:', err.message);
     res.status(500).json({ error: err.message });

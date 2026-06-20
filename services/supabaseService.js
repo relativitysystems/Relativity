@@ -344,6 +344,19 @@ async function getClientMembers(clientId) {
   return data || [];
 }
 
+async function getClientMembersByClientIds(clientIds) {
+  if (!Array.isArray(clientIds) || clientIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('client_members')
+    .select('id, client_id, email, full_name, role, status, invited_at, accepted_at, last_active_at, created_at')
+    .in('client_id', clientIds)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getClientMembersByClientIds failed: ${error.message}`);
+  return data || [];
+}
+
 async function updateClientMember(memberId, clientId, updates) {
   const allowed = {};
   if (updates.role !== undefined) allowed.role = updates.role;
@@ -611,6 +624,7 @@ module.exports = {
   getClientMemberByAuthUserId,
   createClientMember,
   getClientMembers,
+  getClientMembersByClientIds,
   updateClientMember,
   getActiveMemberCount,
   // Team invites

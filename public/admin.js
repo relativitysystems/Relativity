@@ -38,7 +38,6 @@
     loginView.hidden = true;
     dashboardView.hidden = false;
     logoutBtn.hidden = false;
-    loadAnalytics();
     loadClients();
     loadLeads();
     loadIssues();
@@ -84,168 +83,6 @@
     clearToken();
     showLogin();
   });
-
-  // ---- Analytics ----
-
-  const analyticsLoading = document.getElementById('analyticsLoading');
-  const analyticsError   = document.getElementById('analyticsError');
-  const analyticsPanel   = document.getElementById('analyticsPanel');
-
-  async function loadAnalytics() {
-    analyticsLoading.hidden = false;
-    analyticsError.hidden = true;
-    analyticsPanel.hidden = true;
-
-    let res;
-    try {
-      res = await adminFetch('/admin/analytics');
-    } catch {
-      return;
-    }
-
-    analyticsLoading.hidden = true;
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      analyticsError.textContent = body.error || 'Failed to load analytics.';
-      analyticsError.hidden = false;
-      return;
-    }
-
-    const data = await res.json();
-
-    const stat = (val, label, note) => `
-      <div class="analytics-card">
-        <div class="analytics-value">${val !== null && val !== undefined ? esc(String(val)) : '—'}</div>
-        <div class="analytics-label">${esc(label)}${note ? `<span class="analytics-todo">${esc(note)}</span>` : ''}</div>
-      </div>
-    `;
-
-    analyticsPanel.innerHTML = `
-      <div class="analytics-grid">
-        ${stat(data.clientCount,    'Total Clients')}
-        ${stat(data.totalDocuments, 'Total Documents')}
-        ${stat(data.totalIndexed,   'Indexed')}
-        ${stat(data.totalFailed,    'Failed Documents')}
-        ${stat(data.openIssues,     'Open Issues')}
-        ${stat(data.totalQuestions, 'Total Questions', 'coming soon')}
-      </div>
-    `;
-    analyticsPanel.hidden = false;
-  }
-
-  // ---- AIKB Health ----
-
-  const aikbHealthLoading = document.getElementById('aikbHealthLoading');
-  const aikbHealthEmpty   = document.getElementById('aikbHealthEmpty');
-  const aikbHealthError   = document.getElementById('aikbHealthError');
-  const aikbHealthTable   = document.getElementById('aikbHealthTable');
-
-  document.getElementById('loadAikbHealthBtn').addEventListener('click', loadAikbHealth);
-
-  async function loadAikbHealth() {
-    aikbHealthLoading.hidden = false;
-    aikbHealthEmpty.hidden   = true;
-    aikbHealthError.hidden   = true;
-    aikbHealthTable.hidden   = true;
-
-    // Re-use client list rather than making a separate call
-    let clients;
-    let res;
-    try {
-      res = await adminFetch('/admin/clients');
-      clients = await res.json();
-    } catch {
-      aikbHealthLoading.hidden = true;
-      return;
-    }
-
-    if (!Array.isArray(clients) || clients.length === 0) {
-      aikbHealthLoading.hidden = true;
-      aikbHealthEmpty.hidden = false;
-      return;
-    }
-
-    // Fetch health for each client in parallel
-    const healthResults = await Promise.allSettled(
-      clients.map(c =>
-        adminFetch(`/admin/clients/${encodeURIComponent(c.id)}/aikb-health`)
-          .then(r => r.json())
-          .catch(() => ({}))
-      )
-    );
-
-    aikbHealthLoading.hidden = true;
-
-    const fmtDate = (val) => val
-      ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—';
-
-    const jobStatusBadge = (job) => {
-      const status = job?.status;
-      if (!status) return '—';
-      const cls = {
-        completed: 'badge--active',
-        running:   'badge--pending',
-        queued:    'badge--pending',
-        failed:    'badge--closed_lost',
-      }[status] || '';
-      return `<span class="badge ${cls}">${esc(status)}</span>`;
-    };
-
-    const rows = clients.map((c, i) => {
-      const h = healthResults[i].status === 'fulfilled' ? (healthResults[i].value || {}) : {};
-
-      const lastActiveTimestamp = [
-        h.lastQuestionAt,
-        h.latestIngestionJob?.created_at,
-        h.lastIndexedAt,
-      ].filter(Boolean).sort().at(-1) || null;
-
-      return `
-        <tr>
-          <td>
-            <div class="client-name">${esc(c.name)}</div>
-            <div class="client-email">${esc(c.email)}</div>
-          </td>
-          <td>${h.totalDocuments    ?? '—'}</td>
-          <td>${h.indexedDocuments  ?? '—'}</td>
-          <td>${h.failedDocuments   ?? '—'}</td>
-          <td>${h.indexingDocuments ?? '—'}</td>
-          <td>${h.totalQuestions    ?? '—'}</td>
-          <td>${h.totalKnowledgeGaps ?? '—'}</td>
-          <td>${jobStatusBadge(h.latestIngestionJob)}</td>
-          <td class="client-date">${fmtDate(h.lastQuestionAt)}</td>
-          <td class="client-date">${fmtDate(h.lastIndexedAt)}</td>
-          <td class="client-date">${fmtDate(lastActiveTimestamp)}</td>
-          <td>${h.issueCount ?? '—'}</td>
-        </tr>
-      `;
-    }).join('');
-
-    aikbHealthTable.innerHTML = `
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>Client</th>
-            <th>Total Docs</th>
-            <th>Indexed</th>
-            <th>Failed</th>
-            <th>Indexing</th>
-            <th>Questions</th>
-            <th>Gaps</th>
-            <th>Latest Job</th>
-            <th>Last Question</th>
-            <th>Last Indexed</th>
-            <th>Last Active</th>
-            <th>Issues</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
-    aikbHealthTable.hidden = false;
-  }
 
   // ---- Invite form ----
 
@@ -328,80 +165,180 @@
     clientsTable.hidden = false;
   }
 
+  function fmtDate(val) {
+    return val
+      ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+  }
+
   function renderTable(clients) {
     const rows = clients.map(renderRow).join('');
     return `
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>Client</th>
-            <th>Status</th>
-            <th>Integrations</th>
-            <th>Joined</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="admin-table clients-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Client</th>
+              <th>Status</th>
+              <th>Team</th>
+              <th>Docs</th>
+              <th>Indexed</th>
+              <th>Failed</th>
+              <th>Questions</th>
+              <th>Gaps</th>
+              <th>Issues</th>
+              <th>Integrations</th>
+              <th>Last Active</th>
+              <th>Joined</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     `;
   }
 
   function renderRow(c) {
-    const badge = c.invite_accepted
+    const h = c.aikbHealth || {};
+
+    const statusBadge = c.invite_accepted
       ? `<span class="badge badge--active">Active</span>`
-      : `<span class="badge badge--pending">Invite Sent</span>`;
+      : c.is_active
+        ? `<span class="badge badge--pending">Invite Sent</span>`
+        : `<span class="badge badge--closed_lost">Inactive</span>`;
 
     const integrations = [
-      { key: 'dropbox', label: 'Dropbox' },
-      { key: 'slack', label: 'Slack' },
-      { key: 'google_drive', label: 'Drive' },
+      { key: 'dropbox',      label: 'Dropbox' },
+      { key: 'slack',        label: 'Slack'   },
+      { key: 'google_drive', label: 'Drive'   },
     ].map(({ key, label }) =>
       `<span class="integration-tag ${c[key] ? 'integration-tag--on' : ''}">${label}</span>`
     ).join('');
 
-    const joined = new Date(c.created_at).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    });
+    const lastActiveTimestamp = [
+      h.lastQuestionAt,
+      h.latestIngestionJob?.created_at,
+      h.lastIndexedAt,
+    ].filter(Boolean).sort().at(-1) || null;
+
+    const teamCell = [
+      `<span class="team-count">${c.teamCount || 0}</span>`,
+      c.activeMemberCount  ? `<span class="badge badge--active badge--sm">${c.activeMemberCount} active</span>`   : '',
+      c.pendingMemberCount ? `<span class="badge badge--pending badge--sm">${c.pendingMemberCount} pending</span>` : '',
+    ].filter(Boolean).join(' ');
+
+    const membersRowId = `members-${c.id}`;
 
     return `
-      <tr>
+      <tr class="client-row">
+        <td class="expand-cell">
+          <button class="btn-expand" data-target="${membersRowId}" aria-expanded="false" title="Show team members">▶</button>
+        </td>
         <td>
           <div class="client-name">${esc(c.name)}</div>
           <div class="client-email">${esc(c.email)}</div>
         </td>
-        <td>${badge}</td>
+        <td>${statusBadge}</td>
+        <td class="team-cell">${teamCell}</td>
+        <td class="num-cell">${h.totalDocuments     ?? '—'}</td>
+        <td class="num-cell">${h.indexedDocuments   ?? '—'}</td>
+        <td class="num-cell">${h.failedDocuments    ?? '—'}</td>
+        <td class="num-cell">${h.totalQuestions     ?? '—'}</td>
+        <td class="num-cell">${h.totalKnowledgeGaps ?? '—'}</td>
+        <td class="num-cell">${h.issueCount         ?? '—'}</td>
         <td><div class="integration-list">${integrations}</div></td>
-        <td class="client-date">${joined}</td>
+        <td class="client-date">${fmtDate(lastActiveTimestamp)}</td>
+        <td class="client-date">${fmtDate(c.created_at)}</td>
         <td><button class="btn-delete" data-id="${esc(c.id)}" data-name="${esc(c.name)}">Delete</button></td>
+      </tr>
+      <tr id="${membersRowId}" class="members-row" hidden>
+        <td colspan="14">${renderMembersPanel(c.teamMembers || [])}</td>
       </tr>
     `;
   }
 
-  // Delete handler — attached via event delegation since rows are re-rendered
-  document.getElementById('clientsTable').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.btn-delete');
-    if (!btn) return;
+  function renderMembersPanel(members) {
+    if (!members.length) {
+      return `<div class="members-panel"><p class="members-empty">No team members yet.</p></div>`;
+    }
 
-    const clientId = btn.dataset.id;
-    const clientName = btn.dataset.name;
-    if (!confirm(`Delete "${clientName}"? This removes their account and all data.`)) return;
+    const memberStatusBadge = (status) => {
+      const cls = { active: 'badge--active', pending: 'badge--pending' }[status] || 'badge--closed_lost';
+      return `<span class="badge ${cls}">${esc(status)}</span>`;
+    };
 
-    btn.disabled = true;
-    btn.textContent = 'Deleting…';
+    const rows = members.map(m => `
+      <tr>
+        <td class="client-name">${esc(m.full_name || '—')}</td>
+        <td class="client-email">${esc(m.email)}</td>
+        <td><span class="badge badge--role-${esc(m.role)}">${esc(m.role)}</span></td>
+        <td>${memberStatusBadge(m.status)}</td>
+        <td class="client-date">${fmtDate(m.invited_at)}</td>
+        <td class="client-date">${fmtDate(m.accepted_at)}</td>
+        <td class="client-date">${fmtDate(m.last_active_at)}</td>
+      </tr>
+    `).join('');
 
-    try {
-      const res = await adminFetch(`/admin/clients/${clientId}`, { method: 'DELETE' });
-      if (res.ok) {
-        loadClients();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        alert(body.error || 'Failed to delete client.');
-        btn.disabled = false;
-        btn.textContent = 'Delete';
+    return `
+      <div class="members-panel">
+        <table class="members-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Invited</th>
+              <th>Accepted</th>
+              <th>Last Active</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  // Delete + expand handler via event delegation (delete checked first)
+  clientsTable.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.btn-delete');
+    if (deleteBtn) {
+      const clientId = deleteBtn.dataset.id;
+      const clientName = deleteBtn.dataset.name;
+      if (!confirm(`Delete "${clientName}"? This removes their account and all data.`)) return;
+
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Deleting…';
+
+      try {
+        const res = await adminFetch(`/admin/clients/${clientId}`, { method: 'DELETE' });
+        if (res.ok) {
+          loadClients();
+        } else {
+          const body = await res.json().catch(() => ({}));
+          alert(body.error || 'Failed to delete client.');
+          deleteBtn.disabled = false;
+          deleteBtn.textContent = 'Delete';
+        }
+      } catch {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Delete';
       }
-    } catch {
-      btn.disabled = false;
-      btn.textContent = 'Delete';
+      return;
+    }
+
+    const expandBtn = e.target.closest('.btn-expand');
+    if (expandBtn) {
+      const targetId = expandBtn.dataset.target;
+      const targetRow = document.getElementById(targetId);
+      if (targetRow) {
+        const nowOpen = targetRow.hidden;
+        targetRow.hidden = !nowOpen;
+        expandBtn.textContent = nowOpen ? '▼' : '▶';
+        expandBtn.setAttribute('aria-expanded', String(nowOpen));
+      }
     }
   });
 

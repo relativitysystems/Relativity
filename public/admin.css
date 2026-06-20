@@ -148,16 +148,134 @@
   cursor: not-allowed;
 }
 
+/* ---- Clients table: wide layout with scroll ---- */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.clients-table {
+  min-width: 1000px;
+}
+
+.expand-cell {
+  width: 32px;
+  padding-right: 0 !important;
+}
+
+.btn-expand {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.65rem;
+  line-height: 1;
+  padding: 3px 6px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.btn-expand:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.num-cell {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.team-cell {
+  white-space: nowrap;
+}
+
+.team-count {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+
+.badge--sm {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+}
+
+/* ---- Team members dropdown row ---- */
+.members-row > td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border);
+}
+
+.members-panel {
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--border);
+  padding: 16px 20px 16px 48px;
+}
+
+.members-empty {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.members-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.members-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 0 12px 8px 0;
+}
+
+.members-table td {
+  padding: 7px 12px 7px 0;
+  vertical-align: middle;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+}
+
+.members-table tbody tr:first-child td {
+  border-top: none;
+}
+
+/* ---- Member role badges ---- */
+.badge--role-owner {
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+.badge--role-admin {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.badge--role-member {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.badge--role-viewer {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
 @media (max-width: 640px) {
   .invite-fields {
     grid-template-columns: 1fr;
-  }
-
-  .admin-table th:nth-child(3),
-  .admin-table td:nth-child(3),
-  .admin-table th:nth-child(4),
-  .admin-table td:nth-child(4) {
-    display: none;
   }
 }
 
