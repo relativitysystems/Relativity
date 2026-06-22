@@ -785,7 +785,7 @@ footer {
 
 .demo-chrome-title {
   font-size: 0.72rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-weight: 500;
   letter-spacing: 0.04em;
 }
@@ -821,7 +821,7 @@ footer {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #333;
+  color: var(--text-muted);
   margin-bottom: 8px;
   padding: 0 4px;
 }
@@ -845,12 +845,12 @@ footer {
 
 .document-row svg {
   flex-shrink: 0;
-  color: #333;
+  color: var(--text-muted);
 }
 
 .document-row span {
   font-size: 0.68rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -862,15 +862,15 @@ footer {
 }
 
 .document-row:hover span {
-  color: var(--text-secondary);
+  color: var(--text);
 }
 
 .document-row--dim span {
-  color: #333;
+  color: var(--text-muted);
 }
 
 .document-row--dim svg {
-  color: #252525;
+  color: var(--text-muted);
 }
 
 .document-more-row {
@@ -881,7 +881,7 @@ footer {
 
 .document-more-row span {
   font-size: 0.62rem;
-  color: #2e2e2e;
+  color: var(--text-muted);
   letter-spacing: 0.01em;
 }
 
@@ -904,12 +904,12 @@ footer {
 
 .history-item svg {
   flex-shrink: 0;
-  color: #333;
+  color: var(--text-muted);
 }
 
 .history-item span {
   font-size: 0.68rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -925,11 +925,11 @@ footer {
 }
 
 .history-item--active span {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text);
 }
 
 .history-item--active svg {
-  color: #444;
+  color: var(--text-secondary);
 }
 
 /* ── Main chat area ── */
@@ -947,7 +947,7 @@ footer {
 
 .demo-chat-thread-title {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text);
   font-weight: 500;
   letter-spacing: 0.01em;
 }
@@ -967,7 +967,7 @@ footer {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -980,7 +980,7 @@ footer {
 
 .demo-message-user p {
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text);
   line-height: 1.6;
 }
 
@@ -1006,12 +1006,12 @@ footer {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #444;
+  color: var(--text-secondary);
 }
 
 .answer-section p {
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: var(--text);
   line-height: 1.75;
 }
 
@@ -1028,7 +1028,7 @@ footer {
   align-items: center;
   gap: 5px;
   font-size: 0.7rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 9px;
@@ -1039,7 +1039,7 @@ footer {
 
 .source-pill svg {
   flex-shrink: 0;
-  color: #3a3a3a;
+  color: var(--text-muted);
 }
 
 /* ── Messages divider ── */
@@ -1068,17 +1068,17 @@ footer {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
 }
 
 .gap-label svg {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.22);
+  color: var(--text-muted);
 }
 
 .knowledge-gap-preview > p {
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -1091,7 +1091,7 @@ footer {
 
 .gap-suggest-label {
   font-size: 0.68rem;
-  color: #333;
+  color: var(--text-muted);
 }
 
 .knowledge-gap-preview ul {
@@ -1103,7 +1103,7 @@ footer {
 
 .knowledge-gap-preview li {
   font-size: 0.72rem;
-  color: #3a3a3a;
+  color: var(--text-muted);
   padding-left: 14px;
   position: relative;
 }
@@ -1112,7 +1112,7 @@ footer {
   content: '—';
   position: absolute;
   left: 0;
-  color: #2a2a2a;
+  color: var(--text-muted);
 }
 
 /* ── Trust indicator ── */
@@ -1134,7 +1134,7 @@ footer {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 4px;
   padding: 4px 9px;
@@ -1143,12 +1143,12 @@ footer {
 
 .trust-badge svg {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.28);
+  color: var(--text-muted);
 }
 
 .trust-preview > p {
   font-size: 0.83rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.7;
   max-width: 640px;
 }
@@ -1165,7 +1165,7 @@ footer {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .demo-prompts-pills {
@@ -1176,7 +1176,7 @@ footer {
 
 .prompt-pill {
   font-size: 0.78rem;
-  color: var(--text-secondary);
+  color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 7px 12px;
@@ -1188,7 +1188,7 @@ footer {
 
 .prompt-pill:hover {
   border-color: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text);
 }
 
 /* ── Responsive — tablet ── */
