@@ -745,58 +745,11 @@ footer {
 
 /* Outer column */
 .demo-layout {
-  max-width: 920px;
+  max-width: 1040px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-/* Flow diagram — secondary */
-.flow-diagram {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 18px 20px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow-x: auto;
-}
-
-.flow-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 68px;
-}
-
-.flow-node-box {
-  width: 38px;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-  flex-shrink: 0;
-}
-
-.flow-node-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-align: center;
-  line-height: 1.4;
-}
-
-.flow-connector {
-  display: flex;
-  align-items: center;
-  padding: 0 2px;
-  flex-shrink: 0;
-  margin-bottom: 18px;
+  gap: 28px;
 }
 
 /* ── Dashboard window ── */
@@ -840,7 +793,7 @@ footer {
 /* ── Product dashboard layout ── */
 .demo-product-layout {
   display: grid;
-  grid-template-columns: 210px 1fr;
+  grid-template-columns: 170px minmax(0, 1fr);
   min-height: 500px;
 }
 
@@ -920,6 +873,18 @@ footer {
   color: #252525;
 }
 
+.document-more-row {
+  padding: 7px 6px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.document-more-row span {
+  font-size: 0.62rem;
+  color: #2e2e2e;
+  letter-spacing: 0.01em;
+}
+
 /* Chat history */
 .demo-chat-history {
   display: flex;
@@ -988,10 +953,10 @@ footer {
 }
 
 .demo-chat-messages {
-  padding: 18px 18px 22px;
+  padding: 22px 22px 28px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   flex: 1;
 }
 
@@ -1228,12 +1193,8 @@ footer {
 
 /* ── Responsive — tablet ── */
 @media (max-width: 960px) {
-  .flow-diagram {
-    padding: 16px 14px;
-  }
-
   .demo-product-layout {
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 160px 1fr;
   }
 
   .use-cases-grid {
@@ -1249,31 +1210,6 @@ footer {
 
   .demo-layout {
     gap: 16px;
-  }
-
-  .flow-diagram {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 18px;
-  }
-
-  .flow-node {
-    flex-direction: row;
-    gap: 12px;
-    flex: none;
-    width: 100%;
-  }
-
-  .flow-node-label {
-    text-align: left;
-  }
-
-  .flow-connector {
-    padding: 4px 0 4px 13px;
-    margin-bottom: 0;
-    transform: rotate(90deg);
-    transform-origin: left center;
-    margin-left: 5px;
   }
 
   .demo-sidebar {
