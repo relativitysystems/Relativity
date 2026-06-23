@@ -1420,7 +1420,7 @@ select.form-input {
 
 .btn-team-invite {
   flex-shrink: 0;
-  background: #FF6B2B;
+  background: var(--warn);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -1509,9 +1509,10 @@ select.form-input {
 .team-role-select:focus { outline: none; border-color: var(--border-hover); }
 
 .team-actions-cell {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+  white-space: nowrap;
+}
+.team-actions-cell > * + * {
+  margin-left: 6px;
 }
 
 .btn-team-action {
