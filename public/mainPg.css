@@ -710,7 +710,6 @@ footer {
   .trust-section,
   .rag-explainer,
   .use-cases,
-  .process,
   .cta-banner,
   .contact {
     padding: 80px 0;
@@ -739,7 +738,7 @@ footer {
    ============================================================ */
 
 #demo {
-  padding: 128px 0;
+  padding: 140px 0;
   border-top: 1px solid var(--border);
 }
 
@@ -749,7 +748,7 @@ footer {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 36px;
 }
 
 /* ── Dashboard window ── */
@@ -793,13 +792,13 @@ footer {
 /* ── Product dashboard layout ── */
 .demo-product-layout {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
+  grid-template-columns: 140px minmax(0, 1fr);
   min-height: 500px;
 }
 
 /* ── Sidebar ── */
 .demo-sidebar {
-  border-right: 1px solid var(--border);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
   background: #080808;
   display: flex;
   flex-direction: column;
@@ -807,7 +806,7 @@ footer {
 }
 
 .demo-sidebar-section {
-  padding: 14px 12px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -817,11 +816,12 @@ footer {
 
 .demo-sidebar-label {
   display: block;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
+  opacity: 0.6;
   margin-bottom: 8px;
   padding: 0 4px;
 }
@@ -953,7 +953,7 @@ footer {
 }
 
 .demo-chat-messages {
-  padding: 22px 22px 28px;
+  padding: 28px 28px 32px;
   display: flex;
   flex-direction: column;
   gap: 16px;
