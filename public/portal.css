@@ -757,6 +757,77 @@ body {
   color: var(--text-secondary);
 }
 
+/* ---- Knowledge gap card ---- */
+.kb-gap-card {
+  max-width: 85%;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.kb-gap-card__label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+  margin-bottom: 5px;
+}
+
+.kb-gap-card__text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.kb-gap-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kb-gap-card__btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: opacity var(--transition);
+}
+
+.kb-gap-card__btn:hover:not(:disabled) { opacity: 0.8; }
+.kb-gap-card__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.kb-gap-card__btn--save {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: var(--warn);
+}
+
+.kb-gap-card__btn--dismiss {
+  color: var(--text-muted);
+}
+
+.kb-gap-card__saved {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--success);
+}
+
+.kb-gap-card__error {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--error);
+  margin-top: 6px;
+}
+
 /* ---- Badge ---- */
 .badge {
   display: inline-flex;

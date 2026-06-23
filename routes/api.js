@@ -187,6 +187,26 @@ router.post('/knowledge/query', clientAuth, async (req, res) => {
   }
 });
 
+router.post('/knowledge/gaps', clientAuth, async (req, res) => {
+  const { sessionId, messageId, question, reason } = req.body;
+  if (!sessionId || !question || !reason) {
+    return res.status(400).json({ error: 'sessionId, question, and reason are required' });
+  }
+  try {
+    const result = await aikbService.saveKnowledgeGap({
+      clientId: req.client.id,
+      sessionId,
+      messageId: messageId || null,
+      question,
+      reason,
+    });
+    res.json({ success: true, gap: result.gap });
+  } catch (err) {
+    console.error('POST /api/knowledge/gaps error:', err.message);
+    res.status(500).json({ error: 'Could not save knowledge gap.' });
+  }
+});
+
 router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
   try {
     const [allSessions, memberSessionIds] = await Promise.all([

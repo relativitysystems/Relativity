@@ -71,6 +71,19 @@ async function queryKnowledge(clientId, query, sessionId) {
   }
 }
 
+async function saveKnowledgeGap({ clientId, sessionId, messageId, question, reason }) {
+  try {
+    const res = await axios.post(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/gaps`,
+      { clientId, sessionId, messageId: messageId || null, question, reason },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB saveKnowledgeGap failed: ${extractAxiosError(err)}`);
+  }
+}
+
 async function listChatSessions(clientId) {
   try {
     const res = await axios.get(
@@ -199,6 +212,7 @@ module.exports = {
   uploadAndIngest,
   listDocuments,
   queryKnowledge,
+  saveKnowledgeGap,
   deleteDocument,
   listChatSessions,
   listChatMessages,

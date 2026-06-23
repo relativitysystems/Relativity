@@ -579,6 +579,78 @@
     updateChatWelcome();
   }
 
+  function showGapCard(body, originalQuery) {
+    const card = document.createElement('div');
+    card.className = 'kb-gap-card';
+
+    const label = document.createElement('span');
+    label.className = 'kb-gap-card__label';
+    label.textContent = 'Knowledge gap detected';
+    card.appendChild(label);
+
+    const desc = document.createElement('p');
+    desc.className = 'kb-gap-card__text';
+    desc.textContent = 'No approved documentation was found for this question. Save it for review?';
+    card.appendChild(desc);
+
+    const actions = document.createElement('div');
+    actions.className = 'kb-gap-card__actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'kb-gap-card__btn kb-gap-card__btn--save';
+    saveBtn.textContent = 'Save gap';
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'kb-gap-card__btn kb-gap-card__btn--dismiss';
+    dismissBtn.textContent = 'Dismiss';
+
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const r = await fetch('/api/knowledge/gaps', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: body.sessionId,
+            messageId: body.userMessageId || null,
+            question: originalQuery,
+            reason: body.gapReason,
+          }),
+        });
+        if (r.ok) {
+          card.innerHTML = '';
+          const saved = document.createElement('span');
+          saved.className = 'kb-gap-card__saved';
+          saved.textContent = 'Saved for review.';
+          card.appendChild(saved);
+        } else {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save gap';
+          let errEl = card.querySelector('.kb-gap-card__error');
+          if (!errEl) {
+            errEl = document.createElement('span');
+            errEl.className = 'kb-gap-card__error';
+            card.appendChild(errEl);
+          }
+          errEl.textContent = 'Failed to save. Try again.';
+        }
+      } catch {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save gap';
+      }
+    });
+
+    dismissBtn.addEventListener('click', () => card.remove());
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(dismissBtn);
+    card.appendChild(actions);
+
+    kbMessages.appendChild(card);
+    kbMessages.scrollTop = kbMessages.scrollHeight;
+  }
+
   function shouldShowSourcesBox(answerText, sources) {
     if (!sources || sources.length === 0) return false;
     if (/Source:/i.test(answerText)) return false;
@@ -761,6 +833,9 @@
         const answer  = body.answer || 'No answer returned.';
         const sources = body.sources || [];
         appendMessage('assistant', answer, sources);
+        if (body.isKnowledgeGap === true) {
+          showGapCard(body, query);
+        }
         if (!currentSessionId && body.sessionId) {
           currentSessionId = body.sessionId;
         }
