@@ -731,17 +731,24 @@
       return;
     }
 
-    crmProspects      = await res.json();
+    const data        = await res.json();
+    console.log('[crm] raw response:', data);
+    const leads       = Array.isArray(data) ? data : (data.leads || []);
+    console.log('[crm] leads length:', leads.length);
+    console.log('[crm] table container:', crmTable);
+
+    crmProspects      = leads;
     crmLoading.hidden = true;
 
-    crmStats.innerHTML = renderCrmStats(crmProspects);
+    crmStats.innerHTML = renderCrmStats(leads);
 
-    if (!Array.isArray(crmProspects) || crmProspects.length === 0) {
+    if (leads.length === 0) {
       crmEmpty.hidden = false;
       return;
     }
 
-    crmTable.innerHTML = renderCrmTable(crmProspects);
+    crmEmpty.hidden    = true;
+    crmTable.innerHTML = renderCrmTable(leads);
     crmTable.hidden    = false;
   }
 
