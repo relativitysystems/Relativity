@@ -7,12 +7,33 @@ const adminAuth = require('../middleware/adminAuth');
 const supabaseService = require('../services/supabaseService');
 const aikbService = require('../services/aikbService');
 
+if (process.env.NODE_ENV !== 'production') {
+  console.log('[aibdr] AI_BDR_API_URL exists:', Boolean(process.env.AI_BDR_API_URL));
+  console.log('[aibdr] AI_BDR_INTERNAL_API_KEY exists:', Boolean(process.env.AI_BDR_INTERNAL_API_KEY));
+  console.log('[aibdr] AI_BDR_API_URL:', process.env.AI_BDR_API_URL);
+}
+
 function aibdrHeaders() {
-  return { 'x-api-key': process.env.AI_BDR_INTERNAL_API_KEY };
+  return {
+    'x-api-key': process.env.AI_BDR_INTERNAL_API_KEY,
+    'Content-Type': 'application/json',
+  };
 }
 
 function aibdrUrl(path) {
-  return `${process.env.AI_BDR_API_URL}${path}`;
+  const base = (process.env.AI_BDR_API_URL || '').replace(/\/+$/, '');
+  return `${base}${path}`;
+}
+
+function handleAibdrError(err, res, label) {
+  console.error(`${label} error:`, err.message);
+  if (err.response?.status === 401) {
+    return res.status(502).json({
+      success: false,
+      error: 'AI BDR service rejected the proxy request. Check server API key configuration.',
+    });
+  }
+  res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
 }
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
@@ -272,8 +293,7 @@ router.get('/aibdr/api/leads', adminAuth, async (req, res) => {
     const { data } = await axios.get(aibdrUrl('/api/leads'), { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/leads GET error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/leads GET');
   }
 });
 
@@ -282,8 +302,7 @@ router.get('/aibdr/api/leads/:leadId', adminAuth, async (req, res) => {
     const { data } = await axios.get(aibdrUrl(`/api/leads/${req.params.leadId}`), { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/leads/:leadId GET error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/leads/:leadId GET');
   }
 });
 
@@ -292,8 +311,7 @@ router.post('/aibdr/api/leads', adminAuth, async (req, res) => {
     const { data } = await axios.post(aibdrUrl('/api/leads'), req.body, { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/leads POST error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/leads POST');
   }
 });
 
@@ -302,8 +320,7 @@ router.patch('/aibdr/api/leads/:leadId/status', adminAuth, async (req, res) => {
     const { data } = await axios.patch(aibdrUrl(`/api/leads/${req.params.leadId}/status`), req.body, { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/leads/:leadId/status PATCH error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/leads/:leadId/status PATCH');
   }
 });
 
@@ -312,8 +329,7 @@ router.post('/aibdr/api/analyze/:leadId', adminAuth, async (req, res) => {
     const { data } = await axios.post(aibdrUrl(`/api/analyze/${req.params.leadId}`), req.body, { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/analyze/:leadId POST error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/analyze/:leadId POST');
   }
 });
 
@@ -322,8 +338,7 @@ router.post('/aibdr/api/outreach/:leadId', adminAuth, async (req, res) => {
     const { data } = await axios.post(aibdrUrl(`/api/outreach/${req.params.leadId}`), req.body, { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/outreach/:leadId POST error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/outreach/:leadId POST');
   }
 });
 
@@ -332,8 +347,7 @@ router.post('/aibdr/api/score/:leadId', adminAuth, async (req, res) => {
     const { data } = await axios.post(aibdrUrl(`/api/score/${req.params.leadId}`), req.body, { headers: aibdrHeaders() });
     res.json(data);
   } catch (err) {
-    console.error('admin/aibdr/api/score/:leadId POST error:', err.message);
-    res.status(err.response?.status || 500).json({ error: err.response?.data || err.message });
+    handleAibdrError(err, res, 'admin/aibdr/api/score/:leadId POST');
   }
 });
 

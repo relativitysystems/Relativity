@@ -664,6 +664,498 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ── Tab switching ─────────────────────────────────────────────────────────
+
+  const tabBtns = document.querySelectorAll('.admin-tab');
+  const TAB_NAMES = ['clients', 'leads', 'issues', 'crm'];
+  let crmProspectsLoaded = false;
+
+  function switchTab(name) {
+    tabBtns.forEach(b => b.classList.toggle('admin-tab--active', b.dataset.tab === name));
+    TAB_NAMES.forEach(t => {
+      const panel = document.getElementById(`tab-${t}`);
+      if (panel) panel.hidden = (t !== name);
+    });
+    if (name === 'crm' && !crmProspectsLoaded) {
+      crmProspectsLoaded = true;
+      loadCrmProspects();
+    }
+  }
+
+  tabBtns.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+  // ── CRM (AI BDR) ─────────────────────────────────────────────────────────
+
+  const CRM_API_BASE = '/admin/aibdr/api';
+
+  const crmLoading  = document.getElementById('crmLoading');
+  const crmEmpty    = document.getElementById('crmEmpty');
+  const crmError    = document.getElementById('crmError');
+  const crmTable    = document.getElementById('crmTable');
+  const crmStats    = document.getElementById('crmStats');
+  const crmModal    = document.getElementById('crmModal');
+
+  let crmProspects = [];
+  let crmCurrentId = null;
+
+  async function loadCrmProspects() {
+    crmLoading.hidden = false;
+    crmEmpty.hidden   = true;
+    crmError.hidden   = true;
+    crmTable.hidden   = true;
+
+    let res;
+    try {
+      res = await adminFetch(`${CRM_API_BASE}/leads`);
+    } catch (err) {
+      crmLoading.hidden = true;
+      if (err.message !== 'Session expired') {
+        crmError.textContent = 'Could not reach the admin API. Check your connection and try again.';
+        crmError.hidden = false;
+      }
+      return;
+    }
+
+    if (res.status === 401) {
+      crmLoading.hidden = true;
+      crmError.textContent = 'Unauthorized. Please sign in again.';
+      crmError.hidden = false;
+      return;
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      crmLoading.hidden = true;
+      crmError.textContent = body.error || 'Failed to load prospects.';
+      crmError.hidden = false;
+      return;
+    }
+
+    crmProspects      = await res.json();
+    crmLoading.hidden = true;
+
+    crmStats.innerHTML = renderCrmStats(crmProspects);
+
+    if (!Array.isArray(crmProspects) || crmProspects.length === 0) {
+      crmEmpty.hidden = false;
+      return;
+    }
+
+    crmTable.innerHTML = renderCrmTable(crmProspects);
+    crmTable.hidden    = false;
+  }
+
+  function renderCrmStats(prospects) {
+    const p         = Array.isArray(prospects) ? prospects : [];
+    const total     = p.length;
+    const highPri   = p.filter(x => x.priority === 'high').length;
+    const ready     = p.filter(x => x.status === 'outreach_ready').length;
+    const contacted = p.filter(x => ['contacted', 'follow_up_needed', 'replied'].includes(x.status)).length;
+    const booked    = p.filter(x => x.status === 'booked_call').length;
+
+    const card = (val, label) =>
+      `<div class="analytics-card"><div class="analytics-value">${val}</div><div class="analytics-label">${label}</div></div>`;
+
+    return card(total, 'Total Prospects')
+         + card(highPri, 'High Priority')
+         + card(ready, 'Outreach Ready')
+         + card(contacted, 'Contacted')
+         + card(booked, 'Booked Calls');
+  }
+
+  function crmStatusClass(status) {
+    return {
+      new:              'badge--new',
+      analyzed:         'badge--analyzed',
+      scored:           'badge--scored',
+      outreach_ready:   'badge--outreach-ready',
+      contacted:        'badge--contacted',
+      follow_up_needed: 'badge--follow-up',
+      replied:          'badge--replied',
+      booked_call:      'badge--booked',
+      closed_won:       'badge--closed_won',
+      closed_lost:      'badge--closed_lost',
+      bad_fit:          'badge--bad-fit',
+    }[status] || 'badge--new';
+  }
+
+  function renderCrmTable(prospects) {
+    const rows = prospects.map(p => {
+      const score      = p.score != null ? p.score : null;
+      const scoreColor = score == null ? 'var(--text-muted)'
+                       : score >= 80   ? 'var(--success)'
+                       : score >= 60   ? 'var(--warn)'
+                       :                 'var(--error)';
+
+      const priority = (p.priority || '').toLowerCase();
+      const priClass = { high: 'badge--priority-high', medium: 'badge--priority-medium', low: 'badge--priority-low' }[priority];
+      const priBadge = priClass
+        ? `<span class="badge ${priClass}">${esc(priority)}</span>`
+        : `<span class="client-email">${esc(p.priority || '—')}</span>`;
+
+      const status      = p.status || 'new';
+      const statusLabel = status.replace(/_/g, ' ');
+      const updated     = fmtDate(p.updated_at || p.created_at);
+
+      return `
+        <tr class="crm-prospect-row" data-id="${esc(p.id)}">
+          <td>
+            <div class="client-name">${esc(p.business_name || '—')}</div>
+            ${p.website_url ? `<div class="client-email">${esc(p.website_url)}</div>` : ''}
+          </td>
+          <td class="client-email">${esc(p.industry || '—')}</td>
+          <td class="client-email">${esc(p.location || '—')}</td>
+          <td class="num-cell"><span style="color:${scoreColor};font-weight:600;">${score != null ? score : '—'}</span></td>
+          <td>${priBadge}</td>
+          <td><span class="badge ${crmStatusClass(status)}">${esc(statusLabel)}</span></td>
+          <td class="client-email">${esc(p.contact_email || '—')}</td>
+          <td class="client-date">${updated}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="table-wrap">
+        <table class="admin-table crm-table">
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>Industry</th>
+              <th>Location</th>
+              <th style="text-align:right">Score</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Contact Email</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  crmTable.addEventListener('click', e => {
+    const row = e.target.closest('.crm-prospect-row');
+    if (row) openCrmDetail(row.dataset.id);
+  });
+
+  // ── Add Prospect Form ─────────────────────────────────────────────────────
+
+  const toggleAddProspect  = document.getElementById('toggleAddProspect');
+  const addProspectWrap    = document.getElementById('addProspectWrap');
+  const addProspectForm    = document.getElementById('addProspectForm');
+  const addProspectError   = document.getElementById('addProspectError');
+  const addProspectSuccess = document.getElementById('addProspectSuccess');
+  const addProspectBtn     = document.getElementById('addProspectBtn');
+
+  toggleAddProspect.addEventListener('click', () => {
+    const isOpen = !addProspectWrap.hidden;
+    addProspectWrap.hidden        = isOpen;
+    toggleAddProspect.textContent = isOpen ? '+ Add Prospect' : '− Close Form';
+  });
+
+  addProspectForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    addProspectError.hidden   = true;
+    addProspectSuccess.hidden = true;
+
+    const payload = {
+      business_name: document.getElementById('prospectBusiness').value.trim(),
+      website_url:   document.getElementById('prospectUrl').value.trim(),
+      industry:      document.getElementById('prospectIndustry').value.trim(),
+      location:      document.getElementById('prospectLocation').value.trim(),
+      contact_name:  document.getElementById('prospectContactName').value.trim(),
+      contact_email: document.getElementById('prospectContactEmail').value.trim(),
+      contact_phone: document.getElementById('prospectContactPhone').value.trim(),
+      notes:         document.getElementById('prospectNotes').value.trim(),
+    };
+
+    if (!payload.business_name) {
+      addProspectError.textContent = 'Business name is required.';
+      addProspectError.hidden = false;
+      return;
+    }
+
+    addProspectBtn.disabled    = true;
+    addProspectBtn.textContent = 'Adding…';
+
+    let res;
+    try {
+      res = await adminFetch(`${CRM_API_BASE}/leads`, {
+        method: 'POST',
+        body:   JSON.stringify(payload),
+      });
+    } catch {
+      addProspectError.textContent = 'Network error. Please try again.';
+      addProspectError.hidden    = false;
+      addProspectBtn.disabled    = false;
+      addProspectBtn.textContent = 'Add Prospect';
+      return;
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      addProspectError.textContent = body.error || 'Failed to add prospect.';
+      addProspectError.hidden    = false;
+      addProspectBtn.disabled    = false;
+      addProspectBtn.textContent = 'Add Prospect';
+      return;
+    }
+
+    addProspectSuccess.textContent = `"${payload.business_name}" added as a prospect.`;
+    addProspectSuccess.hidden      = false;
+    addProspectBtn.disabled        = false;
+    addProspectBtn.textContent     = 'Add Prospect';
+    addProspectForm.reset();
+    addProspectWrap.hidden         = true;
+    toggleAddProspect.textContent  = '+ Add Prospect';
+    loadCrmProspects();
+  });
+
+  // ── CRM Detail Modal ──────────────────────────────────────────────────────
+
+  const crmModalClose   = document.getElementById('crmModalClose');
+  const crmActionStatus = document.getElementById('crmActionStatus');
+  const crmStatusSelect = document.getElementById('crmStatusSelect');
+
+  crmModalClose.addEventListener('click', closeCrmModal);
+  crmModal.addEventListener('click', e => { if (e.target === crmModal) closeCrmModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !crmModal.hidden) closeCrmModal(); });
+
+  function closeCrmModal() {
+    crmModal.hidden = true;
+    crmCurrentId    = null;
+  }
+
+  async function openCrmDetail(leadId) {
+    crmCurrentId           = leadId;
+    crmActionStatus.hidden = true;
+
+    const cached = crmProspects.find(p => p.id === leadId);
+    if (cached) populateCrmModal(cached);
+    crmModal.hidden = false;
+
+    try {
+      const res = await adminFetch(`${CRM_API_BASE}/leads/${leadId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (crmCurrentId === leadId) {
+          populateCrmModal(data);
+          const idx = crmProspects.findIndex(p => p.id === leadId);
+          if (idx !== -1) crmProspects[idx] = data;
+        }
+      }
+    } catch {}
+  }
+
+  function populateCrmModal(p) {
+    document.getElementById('crmModalName').textContent = p.business_name || 'Unnamed Prospect';
+
+    const statusEl       = document.getElementById('crmModalStatus');
+    const status         = p.status || 'new';
+    statusEl.textContent = status.replace(/_/g, ' ');
+    statusEl.className   = `badge ${crmStatusClass(status)}`;
+
+    document.getElementById('crmDetailBusiness').innerHTML = `
+      <div class="crm-field">
+        <span class="crm-field-label">Website</span>
+        <span class="crm-field-val">${
+          p.website_url
+            ? `<a href="${esc(p.website_url)}" target="_blank" rel="noopener" class="crm-link">${esc(p.website_url)}</a>`
+            : '—'
+        }</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Industry</span>
+        <span class="crm-field-val">${esc(p.industry || '—')}</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Location</span>
+        <span class="crm-field-val">${esc(p.location || '—')}</span>
+      </div>
+    `;
+
+    document.getElementById('crmDetailContact').innerHTML = `
+      <div class="crm-field">
+        <span class="crm-field-label">Name</span>
+        <span class="crm-field-val">${esc(p.contact_name  || '—')}</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Email</span>
+        <span class="crm-field-val">${esc(p.contact_email || '—')}</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Phone</span>
+        <span class="crm-field-val">${esc(p.contact_phone || '—')}</span>
+      </div>
+    `;
+
+    const score      = p.score != null ? p.score : null;
+    const scoreColor = score == null ? 'var(--text-muted)'
+                     : score >= 80   ? 'var(--success)'
+                     : score >= 60   ? 'var(--warn)'
+                     :                 'var(--error)';
+    const priority = (p.priority || '').toLowerCase();
+    const priClass = { high: 'badge--priority-high', medium: 'badge--priority-medium', low: 'badge--priority-low' }[priority];
+
+    document.getElementById('crmDetailScore').innerHTML = `
+      <div class="crm-field">
+        <span class="crm-field-label">Score</span>
+        <span class="crm-field-val" style="color:${scoreColor};font-weight:700;font-size:1.05rem;">${score != null ? score : '—'}</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Priority</span>
+        <span class="crm-field-val">${
+          priClass
+            ? `<span class="badge ${priClass}">${esc(p.priority)}</span>`
+            : esc(p.priority || '—')
+        }</span>
+      </div>
+    `;
+
+    document.getElementById('crmDetailNotes').innerHTML = p.notes
+      ? `<p class="crm-notes-text">${esc(p.notes)}</p>`
+      : `<p class="crm-ai-text crm-ai-empty">No notes.</p>`;
+
+    document.getElementById('crmDetailAnalysis').innerHTML = p.ai_analysis
+      ? `<p class="crm-ai-text">${esc(p.ai_analysis)}</p>`
+      : `<p class="crm-ai-text crm-ai-empty">No analysis yet. Click Analyze to run AI analysis.</p>`;
+
+    renderScoreBreakdown(p.score_breakdown);
+
+    document.getElementById('crmDetailOutreach').innerHTML = p.outreach_draft
+      ? `<pre class="crm-outreach-pre">${esc(p.outreach_draft)}</pre>`
+      : `<p class="crm-ai-text crm-ai-empty">No outreach draft yet. Click Generate Outreach to create one.</p>`;
+
+    crmStatusSelect.value = status;
+  }
+
+  function renderScoreBreakdown(breakdown) {
+    const el = document.getElementById('crmDetailBreakdown');
+    if (!breakdown || typeof breakdown !== 'object' || Array.isArray(breakdown)) {
+      el.innerHTML = `<p class="crm-ai-text crm-ai-empty">No score breakdown yet. Click Score to generate.</p>`;
+      return;
+    }
+    const entries = Object.entries(breakdown);
+    if (!entries.length) {
+      el.innerHTML = `<p class="crm-ai-text crm-ai-empty">No score breakdown data.</p>`;
+      return;
+    }
+    el.innerHTML = `<div class="crm-score-breakdown">${entries.map(([key, val]) => {
+      const pct   = Math.min(100, Math.max(0, Number(val) || 0));
+      const color = pct >= 80 ? 'var(--success)' : pct >= 60 ? 'var(--warn)' : 'var(--error)';
+      return `
+        <div class="crm-score-row">
+          <span class="crm-score-key">${esc(key.replace(/_/g, ' '))}</span>
+          <div class="crm-score-bar-wrap">
+            <div class="crm-score-bar" style="width:${pct}%;background:${color};"></div>
+          </div>
+          <span class="crm-score-num" style="color:${color};">${pct}</span>
+        </div>
+      `;
+    }).join('')}</div>`;
+  }
+
+  // ── Modal action helpers ──────────────────────────────────────────────────
+
+  let actionStatusTimer = null;
+
+  function showActionStatus(msg, isError = false) {
+    crmActionStatus.textContent = msg;
+    crmActionStatus.style.color = isError ? 'var(--error)' : 'var(--success)';
+    crmActionStatus.hidden      = false;
+    clearTimeout(actionStatusTimer);
+    actionStatusTimer = setTimeout(() => { crmActionStatus.hidden = true; }, 4000);
+  }
+
+  const MODAL_ACTION_IDS = ['btnAnalyze', 'btnScore', 'btnOutreach', 'btnCopyOutreach', 'btnContacted', 'btnReplied', 'btnBooked', 'crmStatusSelect'];
+
+  function setModalBusy(busy) {
+    MODAL_ACTION_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = busy;
+    });
+  }
+
+  async function runAiAction(endpoint, btnId, loadingLabel, successMsg) {
+    if (!crmCurrentId) return;
+    const btn = document.getElementById(btnId);
+    const originalText = btn.textContent;
+    setModalBusy(true);
+    btn.textContent = loadingLabel;
+    try {
+      const res = await adminFetch(`${CRM_API_BASE}/${endpoint}/${crmCurrentId}`, { method: 'POST' });
+      if (res.ok) {
+        showActionStatus(successMsg);
+        const savedId = crmCurrentId;
+        await openCrmDetail(savedId);
+        await loadCrmProspects();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        showActionStatus(body.error || 'Action failed.', true);
+      }
+    } catch {
+      showActionStatus('Network error.', true);
+    } finally {
+      setModalBusy(false);
+      btn.textContent = originalText;
+    }
+  }
+
+  async function setCrmStatus(status) {
+    if (!crmCurrentId) return;
+    setModalBusy(true);
+    try {
+      const res = await adminFetch(`${CRM_API_BASE}/leads/${crmCurrentId}/status`, {
+        method: 'PATCH',
+        body:   JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        showActionStatus(`Status set to "${status.replace(/_/g, ' ')}".`);
+        const savedId = crmCurrentId;
+        await openCrmDetail(savedId);
+        await loadCrmProspects();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        showActionStatus(body.error || 'Failed to update status.', true);
+      }
+    } catch {
+      showActionStatus('Network error.', true);
+    } finally {
+      setModalBusy(false);
+    }
+  }
+
+  document.getElementById('btnAnalyze').addEventListener('click',
+    () => runAiAction('analyze', 'btnAnalyze', 'Analyzing…', 'Analysis complete.'));
+
+  document.getElementById('btnScore').addEventListener('click',
+    () => runAiAction('score', 'btnScore', 'Scoring…', 'Score updated.'));
+
+  document.getElementById('btnOutreach').addEventListener('click',
+    () => runAiAction('outreach', 'btnOutreach', 'Generating…', 'Outreach draft ready.'));
+
+  document.getElementById('btnCopyOutreach').addEventListener('click', async () => {
+    const pre = document.querySelector('#crmDetailOutreach pre');
+    if (!pre) { showActionStatus('No outreach draft to copy.', true); return; }
+    try {
+      await navigator.clipboard.writeText(pre.textContent);
+      const btn = document.getElementById('btnCopyOutreach');
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    } catch {
+      showActionStatus('Could not copy to clipboard.', true);
+    }
+  });
+
+  document.getElementById('btnContacted').addEventListener('click', () => setCrmStatus('contacted'));
+  document.getElementById('btnReplied').addEventListener('click',   () => setCrmStatus('replied'));
+  document.getElementById('btnBooked').addEventListener('click',    () => setCrmStatus('booked_call'));
+
+  crmStatusSelect.addEventListener('change', e => setCrmStatus(e.target.value));
+
   // ---- Init ----
 
   if (getToken()) {

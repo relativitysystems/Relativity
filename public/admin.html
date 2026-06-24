@@ -55,70 +55,140 @@
         <p class="portal-subtitle">Manage client accounts and send invitations.</p>
       </div>
 
-      <!-- Invite new client -->
-      <section class="portal-section">
-        <div class="section-label">Invite New Client</div>
-        <p class="section-desc">Creates a client record and sends a setup email with a link to activate their account.</p>
+      <!-- Tab navigation -->
+      <div class="admin-tabs-bar">
+        <button class="admin-tab admin-tab--active" data-tab="clients">Clients</button>
+        <button class="admin-tab" data-tab="leads">Website Leads</button>
+        <button class="admin-tab" data-tab="issues">Issues</button>
+        <button class="admin-tab" data-tab="crm">CRM</button>
+      </div>
 
-        <div class="admin-card">
-          <form id="inviteForm" novalidate>
-            <div class="invite-fields">
-              <div class="form-group">
-                <label class="form-label" for="clientName">Client Name</label>
-                <input
-                  type="text"
-                  id="clientName"
-                  class="form-input"
-                  placeholder="Acme Corp"
-                  required
-                />
+      <!-- ── Clients tab ─────────────────────────────────────────────────── -->
+      <div id="tab-clients" class="tab-panel">
+
+        <section class="portal-section">
+          <div class="section-label">Invite New Client</div>
+          <p class="section-desc">Creates a client record and sends a setup email with a link to activate their account.</p>
+
+          <div class="admin-card">
+            <form id="inviteForm" novalidate>
+              <div class="invite-fields">
+                <div class="form-group">
+                  <label class="form-label" for="clientName">Client Name</label>
+                  <input type="text" id="clientName" class="form-input" placeholder="Acme Corp" required />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="clientEmail">Email</label>
+                  <input type="email" id="clientEmail" class="form-input" placeholder="contact@acme.com" required />
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label" for="clientEmail">Email</label>
-                <input
-                  type="email"
-                  id="clientEmail"
-                  class="form-input"
-                  placeholder="contact@acme.com"
-                  required
-                />
-              </div>
+              <div id="inviteError" class="login-error" hidden></div>
+              <div id="inviteSuccess" class="banner banner--success" hidden></div>
+              <button type="submit" id="inviteBtn" class="btn-login invite-submit">Send Invite</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="portal-section">
+          <div class="section-label">Clients</div>
+          <p id="clientsLoading" class="section-desc">Loading…</p>
+          <p id="clientsEmpty" class="section-desc" hidden>No clients yet. Send your first invite above.</p>
+          <p id="clientsError" class="section-desc" style="color: var(--error);" hidden></p>
+          <div id="clientsTable" hidden></div>
+        </section>
+
+      </div>
+
+      <!-- ── Website Leads tab ──────────────────────────────────────────── -->
+      <div id="tab-leads" class="tab-panel" hidden>
+        <section class="portal-section" id="leadsSection">
+          <div class="section-label">Website Leads</div>
+          <p id="leadsLoading" class="section-desc">Loading…</p>
+          <p id="leadsEmpty" class="section-desc" hidden>No leads yet.</p>
+          <p id="leadsError" class="section-desc" style="color: var(--error);" hidden></p>
+          <div id="leadsTable" hidden></div>
+        </section>
+      </div>
+
+      <!-- ── Issues tab ──────────────────────────────────────────────────── -->
+      <div id="tab-issues" class="tab-panel" hidden>
+        <section class="portal-section" id="issuesSection">
+          <div class="section-label">Client Issues</div>
+          <p id="issuesLoading" class="section-desc">Loading…</p>
+          <p id="issuesEmpty" class="section-desc" hidden>No issues submitted yet.</p>
+          <p id="issuesError" class="section-desc" style="color: var(--error);" hidden></p>
+          <div id="issuesTable" hidden></div>
+        </section>
+      </div>
+
+      <!-- ── CRM tab ─────────────────────────────────────────────────────── -->
+      <div id="tab-crm" class="tab-panel" hidden>
+
+        <!-- Summary cards -->
+        <section class="portal-section">
+          <div class="section-label">Overview</div>
+          <div id="crmStats" class="analytics-grid"></div>
+        </section>
+
+        <!-- Prospects table + add form -->
+        <section class="portal-section">
+          <div class="section-label-row">
+            <div class="section-label">Prospects</div>
+            <button class="btn-action" id="toggleAddProspect">+ Add Prospect</button>
+          </div>
+
+          <!-- Add prospect form (collapsed by default) -->
+          <div id="addProspectWrap" hidden>
+            <div class="admin-card crm-form-card">
+              <form id="addProspectForm" novalidate>
+                <div class="prospect-form-grid">
+                  <div class="form-group">
+                    <label class="form-label" for="prospectBusiness">Business Name <span class="crm-required">*</span></label>
+                    <input type="text" id="prospectBusiness" class="form-input" placeholder="Acme Corp" required />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectUrl">Website URL</label>
+                    <input type="url" id="prospectUrl" class="form-input" placeholder="https://acme.com" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectIndustry">Industry</label>
+                    <input type="text" id="prospectIndustry" class="form-input" placeholder="SaaS, Legal, Healthcare…" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectLocation">Location</label>
+                    <input type="text" id="prospectLocation" class="form-input" placeholder="New York, NY" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectContactName">Contact Name</label>
+                    <input type="text" id="prospectContactName" class="form-input" placeholder="Jane Smith" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectContactEmail">Contact Email</label>
+                    <input type="email" id="prospectContactEmail" class="form-input" placeholder="jane@acme.com" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="prospectContactPhone">Contact Phone</label>
+                    <input type="tel" id="prospectContactPhone" class="form-input" placeholder="+1 555-0100" />
+                  </div>
+                  <div class="form-group form-group--full">
+                    <label class="form-label" for="prospectNotes">Notes</label>
+                    <textarea id="prospectNotes" class="form-input crm-textarea" rows="3" placeholder="Initial context about this prospect…"></textarea>
+                  </div>
+                </div>
+                <div id="addProspectError" class="login-error" hidden></div>
+                <div id="addProspectSuccess" class="banner banner--success" hidden></div>
+                <button type="submit" id="addProspectBtn" class="btn-login invite-submit">Add Prospect</button>
+              </form>
             </div>
-            <div id="inviteError" class="login-error" hidden></div>
-            <div id="inviteSuccess" class="banner banner--success" hidden></div>
-            <button type="submit" id="inviteBtn" class="btn-login invite-submit">Send Invite</button>
-          </form>
-        </div>
-      </section>
+          </div>
 
-      <!-- Client list -->
-      <section class="portal-section">
-        <div class="section-label">Clients</div>
+          <p id="crmLoading" class="section-desc crm-table-msg">Loading…</p>
+          <p id="crmEmpty" class="section-desc crm-table-msg" hidden>No outbound prospects yet. Add your first prospect above to start using AI BDR.</p>
+          <p id="crmError" class="section-desc crm-table-msg" style="color: var(--error);" hidden></p>
+          <div id="crmTable" hidden></div>
+        </section>
 
-        <p id="clientsLoading" class="section-desc">Loading…</p>
-        <p id="clientsEmpty" class="section-desc" hidden>No clients yet. Send your first invite above.</p>
-        <p id="clientsError" class="section-desc" style="color: var(--error);" hidden></p>
-
-        <div id="clientsTable" hidden></div>
-      </section>
-
-      <!-- Website Leads -->
-      <section class="portal-section" id="leadsSection">
-        <div class="section-label">Website Leads</div>
-        <p id="leadsLoading" class="section-desc">Loading…</p>
-        <p id="leadsEmpty" class="section-desc" hidden>No leads yet.</p>
-        <p id="leadsError" class="section-desc" style="color: var(--error);" hidden></p>
-        <div id="leadsTable" hidden></div>
-      </section>
-
-      <!-- Client Issues -->
-      <section class="portal-section" id="issuesSection">
-        <div class="section-label">Client Issues</div>
-        <p id="issuesLoading" class="section-desc">Loading…</p>
-        <p id="issuesEmpty" class="section-desc" hidden>No issues submitted yet.</p>
-        <p id="issuesError" class="section-desc" style="color: var(--error);" hidden></p>
-        <div id="issuesTable" hidden></div>
-      </section>
+      </div>
 
     </div>
 
@@ -128,6 +198,92 @@
     <span>&copy; 2026 Relativity Systems</span>
     <a href="index.html">Back to site</a>
   </footer>
+
+  <!-- ── CRM Detail Modal (outside dashboardView for z-index) ──────────── -->
+  <div id="crmModal" class="crm-modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="crmModalName">
+    <div class="crm-modal">
+
+      <div class="crm-modal-header">
+        <div class="crm-modal-title-wrap">
+          <h2 class="crm-modal-title" id="crmModalName"></h2>
+          <span id="crmModalStatus" class="badge"></span>
+        </div>
+        <button class="crm-modal-close" id="crmModalClose" aria-label="Close">✕</button>
+      </div>
+
+      <div class="crm-modal-body">
+        <div class="crm-modal-grid">
+
+          <!-- Left column: structured details -->
+          <div class="crm-detail-col">
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Business</h3>
+              <div id="crmDetailBusiness"></div>
+            </div>
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Contact</h3>
+              <div id="crmDetailContact"></div>
+            </div>
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Score &amp; Priority</h3>
+              <div id="crmDetailScore"></div>
+            </div>
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Notes</h3>
+              <div id="crmDetailNotes"></div>
+            </div>
+          </div>
+
+          <!-- Right column: AI outputs -->
+          <div class="crm-ai-col">
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">AI Analysis</h3>
+              <div id="crmDetailAnalysis"></div>
+            </div>
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Score Breakdown</h3>
+              <div id="crmDetailBreakdown"></div>
+            </div>
+            <div class="crm-detail-section">
+              <h3 class="crm-detail-label">Outreach Draft</h3>
+              <div id="crmDetailOutreach"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="crm-modal-footer">
+        <div id="crmActionStatus" class="crm-action-status" hidden></div>
+        <div class="crm-modal-actions">
+          <button class="btn-action" id="btnAnalyze">Analyze</button>
+          <button class="btn-action" id="btnScore">Score</button>
+          <button class="btn-action" id="btnOutreach">Generate Outreach</button>
+          <button class="btn-action" id="btnCopyOutreach">Copy Draft</button>
+          <button class="btn-action" id="btnContacted">Mark Contacted</button>
+          <button class="btn-action" id="btnReplied">Mark Replied</button>
+          <button class="btn-action" id="btnBooked">Mark Booked Call</button>
+        </div>
+        <div class="crm-status-row">
+          <label class="form-label crm-status-label" for="crmStatusSelect">Status</label>
+          <select id="crmStatusSelect" class="issue-status-select">
+            <option value="new">New</option>
+            <option value="analyzed">Analyzed</option>
+            <option value="scored">Scored</option>
+            <option value="outreach_ready">Outreach Ready</option>
+            <option value="contacted">Contacted</option>
+            <option value="follow_up_needed">Follow Up Needed</option>
+            <option value="replied">Replied</option>
+            <option value="booked_call">Booked Call</option>
+            <option value="closed_won">Closed Won</option>
+            <option value="closed_lost">Closed Lost</option>
+            <option value="bad_fit">Bad Fit</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <script src="admin.js"></script>
 </body>
