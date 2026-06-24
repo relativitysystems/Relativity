@@ -290,8 +290,12 @@ router.patch('/issues/:issueId', adminAuth, async (req, res) => {
 
 router.get('/aibdr/api/leads', adminAuth, async (req, res) => {
   try {
-    const { data } = await axios.get(aibdrUrl('/api/leads'), { headers: aibdrHeaders() });
-    res.json(data);
+    const url = aibdrUrl('/api/leads');
+    console.log('[aibdr proxy] fetching leads from:', url);
+    const response = await axios.get(url, { headers: aibdrHeaders() });
+    console.log('[aibdr proxy] response success:', response.data?.success);
+    console.log('[aibdr proxy] lead count:', response.data?.leads?.length);
+    res.status(response.status).json(response.data);
   } catch (err) {
     handleAibdrError(err, res, 'admin/aibdr/api/leads GET');
   }
