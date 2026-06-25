@@ -955,6 +955,31 @@
     } catch {}
   }
 
+  function renderWebsiteScrape(ws) {
+    if (!ws || typeof ws !== 'object') {
+      return `<div class="crm-field">
+        <span class="crm-field-label">Status</span>
+        <span class="crm-field-val crm-ai-empty">Not scraped yet</span>
+      </div>`;
+    }
+    const pageCount  = Array.isArray(ws.pages_scraped) ? ws.pages_scraped.length : '—';
+    const lastScraped = ws.scraped_at ? fmtDate(ws.scraped_at) : '—';
+    return `
+      <div class="crm-field">
+        <span class="crm-field-label">Status</span>
+        <span class="crm-field-val"><span class="badge badge--outreach-ready">Scraped</span></span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Pages</span>
+        <span class="crm-field-val">${esc(String(pageCount))}</span>
+      </div>
+      <div class="crm-field">
+        <span class="crm-field-label">Last Scraped</span>
+        <span class="crm-field-val">${esc(lastScraped)}</span>
+      </div>
+    `;
+  }
+
   function renderAnalysis(analysis) {
     if (!analysis || typeof analysis !== 'object') {
       return `<p class="crm-ai-text crm-ai-empty">No analysis yet. Click Analyze to run AI analysis.</p>`;
@@ -1035,6 +1060,8 @@
         <span class="crm-field-val">${esc(p.location || '—')}</span>
       </div>
     `;
+
+    document.getElementById('crmDetailWebsite').innerHTML = renderWebsiteScrape(p.website_scrape);
 
     document.getElementById('crmDetailContact').innerHTML = `
       <div class="crm-field">
@@ -1122,7 +1149,7 @@
     actionStatusTimer = setTimeout(() => { crmActionStatus.hidden = true; }, 4000);
   }
 
-  const MODAL_ACTION_IDS = ['btnAnalyze', 'btnScore', 'btnOutreach', 'btnCopyOutreach', 'btnContacted', 'btnReplied', 'btnBooked', 'crmStatusSelect'];
+  const MODAL_ACTION_IDS = ['btnScrape', 'btnAnalyze', 'btnScore', 'btnOutreach', 'btnCopyOutreach', 'btnContacted', 'btnReplied', 'btnBooked', 'crmStatusSelect'];
 
   function setModalBusy(busy) {
     MODAL_ACTION_IDS.forEach(id => {
@@ -1131,7 +1158,7 @@
     });
   }
 
-  async function runAiAction(endpoint, btnId, loadingLabel, successMsg) {
+  async function runAiAction(endpoint, btnId, loadingLabel, successMsg, failMsg = 'Action failed.') {
     if (!crmCurrentId) return;
     const btn = document.getElementById(btnId);
     const originalText = btn.textContent;
@@ -1146,7 +1173,7 @@
         await loadCrmProspects();
       } else {
         const body = await res.json().catch(() => ({}));
-        showActionStatus(body.error || 'Action failed.', true);
+        showActionStatus(body.error || failMsg, true);
       }
     } catch {
       showActionStatus('Network error.', true);
@@ -1179,6 +1206,9 @@
       setModalBusy(false);
     }
   }
+
+  document.getElementById('btnScrape').addEventListener('click',
+    () => runAiAction('scrape', 'btnScrape', 'Scraping…', 'Website scraped.', 'Website scraping failed. The site may block automated requests.'));
 
   document.getElementById('btnAnalyze').addEventListener('click',
     () => runAiAction('analyze', 'btnAnalyze', 'Analyzing…', 'Analysis complete.'));

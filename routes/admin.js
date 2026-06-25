@@ -355,4 +355,13 @@ router.post('/aibdr/api/score/:leadId', adminAuth, async (req, res) => {
   }
 });
 
+router.post('/aibdr/api/scrape/:leadId', adminAuth, async (req, res) => {
+  try {
+    const { data } = await axios.post(aibdrUrl(`/api/scrape/${req.params.leadId}`), req.body, { headers: aibdrHeaders() });
+    res.json(data);
+  } catch (err) {
+    handleAibdrError(err, res, 'admin/aibdr/api/scrape/:leadId POST');
+  }
+});
+
 module.exports = router;
