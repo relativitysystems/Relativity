@@ -944,10 +944,12 @@
       const res = await adminFetch(`${CRM_API_BASE}/leads/${leadId}`);
       if (res.ok) {
         const data = await res.json();
+        console.log('[crm] single lead raw response:', data);
+        const freshLead = data.lead || data;
+        console.log('[crm] fresh lead:', freshLead);
         if (crmCurrentId === leadId) {
-          populateCrmModal(data);
-          const idx = crmProspects.findIndex(p => p.id === leadId);
-          if (idx !== -1) crmProspects[idx] = data;
+          populateCrmModal(freshLead);
+          crmProspects = crmProspects.map(p => p.id === freshLead.id ? freshLead : p);
         }
       }
     } catch {}
@@ -1022,8 +1024,8 @@
       ? `<p class="crm-notes-text">${esc(p.notes)}</p>`
       : `<p class="crm-ai-text crm-ai-empty">No notes.</p>`;
 
-    document.getElementById('crmDetailAnalysis').innerHTML = p.ai_analysis
-      ? `<p class="crm-ai-text">${esc(p.ai_analysis)}</p>`
+    document.getElementById('crmDetailAnalysis').innerHTML = (p.analysis || p.ai_analysis)
+      ? `<p class="crm-ai-text">${esc(p.analysis || p.ai_analysis)}</p>`
       : `<p class="crm-ai-text crm-ai-empty">No analysis yet. Click Analyze to run AI analysis.</p>`;
 
     renderScoreBreakdown(p.score_breakdown);
