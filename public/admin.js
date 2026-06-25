@@ -955,7 +955,61 @@
     } catch {}
   }
 
+  function renderAnalysis(analysis) {
+    if (!analysis || typeof analysis !== 'object') {
+      return `<p class="crm-ai-text crm-ai-empty">No analysis yet. Click Analyze to run AI analysis.</p>`;
+    }
+
+    const row = (label, val) => val
+      ? `<div class="crm-field"><span class="crm-field-label">${label}</span><span class="crm-field-val">${esc(String(val))}</span></div>`
+      : '';
+
+    const listSection = (label, arr) => {
+      if (!Array.isArray(arr) || !arr.length) return '';
+      const items = arr.map(x =>
+        `<div class="crm-field" style="gap:6px;">
+           <span style="color:var(--text-muted);flex-shrink:0;">•</span>
+           <span class="crm-field-val">${esc(String(x))}</span>
+         </div>`
+      ).join('');
+      return `<div style="margin-top:10px;"><div class="crm-detail-label" style="margin-bottom:6px;">${label}</div>${items}</div>`;
+    };
+
+    const parts = [
+      row('Summary',           analysis.business_summary),
+      row('Customer Type',     analysis.likely_customer_type),
+      row('AIKB Fit',          analysis.ai_knowledge_base_fit),
+      row('Outreach Angle',    analysis.outreach_angle),
+      row('Offer',             analysis.recommended_offer),
+      row('Urgency',           analysis.urgency_level),
+      listSection('Pain Points',              analysis.possible_pain_points),
+      listSection('Automation Opportunities', analysis.automation_opportunities),
+    ].filter(Boolean);
+
+    return parts.length
+      ? parts.join('')
+      : `<p class="crm-ai-text crm-ai-empty">No analysis details available.</p>`;
+  }
+
   function populateCrmModal(p) {
+    const analysis = (p.analysis && typeof p.analysis === 'object') ? p.analysis : null;
+    const scoring  = analysis ? (analysis.scoring || {}) : {};
+
+    // Score: top-level field first, then analysis.scoring.score
+    const score = p.score != null ? p.score : (scoring.score != null ? scoring.score : null);
+
+    // Priority: analysis.scoring.priority → p.priority → derived from score
+    const rawPriority = (
+      (scoring.priority || p.priority || '').toLowerCase() ||
+      (score != null ? (score >= 80 ? 'high' : score >= 50 ? 'medium' : 'low') : '')
+    );
+    const priClass = { high: 'badge--priority-high', medium: 'badge--priority-medium', low: 'badge--priority-low' }[rawPriority];
+
+    const scoreColor = score == null ? 'var(--text-muted)'
+                     : score >= 80   ? 'var(--success)'
+                     : score >= 60   ? 'var(--warn)'
+                     :                 'var(--error)';
+
     document.getElementById('crmModalName').textContent = p.business_name || 'Unnamed Prospect';
 
     const statusEl       = document.getElementById('crmModalStatus');
@@ -997,14 +1051,6 @@
       </div>
     `;
 
-    const score      = p.score != null ? p.score : null;
-    const scoreColor = score == null ? 'var(--text-muted)'
-                     : score >= 80   ? 'var(--success)'
-                     : score >= 60   ? 'var(--warn)'
-                     :                 'var(--error)';
-    const priority = (p.priority || '').toLowerCase();
-    const priClass = { high: 'badge--priority-high', medium: 'badge--priority-medium', low: 'badge--priority-low' }[priority];
-
     document.getElementById('crmDetailScore').innerHTML = `
       <div class="crm-field">
         <span class="crm-field-label">Score</span>
@@ -1014,8 +1060,8 @@
         <span class="crm-field-label">Priority</span>
         <span class="crm-field-val">${
           priClass
-            ? `<span class="badge ${priClass}">${esc(p.priority)}</span>`
-            : esc(p.priority || '—')
+            ? `<span class="badge ${priClass}">${esc(rawPriority)}</span>`
+            : esc(rawPriority || '—')
         }</span>
       </div>
     `;
@@ -1024,14 +1070,15 @@
       ? `<p class="crm-notes-text">${esc(p.notes)}</p>`
       : `<p class="crm-ai-text crm-ai-empty">No notes.</p>`;
 
-    document.getElementById('crmDetailAnalysis').innerHTML = (p.analysis || p.ai_analysis)
-      ? `<p class="crm-ai-text">${esc(p.analysis || p.ai_analysis)}</p>`
-      : `<p class="crm-ai-text crm-ai-empty">No analysis yet. Click Analyze to run AI analysis.</p>`;
+    document.getElementById('crmDetailAnalysis').innerHTML = renderAnalysis(analysis);
 
-    renderScoreBreakdown(p.score_breakdown);
+    // Score breakdown lives at analysis.scoring.score_breakdown
+    renderScoreBreakdown(scoring.score_breakdown || analysis?.score_breakdown);
 
-    document.getElementById('crmDetailOutreach').innerHTML = p.outreach_draft
-      ? `<pre class="crm-outreach-pre">${esc(p.outreach_draft)}</pre>`
+    // Outreach draft: top-level field first, then analysis.outreach.email_body
+    const outreachText = p.outreach_draft || (analysis && analysis.outreach && analysis.outreach.email_body) || null;
+    document.getElementById('crmDetailOutreach').innerHTML = outreachText
+      ? `<pre class="crm-outreach-pre">${esc(outreachText)}</pre>`
       : `<p class="crm-ai-text crm-ai-empty">No outreach draft yet. Click Generate Outreach to create one.</p>`;
 
     crmStatusSelect.value = status;
