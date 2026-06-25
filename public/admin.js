@@ -731,11 +731,8 @@
       return;
     }
 
-    const data        = await res.json();
-    console.log('[crm] raw response:', data);
-    const leads       = Array.isArray(data) ? data : (data.leads || []);
-    console.log('[crm] leads length:', leads.length);
-    console.log('[crm] table container:', crmTable);
+    const data  = await res.json();
+    const leads = Array.isArray(data) ? data : (data.leads || []);
 
     crmProspects      = leads;
     crmLoading.hidden = true;
