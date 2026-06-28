@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="shortcut icon" href="/assets/favicon.png">
+  <link rel="apple-touch-icon" href="/assets/favicon.png">
+  <title>Client Portal — Relativity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/shared/theme.css" />
+  <link rel="stylesheet" href="portal.css" />
+  <script src="/shared/theme.js"></script>
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="/" class="nav-logo"><img src="/assets/relativity_white.png" alt="Relativity" class="logo-img"></a>
+    <span class="nav-label">Client Portal</span>
+    <div class="nav-end">
+      <button class="theme-toggle" aria-label="Toggle theme">
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button class="btn-logout" id="btn-logout">Sign Out</button>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <div class="portal-header portal-header--with-identity">
+      <div class="portal-heading">
+        <h1 class="portal-title">Operations Hub</h1>
+        <p class="portal-subtitle">Your AI knowledge base, document status, and support — all in one place.</p>
+      </div>
+
+      <div class="portal-identity">
+        <span class="portal-identity-label">Signed in as</span>
+        <span class="portal-identity-name" id="clientIdentityName">Loading…</span>
+        <span class="portal-identity-id" id="clientIdentityId"></span>
+      </div>
+    </div>
+
+    <!-- 1. Overview -->
+    <section class="portal-section" id="overview">
+      <h2 class="section-label">Overview</h2>
+
+      <div class="overview-panels">
+        <details class="kb-history-dropdown panel" open>
+          <summary class="kb-history-summary panel-header">
+            <span class="kb-history-summary-label panel-title">Setup Progress</span>
+          </summary>
+          <div class="kb-history-body panel-body panel-body--top" id="progress-checklist">
+            <div class="empty-state"><span>Loading…</span></div>
+          </div>
+        </details>
+        <details class="kb-history-dropdown panel" open>
+          <summary class="kb-history-summary panel-header">
+            <span class="kb-history-summary-label panel-title">Quick Tips</span>
+          </summary>
+          <div class="kb-history-body panel-body panel-body--top">
+            <ul class="update-list">
+              <li>Upload SOP, FAQ, pricing, or training documents</li>
+              <li>Ask test questions to verify your knowledge base</li>
+              <li>Check source citations to confirm accuracy</li>
+              <li>Report any gaps or issues using the form below</li>
+            </ul>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- 2. AI Knowledge Assistant -->
+    <section class="portal-section" id="knowledge">
+      <h2 class="section-label">AI Knowledge Assistant</h2>
+      <p class="section-desc">Upload documents to your knowledge base and ask questions in natural language.</p>
+
+      <div class="assistant-card">
+
+        <!-- Upload -->
+        <div class="kb-upload-row">
+          <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
+          <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
+          <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
+        </div>
+        <div id="upload-progress-panel" class="upload-progress-panel" hidden>
+          <div class="upload-progress-header">
+            <span id="upload-file-name" class="upload-file-name"></span>
+            <span id="upload-percent-text" class="upload-percent-text">0%</span>
+          </div>
+          <div class="upload-progress-track">
+            <div id="upload-progress-bar" class="upload-progress-fill"></div>
+          </div>
+          <span id="upload-phase-text" class="upload-phase-text">Preparing upload…</span>
+        </div>
+        <p id="kb-upload-status" class="kb-upload-status" hidden></p>
+
+        <!-- Indexed documents -->
+        <details class="kb-history-dropdown">
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Indexed Documents</span>
+            <span id="kb-docs-count" class="kb-docs-count"></span>
+          </summary>
+          <div class="kb-history-body">
+            <div class="kb-collapsible-pad">
+              <div id="kb-docs-list" class="kb-docs-list"></div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Ingestion Jobs -->
+        <details class="kb-history-dropdown">
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Recent Ingestion Jobs</span>
+          </summary>
+          <div class="kb-history-body">
+            <div class="kb-collapsible-pad">
+              <div id="kb-jobs-list" class="kb-docs-list"></div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Chat history dropdown -->
+        <details class="kb-history-dropdown">
+          <summary class="kb-history-summary">
+            <span class="kb-history-summary-label">Chat History</span>
+            <button id="kb-new-chat-btn" class="btn-kb-new-chat" type="button">New Chat</button>
+          </summary>
+          <div class="kb-history-body">
+            <div id="kb-sessions-list" class="kb-sessions-list"></div>
+            <div class="kb-history-footer">
+              <button id="kb-clear-history-btn" class="btn-kb-clear-history" type="button">Clear All History</button>
+            </div>
+          </div>
+        </details>
+
+
+      </div>
+
+      <div class="chat-card">
+
+        <!-- Chat messages -->
+        <div id="kb-messages" class="kb-messages"></div>
+        <div id="chat-welcome" class="chat-welcome">
+          <div class="chat-welcome-title">Ask your company knowledge base</div>
+          <p class="chat-welcome-desc">Get instant answers from your uploaded documents.</p>
+          <div class="chat-welcome-chips">
+            <button class="chat-chip" type="button">What is our refund policy?</button>
+            <button class="chat-chip" type="button">Summarize our onboarding process</button>
+            <button class="chat-chip" type="button">How should we respond to a pricing question?</button>
+          </div>
+        </div>
+
+        <!-- Query input -->
+        <div class="assistant-search">
+          <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <textarea id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" rows="1"></textarea>
+          <button class="search-btn" id="kb-ask-btn">Ask</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 3. Team Members (owner/admin only) -->
+    <section class="portal-section" id="section-team" style="display:none">
+      <div class="team-section-header">
+        <div>
+          <h2 class="section-label">Team Members</h2>
+          <p class="section-desc">Manage who has access to your company's AI knowledge base.</p>
+        </div>
+        <button class="btn-team-invite" id="btn-team-invite" type="button">+ Invite Member</button>
+      </div>
+
+      <!-- Members table -->
+      <div class="team-table-wrap">
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Name / Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Invited</th>
+              <th>Last Active</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="team-members-tbody">
+            <tr><td colspan="6" class="team-empty-state">Loading team…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Invite modal -->
+      <div id="team-invite-modal" class="team-invite-modal" hidden>
+        <div class="team-invite-modal-inner">
+          <h3 class="team-modal-title">Invite Team Member</h3>
+          <form id="team-invite-form" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="team-invite-email">Email Address</label>
+              <input type="email" id="team-invite-email" class="form-input" placeholder="colleague@company.com" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="team-invite-role">Role</label>
+              <select id="team-invite-role" class="form-input">
+                <option value="member">Member — can chat and upload</option>
+                <option value="admin">Admin — can manage team</option>
+                <option value="viewer">Viewer — can chat only</option>
+              </select>
+            </div>
+            <div id="team-invite-error" class="login-error" hidden></div>
+            <div class="team-modal-actions">
+              <button type="button" id="team-invite-cancel" class="btn-team-cancel">Cancel</button>
+              <button type="submit" id="team-invite-submit" class="btn-team-invite-submit">Send Invite</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Report an Issue -->
+    <section class="portal-section" id="requests">
+      <h2 class="section-label">Report an Issue</h2>
+      <p class="section-desc">Something isn't working as expected? Let us know and we'll respond within one business day.</p>
+
+      <form id="issue-form" class="issue-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="issue-subject">Subject</label>
+          <input type="text" id="issue-subject" class="form-input" placeholder="Brief description of the issue" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="issue-type">Issue Type</label>
+          <select id="issue-type" class="form-input" required>
+            <option value="">Select a type…</option>
+            <option value="bug">Bug</option>
+            <option value="question">Question</option>
+            <option value="document_issue">Document Issue</option>
+            <option value="account_issue">Account Issue</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="issue-message">Message</label>
+          <textarea id="issue-message" class="form-input issue-textarea" rows="4" placeholder="Describe the issue in detail…" required></textarea>
+        </div>
+        <div id="issue-error" class="issue-feedback issue-feedback--error" hidden></div>
+        <div id="issue-success" class="issue-feedback issue-feedback--success" hidden></div>
+        <button type="submit" id="issue-submit" class="btn-submit-issue">Submit Issue</button>
+      </form>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span>&copy; 2026 Relativity Systems</span>
+    <a href="/">Back to site</a>
+  </footer>
+
+  <div id="toast-container" class="toast-container"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="portal.js"></script>
+</body>
+</html>

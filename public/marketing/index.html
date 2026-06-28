@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Relativity Systems is a private AI knowledge base for SMB teams. Turn your SOPs, FAQs, policies, and training docs into a source-backed AI assistant your team can trust.">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="shortcut icon" href="/assets/favicon.png">
+  <link rel="apple-touch-icon" href="/assets/favicon.png">
+  <title>Relativity Systems — Private AI Knowledge Base for SMB Teams</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="mainPg.css">
+  <script src="/shared/theme.js"></script>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav id="nav">
+    <div class="nav-inner">
+      <a href="#" class="logo">
+        <img src="/assets/relativity_white.png" alt="Relativity" class="logo-img">
+      </a>
+      <button class="mobile-menu-btn" aria-label="Toggle menu" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="#product">Product</a></li>
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#use-cases">Use Cases</a></li>
+        <li><a href="#what-it-is">How It Works</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="/login.html">Client Portal</a></li>
+      </ul>
+      <button class="theme-toggle nav-theme-toggle" aria-label="Toggle theme">
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <a href="#contact" class="btn btn-outline">Book a Demo</a>
+    </div>
+    <div class="mobile-nav" id="mobileNav">
+      <ul>
+        <li><a href="#product">Product</a></li>
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#use-cases">Use Cases</a></li>
+        <li><a href="#what-it-is">How It Works</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="/login.html">Client Portal</a></li>
+      </ul>
+      <a href="#contact" class="btn btn-outline mobile-nav-cta">Book a Demo</a>
+      <button class="theme-toggle mobile-theme-toggle" aria-label="Toggle theme">
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero" id="hero">
+    <canvas id="starfield"></canvas>
+    <div class="hero-content">
+      <span class="eyebrow">Private AI Knowledge Base</span>
+      <h1>Turn your company documents into an AI assistant your team can trust.</h1>
+      <p class="hero-sub">Upload SOPs, FAQs, policies, training docs, and internal documents. Relativity gives your team instant, source-backed answers — and flags missing documentation when knowledge gaps appear.</p>
+      <div class="hero-ctas">
+        <a href="#contact" class="btn btn-primary">Book a Demo</a>
+        <a href="#product" class="btn btn-ghost">See the Product &rarr;</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Solution (Why It Matters) -->
+  <section class="solution" id="solution">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">Why It Matters</span>
+        <h2>Your team already has the answers.<br>They're just hard to find.</h2>
+        <p class="section-sub">Most businesses have critical knowledge scattered across folders, PDFs, SOPs, FAQs, policies, and onboarding docs. Without a private AI knowledge base, your team wastes time hunting for answers — or worse, guessing.</p>
+      </div>
+      <div class="services-grid">
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3>Scattered Knowledge</h3>
+          <p>SOPs, FAQs, policies, training docs, and client notes live in different places. Finding the right answer takes too long.</p>
+          <ul>
+            <li>SOPs</li>
+            <li>Policies</li>
+            <li>FAQs</li>
+            <li>Training docs</li>
+            <li>Client notes</li>
+          </ul>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3>Repeated Questions</h3>
+          <p>Employees ask the same questions over and over. Senior staff spend time answering instead of doing.</p>
+          <ul>
+            <li>Onboarding Q&amp;A</li>
+            <li>Policy lookups</li>
+            <li>Process clarification</li>
+            <li>SOP reference</li>
+          </ul>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h3>Slow Onboarding</h3>
+          <p>New employees take longer to ramp because the knowledge they need is difficult to search.</p>
+          <ul>
+            <li>Faster training</li>
+            <li>Consistent answers</li>
+            <li>Documented procedures</li>
+            <li>Source-backed guidance</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Demo Preview -->
+  <section id="demo">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">Demo Preview</span>
+        <h2>See it in action</h2>
+        <p class="section-sub">Your team asks a question. The assistant searches your approved company documents and returns a clear, cited answer — with the exact source document and page number.</p>
+      </div>
+
+      <div class="demo-layout fade-in">
+
+        <!-- Product dashboard window -->
+        <div class="demo-chat-window">
+          <div class="demo-chrome">
+            <div class="demo-chrome-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="demo-chrome-title">AI Knowledge Base</span>
+          </div>
+
+          <div class="demo-product-layout">
+
+            <!-- Left sidebar -->
+            <div class="demo-sidebar">
+
+              <div class="demo-sidebar-section">
+                <span class="demo-sidebar-label">Approved Sources</span>
+                <div class="demo-document-library">
+                  <div class="document-row">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Policies.pdf</span>
+                  </div>
+                  <div class="document-row">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Client_FAQ.pdf</span>
+                  </div>
+                  <div class="document-row">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Employee_Handbook.pdf</span>
+                  </div>
+                  <div class="document-row">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Customer_Service_SOP.pdf</span>
+                  </div>
+                  <div class="document-row">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Training_Guide.pdf</span>
+                  </div>
+                  <div class="document-more-row">
+                    <span>+ 12 more indexed documents</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="demo-sidebar-section demo-sidebar-section--flex">
+                <span class="demo-sidebar-label">Recent Questions</span>
+                <div class="demo-chat-history">
+                  <div class="history-item history-item--active">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>Policy Questions</span>
+                  </div>
+                  <div class="history-item">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>Employee Onboarding</span>
+                  </div>
+                  <div class="history-item">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>Client Cancellations</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Main chat area -->
+            <div class="demo-chat-main">
+
+              <div class="demo-chat-header">
+                <span class="demo-chat-thread-title">Policy Questions</span>
+              </div>
+
+              <div class="demo-chat-messages">
+
+                <!-- Exchange 1: full answer with TLDR / Guidance / Sources -->
+                <div class="demo-message-user">
+                  <span class="demo-role">Employee</span>
+                  <p>What should we do if a client asks to reschedule last minute?</p>
+                </div>
+
+                <div class="demo-message-ai">
+                  <span class="demo-role">AI Assistant</span>
+                  <div class="demo-answer">
+                    <div class="answer-section">
+                      <span class="answer-label">TLDR</span>
+                      <p>Clients may reschedule once if at least 24 hours notice is given. Requests under 24 hours require manager approval before confirmation.</p>
+                    </div>
+                    <div class="answer-section">
+                      <span class="answer-label">Guidance</span>
+                      <p>Review the request before responding to the client. If under 24 hours, escalate to the manager on duty for review before confirming with the client.</p>
+                    </div>
+                    <div class="demo-sources">
+                      <div class="source-pill">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Policies.pdf — Page 14
+                      </div>
+                      <div class="source-pill">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Client_FAQ.pdf — Page 8
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="demo-messages-divider"></div>
+
+                <!-- Exchange 2: knowledge gap -->
+                <div class="demo-message-user">
+                  <span class="demo-role">Employee</span>
+                  <p>Do we offer partial refunds on group bookings?</p>
+                </div>
+
+                <div class="demo-message-ai">
+                  <span class="demo-role">AI Assistant</span>
+                  <div class="knowledge-gap-preview">
+                    <span class="gap-label">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      Knowledge Gap Detected
+                    </span>
+                    <p>No approved documentation was found for this question.</p>
+                    <div class="gap-suggestions">
+                      <span class="gap-suggest-label">Consider adding:</span>
+                      <ul>
+                        <li>Group Booking Refund Policy</li>
+                        <li>Updated Customer Service SOP</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Trust indicator -->
+        <div class="trust-preview">
+          <span class="trust-badge">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Verified Response
+          </span>
+          <p>Every answer is generated only from your approved company documents and can reference the exact source document and page number. The AI does not guess.</p>
+        </div>
+
+        <!-- Example prompts -->
+        <div class="demo-prompts">
+          <span class="demo-prompts-label">Example questions</span>
+          <div class="demo-prompts-pills">
+            <span class="prompt-pill">Where is our refund policy?</span>
+            <span class="prompt-pill">How do we onboard a new employee?</span>
+            <span class="prompt-pill">What is our cancellation procedure?</span>
+            <span class="prompt-pill">How do I process a customer reschedule?</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Product Features -->
+  <section class="what-you-get" id="product">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">The Product</span>
+        <h2>Everything your team needs in one private AI knowledge base.</h2>
+        <p class="section-sub">Relativity is a complete product. Upload your documents, set up your team, and start getting source-backed answers the same day.</p>
+      </div>
+      <div class="use-cases-grid">
+
+        <div class="use-case-card fade-in">
+          <h3>Document Upload</h3>
+          <p>Upload PDFs, Word docs, SOPs, FAQs, policies, and training guides. Relativity indexes everything automatically.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>AI Question Answering</h3>
+          <p>Your team asks questions in plain English. The AI searches your approved documents and returns clear, accurate answers.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Source Citations</h3>
+          <p>Every answer includes the exact source document and page number. No mystery answers, no hallucinations.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Knowledge Gap Detection</h3>
+          <p>When a question has no documented answer, Relativity flags it clearly instead of guessing. You'll know exactly what to document next.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Team Access</h3>
+          <p>Invite your whole team. Everyone gets the same source-backed answers from the same approved knowledge base.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Chat History</h3>
+          <p>Full conversation history so your team can reference past answers and you can review what questions are being asked.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Admin &amp; Client Portal</h3>
+          <p>A dedicated portal for managing documents, reviewing usage, and controlling what your team can access.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Scalable Plans</h3>
+          <p>Starts with your current documents. Grows as your team and knowledge base grows.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="what-it-is" id="what-it-is">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">How It Works</span>
+        <h2>From documents to answers.</h2>
+        <p class="section-sub">An AI knowledge base connects your existing company documents to a private assistant your team can search instantly.</p>
+      </div>
+      <div class="services-grid">
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <h3>1. Upload your documents</h3>
+          <p>Connect SOPs, FAQs, policies, training guides, and any internal documents your team relies on.</p>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <h3>2. Relativity indexes your knowledge</h3>
+          <p>Your documents are processed and stored in a private vector database. The AI learns the meaning behind your content, not just keywords.</p>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3>3. Employees ask questions</h3>
+          <p>Your team asks in plain English. No special training or syntax required.</p>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>4. AI answers from approved sources</h3>
+          <p>The assistant retrieves answers only from your uploaded documents and includes the exact source and page number in every response.</p>
+        </div>
+
+        <div class="service-card fade-in">
+          <div class="service-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h3>5. Gaps are surfaced automatically</h3>
+          <p>When a question has no documented answer, the system flags it clearly so you know exactly what to document next.</p>
+        </div>
+
+      </div>
+
+      <div class="how-it-works-note fade-in">
+        <span class="how-it-works-note-label">Technical note</span>
+        <p>Relativity uses <strong>retrieval-augmented generation (RAG)</strong> — a technique that connects an AI language model to your specific documents instead of the open internet. Your knowledge base is private, isolated, and only answers from what you've approved. A <strong>vector database</strong> makes retrieval fast and accurate even across large document libraries by searching by meaning, not just exact keywords.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="use-cases" id="use-cases">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">Use Cases</span>
+        <h2>Built for the knowledge your team uses every day.</h2>
+        <p class="section-sub">Ideal for service businesses, agencies, clinics, real estate teams, operations teams, and any growing SMB with repeatable internal processes.</p>
+      </div>
+      <div class="use-cases-grid">
+
+        <div class="use-case-card fade-in">
+          <h3>Employee Onboarding</h3>
+          <p>New hires ask the onboarding AI instead of pulling experienced staff away. SOPs, policies, and training docs become instantly searchable.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Customer Service Answers</h3>
+          <p>Your support team gets consistent, source-backed answers to client questions. No more inconsistent replies or policy guessing.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>SOP Lookup</h3>
+          <p>Employees find the right procedure instantly instead of digging through folders. Answers include the exact page to reference.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Internal Policy Questions</h3>
+          <p>HR, operations, and management policies are searchable in seconds. Every answer cites the policy document directly.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Client-Specific Processes</h3>
+          <p>Businesses serving multiple clients can maintain separate knowledge bases for each client's specific SOPs and requirements.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Training &amp; Operations Docs</h3>
+          <p>Training guides, operations manuals, and franchise documentation become interactive knowledge bases your whole team can query.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Trust & Privacy -->
+  <section class="trust-section" id="trust">
+    <div class="container">
+      <div class="section-header fade-in">
+        <span class="label">Trust &amp; Privacy</span>
+        <h2>A knowledge base your team can actually trust.</h2>
+        <p class="section-sub">Relativity is built around one principle: answers should come from approved sources only — never from the open internet or AI guesswork.</p>
+      </div>
+      <div class="use-cases-grid">
+
+        <div class="use-case-card fade-in">
+          <h3>Private to your business</h3>
+          <p>Your documents are only accessible to your team. Relativity does not share knowledge between clients.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Approved sources only</h3>
+          <p>The AI only answers from documents you've uploaded and approved. No open internet. No hallucinations from external sources.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Source citations on every answer</h3>
+          <p>Every answer names the exact document and page it came from. Your team always knows where an answer originated.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Knowledge gaps surfaced, not hidden</h3>
+          <p>When the answer isn't documented, Relativity flags it clearly. Your team knows to escalate rather than guess.</p>
+        </div>
+
+        <div class="use-case-card fade-in">
+          <h3>Client-specific workspaces</h3>
+          <p>Each client or team gets an isolated workspace with separate document sets and access controls.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Banner -->
+  <section class="cta-banner fade-in">
+    <div class="container">
+      <div class="cta-inner">
+        <h2>Give your team instant, source-backed answers<br>from the knowledge they already have.</h2>
+        <a href="#contact" class="btn btn-primary">Book a Demo</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section class="contact" id="contact">
+    <div class="container">
+      <div class="contact-inner">
+        <div class="contact-text fade-in">
+          <span class="label">Get Started</span>
+          <h2>Ready to launch a private AI knowledge base for your team?</h2>
+          <p>Tell us where your company knowledge lives today and we'll show how Relativity turns it into a searchable AI assistant.</p>
+          <div class="contact-details">
+            <div class="contact-detail">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <span>info@relativitysystems.ai</span>
+            </div>
+          </div>
+        </div>
+        <form class="contact-form fade-in" id="contactForm" novalidate>
+          <div class="form-row">
+            <input type="text" name="name" placeholder="Your name" required autocomplete="name">
+            <input type="email" name="email" placeholder="Email address" required autocomplete="email">
+          </div>
+          <input type="tel" name="phone" placeholder="Phone number" required autocomplete="tel">
+          <input type="text" name="company" placeholder="Company (optional)" autocomplete="organization">
+          <textarea name="message" placeholder="What company knowledge would you like your team to search? SOPs, FAQs, policies, training docs, client notes, etc." rows="5" required></textarea>
+          <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off" aria-hidden="true">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Send Message</button>
+          <p class="form-status" id="formStatus"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <a href="#" class="logo footer-logo">
+          <img src="/assets/relativity_white.png" alt="Relativity" class="logo-img">
+        </a>
+        <p class="footer-sub">Private AI knowledge base for growing businesses.</p>
+        <nav class="footer-nav">
+          <a href="#product">Product</a>
+          <a href="#demo">Demo</a>
+          <a href="#use-cases">Use Cases</a>
+          <a href="#what-it-is">How It Works</a>
+          <a href="#contact">Contact</a>
+        </nav>
+        <p class="footer-copy">&copy; 2026 Relativity Systems. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="mainPg.js"></script>
+</body>
+</html>

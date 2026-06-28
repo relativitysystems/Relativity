@@ -48,12 +48,12 @@
 
   if (connected) {
     showBanner('success', 'Connection updated successfully.');
-    window.history.replaceState({}, '', '/portal.html');
+    window.history.replaceState({}, '', '/portal/portal.html');
   }
 
   if (error) {
     showBanner('error', 'Connection failed. Please try again or contact support.');
-    window.history.replaceState({}, '', '/portal.html');
+    window.history.replaceState({}, '', '/portal/portal.html');
   }
 
   // 5. Knowledge Base
