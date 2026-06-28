@@ -43,6 +43,16 @@
   --btn-primary-bg:    #0f0f0f;
   --btn-primary-text:  #ffffff;
   --btn-primary-hover: #333333;
+
+  /* Badge accent text (darker for legibility on light bg) */
+  --badge-purple:  #7c3aed;
+  --badge-blue:    #2563eb;
+  --badge-teal:    #0d9488;
+  --badge-orange:  #ea580c;
+  --badge-emerald: #059669;
+  --badge-slate:   #475569;
+  --badge-indigo:  #4f46e5;
+  --badge-gray:    #4b5563;
 }
 
 html[data-theme="dark"] {
@@ -77,6 +87,16 @@ html[data-theme="dark"] {
   --btn-primary-bg:    #ffffff;
   --btn-primary-text:  #000000;
   --btn-primary-hover: #e8e8e8;
+
+  /* Badge accent text (pastels for dark bg) */
+  --badge-purple:  #a78bfa;
+  --badge-blue:    #60a5fa;
+  --badge-teal:    #2dd4bf;
+  --badge-orange:  #fb923c;
+  --badge-emerald: #34d399;
+  --badge-slate:   #94a3b8;
+  --badge-indigo:  #818cf8;
+  --badge-gray:    #9ca3af;
 }
 
 /* ── Logo: invert the white logo for light mode ── */
