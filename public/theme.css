@@ -44,6 +44,9 @@
   --btn-primary-text:  #ffffff;
   --btn-primary-hover: #333333;
 
+  /* Shadows */
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.08);
+
   /* Badge accent text (darker for legibility on light bg) */
   --badge-purple:  #7c3aed;
   --badge-blue:    #2563eb;
@@ -87,6 +90,9 @@ html[data-theme="dark"] {
   --btn-primary-bg:    #ffffff;
   --btn-primary-text:  #000000;
   --btn-primary-hover: #e8e8e8;
+
+  /* Shadows */
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.4);
 
   /* Badge accent text (pastels for dark bg) */
   --badge-purple:  #a78bfa;

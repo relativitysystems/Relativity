@@ -38,6 +38,12 @@ body {
   text-transform: uppercase;
 }
 
+.nav-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-logout {
   background: transparent;
   border: 1px solid var(--border);
@@ -1406,8 +1412,8 @@ select.form-input {
 }
 
 /* ---- Visual Polish ---- */
-.assistant-card { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
-.chat-card { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.assistant-card { box-shadow: var(--shadow-card); }
+.chat-card { box-shadow: var(--shadow-card); }
 .kb-doc-row:hover { background: var(--surface-tint-2); }
 
 /* ---- Onboarding Progress ---- */
@@ -1547,8 +1553,8 @@ select.form-input {
   text-transform: capitalize;
 }
 
-.team-status-badge--active  { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-.team-status-badge--invited { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.team-status-badge--active  { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+.team-status-badge--invited { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
 .team-status-badge--disabled { background: var(--surface-tint-4); color: var(--text-muted); }
 
 .team-role-label {
@@ -1586,8 +1592,8 @@ select.form-input {
   white-space: nowrap;
 }
 .btn-team-action:hover { border-color: var(--border-hover); color: var(--text-primary); }
-.btn-team-action--danger { border-color: rgba(239, 68, 68, 0.3); color: #ef4444; }
-.btn-team-action--danger:hover { border-color: #ef4444; }
+.btn-team-action--danger { border-color: rgba(239, 68, 68, 0.3); color: var(--error); }
+.btn-team-action--danger:hover { border-color: var(--error); }
 
 .team-you-label {
   color: var(--text-muted);
