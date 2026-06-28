@@ -235,7 +235,7 @@ body {
 /* ---- Overview: Panels ---- */
 .overview-panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -1283,7 +1283,7 @@ select.form-input {
 
 .upload-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--warn), #ff9d3a);
+  background: linear-gradient(90deg, var(--warn), #fa4902);
   border-radius: 99px;
   transition: width 0.3s ease;
   width: 0%;
@@ -1649,7 +1649,7 @@ select.form-input {
 .btn-team-cancel:hover { border-color: var(--border-hover); }
 
 .btn-team-invite-submit {
-  background: #FF6B2B;
+  background: #fa4902;
   color: #fff;
   border: none;
   border-radius: 8px;

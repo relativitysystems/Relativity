@@ -24,7 +24,7 @@
   /* Semantic */
   --success: #16a34a;
   --error:   #dc2626;
-  --warn:    #d97706;
+  --warn:    #fa4902;
   --soon:    #6b7280;
 
   /* Surface tints (overlays for hover / active states) */
@@ -51,7 +51,7 @@
   --badge-purple:  #7c3aed;
   --badge-blue:    #2563eb;
   --badge-teal:    #0d9488;
-  --badge-orange:  #ea580c;
+  --badge-orange:  #fa4902;
   --badge-emerald: #059669;
   --badge-slate:   #475569;
   --badge-indigo:  #4f46e5;
@@ -74,7 +74,7 @@ html[data-theme="dark"] {
 
   --success: #22c55e;
   --error:   #ef4444;
-  --warn:    #f59e0b;
+  --warn:    #fa4902;
   --soon:    #6b7280;
 
   --surface-tint-1: rgba(255, 255, 255, 0.015);
@@ -98,7 +98,7 @@ html[data-theme="dark"] {
   --badge-purple:  #a78bfa;
   --badge-blue:    #60a5fa;
   --badge-teal:    #2dd4bf;
-  --badge-orange:  #fb923c;
+  --badge-orange:  #fa4902;
   --badge-emerald: #34d399;
   --badge-slate:   #94a3b8;
   --badge-indigo:  #818cf8;
