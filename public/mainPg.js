@@ -27,10 +27,13 @@ function initStars() {
 
 function tick() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const starRgb = isDark ? '255,255,255' : '15,15,15';
+  const opacityScale = isDark ? 1 : 0.3;
   for (const s of stars) {
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255,255,255,${s.o})`;
+    ctx.fillStyle = `rgba(${starRgb},${s.o * opacityScale})`;
     ctx.fill();
     s.y -= s.speed;
     if (s.y + s.r < 0) {

@@ -1,0 +1,117 @@
+/* ============================================================
+   THEME.CSS — Centralized light / dark token system
+   Light = :root (default)
+   Dark  = html[data-theme="dark"]
+   ============================================================ */
+
+:root {
+  /* Backgrounds */
+  --bg:            #f5f4f0;
+  --surface:       #ffffff;
+  --bg-card:       #ffffff;
+  --bg-card-hover: #eeecea;
+
+  /* Borders */
+  --border:        rgba(0, 0, 0, 0.10);
+  --border-hover:  rgba(0, 0, 0, 0.20);
+
+  /* Text */
+  --text:          #0f0f0f;
+  --text-primary:  #0f0f0f;
+  --text-secondary:rgba(15, 15, 15, 0.55);
+  --text-muted:    rgba(15, 15, 15, 0.38);
+
+  /* Semantic */
+  --success: #16a34a;
+  --error:   #dc2626;
+  --warn:    #d97706;
+  --soon:    #6b7280;
+
+  /* Surface tints (overlays for hover / active states) */
+  --surface-tint-1: rgba(0, 0, 0, 0.02);
+  --surface-tint-2: rgba(0, 0, 0, 0.04);
+  --surface-tint-3: rgba(0, 0, 0, 0.06);
+  --surface-tint-4: rgba(0, 0, 0, 0.08);
+
+  /* Component-specific */
+  --nav-bg-scrolled:   rgba(245, 244, 240, 0.92);
+  --mobile-nav-bg:     rgba(245, 244, 240, 0.97);
+  --demo-chrome:       #f0f0ef;
+  --demo-dot:          #d4d3cf;
+
+  /* Buttons */
+  --btn-primary-bg:    #0f0f0f;
+  --btn-primary-text:  #ffffff;
+  --btn-primary-hover: #333333;
+}
+
+html[data-theme="dark"] {
+  --bg:            #000000;
+  --surface:       #0d0d0d;
+  --bg-card:       #111111;
+  --bg-card-hover: #161616;
+
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-hover:  rgba(255, 255, 255, 0.16);
+
+  --text:          #ffffff;
+  --text-primary:  #ffffff;
+  --text-secondary:rgba(255, 255, 255, 0.55);
+  --text-muted:    rgba(255, 255, 255, 0.3);
+
+  --success: #22c55e;
+  --error:   #ef4444;
+  --warn:    #f59e0b;
+  --soon:    #6b7280;
+
+  --surface-tint-1: rgba(255, 255, 255, 0.015);
+  --surface-tint-2: rgba(255, 255, 255, 0.025);
+  --surface-tint-3: rgba(255, 255, 255, 0.04);
+  --surface-tint-4: rgba(255, 255, 255, 0.06);
+
+  --nav-bg-scrolled:   rgba(0, 0, 0, 0.85);
+  --mobile-nav-bg:     rgba(0, 0, 0, 0.96);
+  --demo-chrome:       #080808;
+  --demo-dot:          #252525;
+
+  --btn-primary-bg:    #ffffff;
+  --btn-primary-text:  #000000;
+  --btn-primary-hover: #e8e8e8;
+}
+
+/* ── Logo: invert the white logo for light mode ── */
+.logo-img {
+  filter: invert(1);
+}
+html[data-theme="dark"] .logo-img {
+  filter: none;
+}
+
+/* ── Theme toggle button ── */
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  transition: border-color 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+/* Moon shown in light mode; sun shown in dark mode */
+.theme-toggle .icon-sun  { display: none;  }
+.theme-toggle .icon-moon { display: block; }
+
+html[data-theme="dark"] .theme-toggle .icon-sun  { display: block; }
+html[data-theme="dark"] .theme-toggle .icon-moon { display: none;  }
