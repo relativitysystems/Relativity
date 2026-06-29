@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig, googleDrive: googleDriveConfig } = require('../config');
+const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig, googleDrive: googleDriveConfig, appBaseUrl } = require('../config');
+const { sendPasswordResetEmail } = require('../services/emailService');
 const clientAuth = require('../middleware/clientAuth');
 const apiKey = require('../middleware/apiKey');
 const dropboxService = require('../services/dropboxService');
@@ -345,6 +346,64 @@ router.post('/accept-team-invite', async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+/**
+ * POST /auth/password-reset/request
+ *
+ * Public — no auth required.
+ * Generates a Supabase recovery link server-side and sends it via emailService.
+ * Always returns a generic success response to prevent account enumeration.
+ */
+
+// Simple in-memory rate limit: max 3 requests per email per 10 minutes
+const _resetLog = new Map();
+function _isResetRateLimited(email) {
+  const now = Date.now();
+  const window = 10 * 60 * 1000;
+  const prev = (_resetLog.get(email) || []).filter(t => now - t < window);
+  if (prev.length >= 3) return true;
+  _resetLog.set(email, [...prev, now]);
+  return false;
+}
+
+router.post('/password-reset/request', async (req, res) => {
+  // Always respond with generic success — processing happens after
+  const genericOk = () => res.json({ success: true });
+
+  const rawEmail = req.body?.email;
+  if (!rawEmail || typeof rawEmail !== 'string') return genericOk();
+
+  const email = rawEmail.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return genericOk();
+
+  if (_isResetRateLimited(email)) {
+    console.warn('[password-reset] Rate limited for:', email);
+    return genericOk();
+  }
+
+  try {
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: `${appBaseUrl}/reset-password.html` },
+    });
+
+    if (error || !data?.properties?.action_link) {
+      // User likely doesn't exist — log without details and bail silently
+      console.warn('[password-reset] Could not generate link for request');
+      return genericOk();
+    }
+
+    const resetUrl = data.properties.action_link;
+    // Never log resetUrl — it contains a live credential
+    await sendPasswordResetEmail({ toEmail: email, resetUrl });
+    console.log('[password-reset] Reset email dispatched for:', email);
+  } catch (err) {
+    console.error('[password-reset] Error processing request:', err.message);
+  }
+
+  return genericOk();
 });
 
 /**

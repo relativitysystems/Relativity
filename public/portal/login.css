@@ -99,6 +99,20 @@
   cursor: not-allowed;
 }
 
+.forgot-link {
+  display: block;
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-top: 10px;
+  transition: color 0.15s ease;
+}
+
+.forgot-link:hover {
+  color: var(--text-secondary);
+}
+
 @media (max-width: 480px) {
   .login-card {
     padding: 36px 24px 28px;

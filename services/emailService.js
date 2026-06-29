@@ -113,7 +113,7 @@ function buildInviteHtml({ companyName, inviterName, role, acceptUrl }) {
     This link expires in 7 days.
   </p>
   <a href="${e(acceptUrl)}"
-     style="display:inline-block;padding:12px 24px;background:#FF6B2B;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
+     style="display:inline-block;padding:12px 24px;background:#fa4902;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
     Accept Invitation
   </a>
   <p style="margin:24px 0 0;font-size:13px;color:#666">
@@ -165,4 +165,71 @@ async function sendTeamInviteEmail({ toEmail, companyName, inviterName, role, ac
   }
 }
 
-module.exports = { sendLeadNotification, sendTeamInviteEmail };
+// ─────────────────────────────────────────────
+// Password reset email
+// ─────────────────────────────────────────────
+
+function buildPasswordResetHtml({ resetUrl }) {
+  const e = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `
+<div style="font-family:sans-serif;font-size:15px;color:#111;max-width:520px">
+  <p style="margin:0 0 16px">
+    We received a request to reset the password for your Relativity Systems account.
+  </p>
+  <p style="margin:0 0 24px">
+    Click the button below to set a new password. This link expires in 1 hour.
+  </p>
+  <a href="${e(resetUrl)}"
+     style="display:inline-block;padding:12px 24px;background:#fa4902;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
+    Reset Password
+  </a>
+  <p style="margin:24px 0 0;font-size:13px;color:#666">
+    If you didn't request a password reset you can safely ignore this email — your password will not change.
+  </p>
+</div>
+  `.trim();
+}
+
+function buildPasswordResetText({ resetUrl }) {
+  return [
+    'We received a request to reset the password for your Relativity Systems account.',
+    '',
+    'Click the link below to set a new password (expires in 1 hour):',
+    resetUrl,
+    '',
+    "If you didn't request a password reset you can safely ignore this email.",
+  ].join('\n');
+}
+
+async function sendPasswordResetEmail({ toEmail, resetUrl }) {
+  const subject = 'Reset your Relativity Systems password';
+  const html = buildPasswordResetHtml({ resetUrl });
+  const text = buildPasswordResetText({ resetUrl });
+
+  try {
+    if (emailConfig.resendApiKey) {
+      const { Resend } = require('resend');
+      const client = new Resend(emailConfig.resendApiKey);
+      const result = await client.emails.send({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      console.log('[emailService] Password reset email sent via Resend:', result?.data?.id || result?.id);
+      return;
+    }
+    if (emailConfig.smtpHost) {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: emailConfig.smtpHost,
+        port: emailConfig.smtpPort,
+        secure: emailConfig.smtpPort === 465,
+        auth: { user: emailConfig.smtpUser, pass: emailConfig.smtpPass },
+      });
+      await transporter.sendMail({ from: emailConfig.fromAddress, to: toEmail, subject, text, html });
+      return;
+    }
+    throw new Error('No email provider configured. Set RESEND_API_KEY or SMTP_HOST.');
+  } catch (err) {
+    console.error('[emailService] Failed to send password reset email:', err.message);
+    throw err;
+  }
+}
+
+module.exports = { sendLeadNotification, sendTeamInviteEmail, sendPasswordResetEmail };
