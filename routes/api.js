@@ -6,9 +6,11 @@ const multer = require('multer');
 const apiKey = require('../middleware/apiKey');
 const clientAuth = require('../middleware/clientAuth');
 const googleDriveService = require('../services/googleDriveService');
+const googleDriveImportService = require('../services/googleDriveImportService');
 const aikbService = require('../services/aikbService');
 const supabaseService = require('../services/supabaseService');
 const config = require('../config');
+const { googleDrive: googleDriveConfig } = require('../config');
 
 const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
 const MAX_FILE_MB = config.limits.maxFileSizeMb;
@@ -110,6 +112,77 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
     console.error('POST /api/knowledge/upload error:', err.message);
     res.status(500).json({ error: 'Upload failed. Please try again.' });
   }
+});
+
+// ---- Google Drive one-shot import ----
+
+router.get('/google-drive/picker-config', clientAuth, (req, res) => {
+  res.json({
+    clientId: googleDriveConfig.clientId,
+    apiKey: googleDriveConfig.pickerApiKey,
+  });
+});
+
+router.post('/google-drive/import', clientAuth, async (req, res) => {
+  if (req.member?.role === 'viewer') {
+    return res.status(403).json({ error: 'Viewers cannot import documents' });
+  }
+
+  const googleToken = req.headers['x-google-access-token'];
+  const { files } = req.body;
+
+  if (!googleToken) {
+    return res.status(400).json({ error: 'Missing Google access token.' });
+  }
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'No files provided.' });
+  }
+
+  for (const f of files) {
+    if (!googleDriveImportService.ALLOWED_MIME_TYPES.has(f.mimeType)) {
+      return res.status(400).json({ error: `Unsupported file type: ${f.mimeType}` });
+    }
+  }
+
+  const clientId = req.client.id;
+  const maxBytes = config.limits.maxFileSizeMb * 1024 * 1024;
+
+  try {
+    const existing = await aikbService.listDocuments(clientId);
+    const count = (existing.documents || (Array.isArray(existing) ? existing : [])).filter(d => d.status !== 'deleted').length;
+    if (count + files.length > config.limits.maxDocuments) {
+      return res.status(429).json({ error: `Document limit reached (${config.limits.maxDocuments} max).` });
+    }
+  } catch { /* non-blocking */ }
+
+  const imported = [];
+  for (const file of files) {
+    const sourceFileId = crypto.randomUUID();
+    try {
+      const meta = await googleDriveImportService.getFileMetadata(googleToken, file.id);
+      const fileSize = parseInt(meta.size || '0', 10);
+      if (fileSize > maxBytes) {
+        return res.status(400).json({
+          error: `"${file.name}" exceeds the maximum upload size of ${config.limits.maxFileSizeMb} MB.`,
+        });
+      }
+
+      const fileBuffer = await googleDriveImportService.downloadFileBuffer(googleToken, file.id);
+      await aikbService.uploadAndIngest({
+        clientId,
+        sourceFileId,
+        fileName: file.name,
+        mimeType: file.mimeType,
+        fileBuffer,
+      });
+      imported.push({ sourceFileId, fileName: file.name });
+    } catch (err) {
+      console.error(`Google Drive import failed for ${file.name}:`, err.message);
+      return res.status(500).json({ error: `Failed to import "${file.name}". Please try again.` });
+    }
+  }
+
+  res.status(201).json({ success: true, imported });
 });
 
 router.get('/knowledge/documents', clientAuth, async (req, res) => {

@@ -68,6 +68,12 @@
   const kbSessionsList    = document.getElementById('kb-sessions-list');
   const kbNewChatBtn      = document.getElementById('kb-new-chat-btn');
   const kbClearHistoryBtn = document.getElementById('kb-clear-history-btn');
+  const kbGdriveBtn       = document.getElementById('kb-gdrive-btn');
+
+  let _pickerConfig       = null;
+  let _gapiPickerLoaded   = false;
+  let _gisInited          = false;
+  let _tokenClient        = null;
 
   let currentSessionId = null;
   let chatSessions     = [];
@@ -92,6 +98,7 @@
   loadSessions();
   loadJobs();
   loadAnalytics();
+  loadPickerConfig();
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
@@ -99,6 +106,18 @@
       kbUploadStatus.hidden = true;
       kbUploadStatus.textContent = '';
       uploadDocument(kbFileInput.files[0]);
+    }
+  });
+
+  kbGdriveBtn.addEventListener('click', () => {
+    if (!_pickerConfig?.clientId) {
+      showBanner('error', 'Google Drive import is not configured.');
+      return;
+    }
+    if (!_gisInited || !_gapiPickerLoaded) {
+      initPicker(() => _tokenClient.requestAccessToken({ prompt: 'select_account' }));
+    } else {
+      _tokenClient.requestAccessToken({ prompt: '' });
     }
   });
 
@@ -800,6 +819,125 @@
   }
 
   function hideUploadPanel() {
+    const panel = document.getElementById('upload-progress-panel');
+    if (panel) panel.hidden = true;
+  }
+
+  // ---- Google Drive one-shot import ----
+
+  async function loadPickerConfig() {
+    try {
+      const res = await fetch('/api/google-drive/picker-config', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) _pickerConfig = await res.json();
+    } catch { /* non-fatal — button will show a banner if config missing */ }
+  }
+
+  function initPicker(callback) {
+    gapi.load('picker', () => {
+      _gapiPickerLoaded = true;
+      if (_gisInited) callback();
+    });
+    _tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: _pickerConfig.clientId,
+      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      callback: (response) => {
+        if (response.access_token) openPicker(response.access_token);
+      },
+    });
+    _gisInited = true;
+    if (_gapiPickerLoaded) callback();
+  }
+
+  function openPicker(tempToken) {
+    const docsView = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setMimeTypes([
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain',
+        'text/markdown',
+      ].join(','));
+
+    new google.picker.PickerBuilder()
+      .addView(docsView)
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .setOAuthToken(tempToken)
+      .setDeveloperKey(_pickerConfig.apiKey)
+      .setCallback((data) => {
+        if (data.action === google.picker.Action.PICKED) {
+          importFromGoogleDrive(data.docs, tempToken);
+        }
+      })
+      .build()
+      .setVisible(true);
+  }
+
+  async function importFromGoogleDrive(docs, tempToken) {
+    kbGdriveBtn.disabled = true;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.className = 'kb-upload-status';
+
+    const files = docs.map(d => ({ id: d.id, name: d.name, mimeType: d.mimeType }));
+    const total = files.length;
+
+    showImportStatus(`Importing ${total} file${total > 1 ? 's' : ''} from Google Drive…`);
+
+    try {
+      let completed = 0;
+      for (const file of files) {
+        showImportStatus(`Importing file ${completed + 1} of ${total}: “${file.name}”…`);
+
+        const res = await fetch('/api/google-drive/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+            'X-Google-Access-Token': tempToken,
+          },
+          body: JSON.stringify({ files: [file] }),
+        });
+        const body = await res.json();
+
+        if (!res.ok) {
+          kbUploadStatus.textContent = body.error || 'Import failed. Please try again.';
+          kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+          kbUploadStatus.hidden = false;
+          return;
+        }
+        completed++;
+      }
+
+      kbUploadStatus.textContent = `${total} file${total > 1 ? 's' : ''} imported from Google Drive.`;
+      kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
+      kbUploadStatus.hidden = false;
+      await refreshDocuments();
+      loadJobs();
+
+    } catch (err) {
+      kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
+      kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+      kbUploadStatus.hidden = false;
+    } finally {
+      hideImportStatus();
+      kbGdriveBtn.disabled = false;
+    }
+  }
+
+  function showImportStatus(message) {
+    const panel   = document.getElementById('upload-progress-panel');
+    const phaseEl = document.getElementById('upload-phase-text');
+    const nameEl  = document.getElementById('upload-file-name');
+    const barEl   = document.getElementById('upload-progress-bar');
+    const pctEl   = document.getElementById('upload-percent-text');
+    if (panel)   panel.hidden        = false;
+    if (phaseEl) phaseEl.textContent = message;
+    if (nameEl)  nameEl.textContent  = '';
+    if (barEl)   barEl.style.width   = '100%';
+    if (pctEl)   pctEl.textContent   = '';
+  }
+
+  function hideImportStatus() {
     const panel = document.getElementById('upload-progress-panel');
     if (panel) panel.hidden = true;
   }

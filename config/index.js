@@ -22,6 +22,7 @@ module.exports = {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     redirectUri: process.env.GOOGLE_REDIRECT_URI,
+    pickerApiKey: process.env.GOOGLE_PICKER_API_KEY,
   },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
   email: {

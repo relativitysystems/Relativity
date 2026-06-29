@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="/shared/theme.css" />
   <link rel="stylesheet" href="portal.css" />
   <script src="/shared/theme.js"></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -83,6 +85,7 @@
         <div class="kb-upload-row">
           <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
           <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
+          <button class="btn-kb-upload btn-kb-gdrive" id="kb-gdrive-btn" type="button">Upload from Google Drive</button>
           <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
         </div>
         <div id="upload-progress-panel" class="upload-progress-panel" hidden>
