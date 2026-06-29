@@ -48,7 +48,7 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--badge-orange);
   margin-bottom: 16px;
   display: block;
 }
@@ -272,7 +272,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-weight: 500;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--badge-orange);
   margin-bottom: 28px;
   display: block;
 }
@@ -1172,7 +1172,7 @@ footer {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--badge-orange);
 }
 
 .demo-prompts-pills {
