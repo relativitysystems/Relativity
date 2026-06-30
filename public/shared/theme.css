@@ -18,8 +18,8 @@
   /* Text */
   --text:          #0f0f0f;
   --text-primary:  #0f0f0f;
-  --text-secondary:rgba(15, 15, 15, 0.55);
-  --text-muted:    rgba(15, 15, 15, 0.38);
+  --text-secondary:rgba(15, 15, 15, 0.75);
+  --text-muted:    rgba(15, 15, 15, 0.56);
 
   /* Semantic */
   --success: #16a34a;
