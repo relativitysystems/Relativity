@@ -39,6 +39,7 @@
     const teamSection = document.getElementById('section-team');
     if (teamSection) teamSection.style.display = '';
     initTeamSection();
+    loadMembers();
   }
 
   // 4. Handle post-OAuth redirect params
@@ -84,6 +85,7 @@
   let loadedDocs      = null;
   let loadedSessions  = null;
   let loadedAnalytics = null;
+  let loadedMembers   = null; // null = not yet fetched; [] = no other members
 
   const MAX_QUERY_HEIGHT = 120;
 
@@ -368,37 +370,38 @@
 
   function maybeUpdateProgress() {
     if (loadedDocs !== null) {
-      renderOnboardingProgress(loadedDocs, loadedSessions || [], loadedAnalytics);
+      renderOnboardingProgress(loadedDocs, loadedSessions || [], loadedAnalytics, loadedMembers);
     }
   }
 
-  function renderOnboardingProgress(docs, sessions, analytics) {
+  function renderOnboardingProgress(docs, sessions, analytics, members) {
     const el = document.getElementById('progress-checklist');
     if (!el) return;
 
-    const uploadedCount   = docs.length;
-    const docsIndexed     = docs.some(d => d.status === 'indexed');
-    const analyticsIndexed = analytics
-      ? (analytics.indexedDocuments ?? analytics.indexed_documents ?? 0) > 0
+    const hasDoc     = docs.length > 0;
+    const hasIndexed = docs.some(d => d.status === 'indexed') ||
+                       (analytics ? (analytics.indexedDocuments ?? analytics.indexed_documents ?? 0) > 0 : false);
+    const hasSession = sessions.length > 0;
+    const hasCitation = analytics
+      ? (analytics.totalQuestions ?? analytics.total_questions ?? 0) > 0
       : false;
-    const hasIndexed  = docsIndexed || analyticsIndexed;
-    const questionCount = analytics
-      ? (analytics.totalQuestions ?? analytics.total_questions ?? 0)
-      : sessions.length;
+
+    const isOwnerAdmin = memberRole === 'owner' || memberRole === 'admin';
+
+    const lastStep = isOwnerAdmin
+      ? { label: 'Invite team member',   done: Array.isArray(members) && members.some(m => m.role !== 'owner') }
+      : { label: 'Explore chat history', done: hasSession };
 
     const steps = [
-      { label: 'Account created',              done: true },
-      { label: `Documents uploaded (${Math.min(uploadedCount, 3)}/3)`,  done: uploadedCount >= 3 },
-      { label: 'Documents indexed',            done: hasIndexed },
-      { label: `Questions asked (${Math.min(questionCount, 3)}/3)`,     done: questionCount >= 3 },
+      { label: 'Account created',               done: true },
+      { label: 'Upload first document',         done: hasDoc },
+      { label: 'Document indexed successfully', done: hasIndexed },
+      { label: 'Ask first test question',       done: hasSession },
+      { label: 'Verify answer source citation', done: hasCitation },
+      lastStep,
     ];
 
-    const doneCount = steps.filter(s => s.done).length;
-
     el.innerHTML = `
-      <div class="progress-bar-wrap">
-        <div class="progress-bar" style="width:${Math.round((doneCount / steps.length) * 100)}%"></div>
-      </div>
       <ul class="progress-steps">
         ${steps.map(s => `
           <li class="progress-step ${s.done ? 'progress-step--done' : 'progress-step--pending'}">
@@ -453,6 +456,20 @@
       maybeUpdateProgress();
     } catch {
       loadedAnalytics = null;
+      maybeUpdateProgress();
+    }
+  }
+
+  async function loadMembers() {
+    try {
+      const res = await fetch('/api/team/members', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) { loadedMembers = []; maybeUpdateProgress(); return; }
+      loadedMembers = await res.json();
+      maybeUpdateProgress();
+    } catch {
+      loadedMembers = [];
       maybeUpdateProgress();
     }
   }

@@ -1429,48 +1429,33 @@ select.form-input {
 .kb-doc-row:hover { background: var(--surface-tint-2); }
 
 /* ---- Onboarding Progress ---- */
-.progress-bar-wrap {
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  margin-bottom: 16px;
-  overflow: hidden;
-  width: 100%;
-}
-
-.progress-bar {
-  height: 100%;
-  background: var(--warn);
-  border-radius: 2px;
-  transition: width 0.4s ease;
-}
-
 .progress-steps {
   list-style: none;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 12px;
 }
 
 .progress-step {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 0.84rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   line-height: 1.4;
 }
 
 .progress-step--done { color: var(--text-primary); }
-.progress-step--pending { color: var(--text-muted); }
+.progress-step--pending { color: var(--text-muted); font-weight: 400; }
 
 .progress-icon {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   width: 16px;
   text-align: center;
   flex-shrink: 0;
-  color: var(--warn);
+  color: var(--success);
 }
 
 .progress-step--pending .progress-icon { color: var(--text-muted); }
