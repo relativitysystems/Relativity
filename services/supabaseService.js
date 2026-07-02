@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
+const aikbService = require('./aikbService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -94,27 +95,105 @@ async function deleteClient(clientId) {
   if (error) throw new Error(`deleteClient failed: ${error.message}`);
 }
 
+async function getClientMembersForDeletion(clientId) {
+  const { data, error } = await supabase
+    .from('client_members')
+    .select('id, email, auth_user_id, role')
+    .eq('client_id', clientId);
+  if (error) throw new Error(`getClientMembersForDeletion failed: ${error.message}`);
+  return data || [];
+}
+
 async function deleteClientFull(clientId) {
-  // Get email and owner auth_user_id before deleting
-  const [{ data: clientRecord }, { data: ownerMember }] = await Promise.all([
-    supabase.from('clients').select('email').eq('id', clientId).single(),
-    supabase.from('client_members').select('auth_user_id').eq('client_id', clientId).eq('role', 'owner').limit(1).single(),
-  ]);
+  console.log(`[deleteClientFull] START | clientId=${clientId}`);
+  const errors = [];
 
-  // Delete related records
-  await supabase.from('oauth_tokens').delete().eq('client_id', clientId);
-  await supabase.from('client_users').delete().eq('client_id', clientId);
-  await supabase.from('clients').delete().eq('id', clientId);
+  const { data: clientRecord } = await supabase
+    .from('clients').select('email').eq('id', clientId).maybeSingle();
 
-  // Delete the Supabase auth user — use owner member link if present (accepted invite),
-  // otherwise find by email (pending invite that was never accepted)
-  let authUserId = ownerMember?.auth_user_id;
-  if (!authUserId && clientRecord?.email) {
-    const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-    authUserId = users.find(u => u.email === clientRecord.email)?.id;
+  const members = await getClientMembersForDeletion(clientId).catch((err) => {
+    errors.push(`fetch members: ${err.message}`);
+    return [];
+  });
+
+  let authUserIds = [...new Set(members.map(m => m.auth_user_id).filter(Boolean))];
+
+  if (authUserIds.length === 0 && clientRecord?.email) {
+    console.log('[deleteClientFull] No member auth_user_ids found, falling back to email lookup');
+    try {
+      const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+      if (error) throw new Error(error.message);
+      const fallback = users.find(u => u.email === clientRecord.email)?.id;
+      if (fallback) authUserIds = [fallback];
+    } catch (err) {
+      errors.push(`auth email fallback: ${err.message}`);
+    }
   }
-  if (authUserId) {
-    await supabase.auth.admin.deleteUser(authUserId);
+  console.log(`[deleteClientFull] ${authUserIds.length} auth user(s) queued for deletion`);
+
+  // AIKB cleanup — best-effort, must not block Global DB cleanup. Runs
+  // before any Global DB rows are deleted so the AIKB call still has a
+  // valid clientId to scope its own cleanup by (it doesn't depend on the
+  // Global clients row existing, but this keeps ordering intuitive).
+  try {
+    const result = await aikbService.deleteClientData(clientId);
+    if (result?.errors?.length) {
+      console.warn(`[deleteClientFull] AIKB cleanup completed with ${result.errors.length} partial error(s) for clientId=${clientId}`);
+    } else {
+      console.log(`[deleteClientFull] AIKB cleanup succeeded for clientId=${clientId}`);
+    }
+  } catch (err) {
+    console.error(`[deleteClientFull] AIKB cleanup failed for clientId=${clientId}: ${err.message}`);
+    errors.push(`aikb: ${err.message}`);
+  }
+
+  // Related Global DB rows — each independently non-fatal. client_members,
+  // team_invites, client_member_sessions would cascade from `clients`
+  // anyway; folder_states/automation_logs aren't referenced elsewhere in
+  // this repo and may not exist live, so failures there are expected, not
+  // real errors — never leak token/secret column values in these logs.
+  const relatedTables = ['oauth_tokens', 'client_portal_issues', 'client_member_sessions', 'team_invites', 'client_members', 'client_users'];
+  const defensiveTables = ['folder_states', 'automation_logs'];
+  for (const table of [...relatedTables, ...defensiveTables]) {
+    const { error, count } = await supabase.from(table).delete({ count: 'exact' }).eq('client_id', clientId);
+    if (error) {
+      if (defensiveTables.includes(table)) {
+        console.warn(`[deleteClientFull] ${table} delete skipped (expected if table absent): ${error.message}`);
+      } else {
+        console.error(`[deleteClientFull] ${table} delete failed for clientId=${clientId}: ${error.message}`);
+        errors.push(`${table}: ${error.message}`);
+      }
+    } else {
+      console.log(`[deleteClientFull] ${table} deleted count=${count ?? 'n/a'}`);
+    }
+  }
+
+  // FATAL — the one step that must abort deletion. Every prior step is
+  // best-effort; if the client row itself can't be removed, the client was
+  // not actually deleted and the caller must see an error.
+  const { error: clientDeleteError } = await supabase.from('clients').delete().eq('id', clientId);
+  if (clientDeleteError) {
+    throw new Error(`deleteClientFull: failed to delete clients row for clientId=${clientId}: ${clientDeleteError.message}`);
+  }
+  console.log(`[deleteClientFull] clients row deleted for clientId=${clientId}`);
+
+  // Auth users last, after the clients row is confirmed gone. deleteUser()
+  // resolves { error } rather than throwing — check it explicitly, log and
+  // continue past individual failures so one bad ID doesn't abort the rest.
+  for (const authUserId of authUserIds) {
+    const { error } = await supabase.auth.admin.deleteUser(authUserId);
+    if (error) {
+      console.error(`[deleteClientFull] Failed to delete auth user ${authUserId} for clientId=${clientId}: ${error.message}`);
+      errors.push(`auth user ${authUserId}: ${error.message}`);
+    } else {
+      console.log(`[deleteClientFull] Deleted auth user ${authUserId}`);
+    }
+  }
+
+  if (errors.length) {
+    console.warn(`[deleteClientFull] DONE with ${errors.length} non-fatal error(s) | clientId=${clientId}`);
+  } else {
+    console.log(`[deleteClientFull] DONE | clientId=${clientId}`);
   }
 }
 

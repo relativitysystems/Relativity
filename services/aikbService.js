@@ -193,6 +193,18 @@ async function getClientAnalytics(clientId) {
   }
 }
 
+async function deleteClientData(clientId) {
+  try {
+    const res = await axios.delete(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/client/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB deleteClientData failed: ${extractAxiosError(err)}`);
+  }
+}
+
 async function getClientDocumentStats(clientId) {
   try {
     const data = await listDocuments(clientId);
@@ -223,4 +235,5 @@ module.exports = {
   getClientSummary,
   getClientAnalytics,
   getClientDocumentStats,
+  deleteClientData,
 };
