@@ -13,8 +13,10 @@ function getAikbSupabase() {
   return _client;
 }
 
-function aikbHeaders() {
-  return { 'x-api-key': aikbConfig.apiKey };
+function aikbHeaders(authHeader) {
+  const headers = { 'x-api-key': aikbConfig.apiKey };
+  if (authHeader) headers.Authorization = authHeader;
+  return headers;
 }
 
 function extractAxiosError(err) {
@@ -56,14 +58,14 @@ async function listDocuments(clientId) {
   }
 }
 
-async function queryKnowledge(clientId, query, sessionId) {
+async function queryKnowledge(clientId, query, sessionId, authHeader) {
   try {
     const body = { clientId, question: query };
     if (sessionId) body.sessionId = sessionId;
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/query`,
       body,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
     return res.data;
   } catch (err) {
@@ -84,11 +86,11 @@ async function saveKnowledgeGap({ clientId, sessionId, messageId, question, reas
   }
 }
 
-async function listChatSessions(clientId) {
+async function listChatSessions(clientId, authHeader) {
   try {
     const res = await axios.get(
       `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
     return res.data;
   } catch (err) {
@@ -96,11 +98,11 @@ async function listChatSessions(clientId) {
   }
 }
 
-async function listChatMessages(clientId, sessionId) {
+async function listChatMessages(clientId, sessionId, authHeader) {
   try {
     const res = await axios.get(
       `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}/messages`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
     return res.data;
   } catch (err) {
@@ -108,34 +110,34 @@ async function listChatMessages(clientId, sessionId) {
   }
 }
 
-async function deleteChatSession(clientId, sessionId) {
+async function deleteChatSession(clientId, sessionId, authHeader) {
   try {
     await axios.delete(
       `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
   } catch (err) {
     throw new Error(`AIKB deleteChatSession failed: ${extractAxiosError(err)}`);
   }
 }
 
-async function clearChatHistory(clientId) {
+async function clearChatHistory(clientId, authHeader) {
   try {
     await axios.delete(
       `${aikbConfig.apiBaseUrl}/api/knowledge/chat/history/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
   } catch (err) {
     throw new Error(`AIKB clearChatHistory failed: ${extractAxiosError(err)}`);
   }
 }
 
-async function updateChatSessionTitle(clientId, sessionId, title) {
+async function updateChatSessionTitle(clientId, sessionId, title, authHeader) {
   try {
     const res = await axios.patch(
       `${aikbConfig.apiBaseUrl}/api/knowledge/chat/sessions/${clientId}/${sessionId}/title`,
       { title },
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(authHeader) }
     );
     return res.data;
   } catch (err) {

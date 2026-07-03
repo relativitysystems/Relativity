@@ -246,7 +246,7 @@ router.post('/knowledge/query', clientAuth, async (req, res) => {
     return res.status(400).json({ error: 'query is required' });
   }
   try {
-    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null);
+    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null, req.headers.authorization);
     // Record which member owns this session in the local mapping table
     const returnedSessionId = data.sessionId || data.session_id;
     if (returnedSessionId && req.member?.id) {
@@ -283,7 +283,7 @@ router.post('/knowledge/gaps', clientAuth, async (req, res) => {
 router.get('/knowledge/chat/sessions', clientAuth, async (req, res) => {
   try {
     const [allSessions, memberSessionIds] = await Promise.all([
-      aikbService.listChatSessions(req.client.id),
+      aikbService.listChatSessions(req.client.id, req.headers.authorization),
       supabaseService.getMemberSessionIds(req.client.id, req.member.id),
     ]);
     const idSet = new Set(memberSessionIds);
@@ -304,7 +304,7 @@ router.get('/knowledge/chat/sessions/:sessionId/messages', clientAuth, async (re
     if (!memberSessionIds.includes(sessionId)) {
       return res.status(403).json({ error: 'Session not found' });
     }
-    const data = await aikbService.listChatMessages(req.client.id, sessionId);
+    const data = await aikbService.listChatMessages(req.client.id, sessionId, req.headers.authorization);
     res.json(data);
   } catch (err) {
     console.error('GET /api/knowledge/chat/sessions/:sessionId/messages error:', err.message);
@@ -319,7 +319,7 @@ router.delete('/knowledge/chat/sessions/:sessionId', clientAuth, async (req, res
     if (!memberSessionIds.includes(sessionId)) {
       return res.status(403).json({ error: 'Session not found' });
     }
-    await aikbService.deleteChatSession(req.client.id, sessionId);
+    await aikbService.deleteChatSession(req.client.id, sessionId, req.headers.authorization);
     await supabaseService.deleteMemberSession(req.client.id, req.member.id, sessionId);
     res.json({ success: true });
   } catch (err) {
@@ -334,7 +334,7 @@ router.delete('/knowledge/chat/history', clientAuth, async (req, res) => {
     // Delete each of this member's sessions from AIKB
     await Promise.all(
       memberSessionIds.map(sid =>
-        aikbService.deleteChatSession(req.client.id, sid).catch(() => {})
+        aikbService.deleteChatSession(req.client.id, sid, req.headers.authorization).catch(() => {})
       )
     );
     await supabaseService.deleteMemberAllSessions(req.client.id, req.member.id);
@@ -356,7 +356,7 @@ router.patch('/knowledge/chat/sessions/:sessionId/title', clientAuth, async (req
     if (!memberSessionIds.includes(sessionId)) {
       return res.status(403).json({ error: 'Session not found' });
     }
-    const data = await aikbService.updateChatSessionTitle(req.client.id, sessionId, title.trim());
+    const data = await aikbService.updateChatSessionTitle(req.client.id, sessionId, title.trim(), req.headers.authorization);
     res.json(data);
   } catch (err) {
     console.error('PATCH /api/knowledge/chat/sessions/:sessionId/title error:', err.message);
