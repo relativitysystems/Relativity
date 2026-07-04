@@ -1617,7 +1617,54 @@ select.form-input {
   margin-bottom: 20px;
 }
 
-.kb-job-error { color: var(--error) !important; }
+.kb-job-row { border-bottom: 1px solid var(--border); }
+.kb-job-row:last-child { border-bottom: none; }
+
+.kb-job-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.kb-job-summary::-webkit-details-marker { display: none; }
+.kb-job-summary::marker { content: ""; }
+.kb-job-summary:hover { background: var(--surface-tint-2); }
+
+.btn-kb-job-dismiss {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 7px;
+  transition: background var(--transition), color var(--transition);
+}
+.btn-kb-job-dismiss:hover { background: rgba(239, 68, 68, 0.08); color: var(--error); }
+
+.kb-job-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 16px 14px 16px;
+  background: var(--surface-tint-1);
+}
+
+.kb-job-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+.kb-job-detail-row > span:first-child { color: var(--text-muted); flex-shrink: 0; }
+.kb-job-detail-row > span:last-child { text-align: right; overflow-wrap: anywhere; }
+.kb-job-detail-row--error > span:last-child { color: var(--error); }
 
 /* ── Team Section ───────────────────────────────────────────────────── */
 

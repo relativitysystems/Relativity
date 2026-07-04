@@ -158,11 +158,38 @@ async function deleteDocument(clientId, sourceFileId) {
 
 async function listIngestionJobs(clientId) {
   try {
-    const res = await axios.get(
-      `${aikbConfig.apiBaseUrl}/api/knowledge/jobs/${clientId}`,
-      { headers: aikbHeaders() }
-    );
-    return res.data;
+    const [jobsRes, documentsData] = await Promise.all([
+      axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/jobs/${clientId}`, { headers: aikbHeaders() }),
+      listDocuments(clientId).catch(() => null),
+    ]);
+
+    const jobs = jobsRes.data.jobs || (Array.isArray(jobsRes.data) ? jobsRes.data : []);
+    const docs = documentsData
+      ? (documentsData.documents || (Array.isArray(documentsData) ? documentsData : []))
+      : [];
+
+    // Jobs from AIKB sometimes only carry sourceFileId — join against knowledge_documents
+    // (by sourceFileId) so the UI can show the real file name instead of a raw UUID.
+    const docsBySourceId = new Map();
+    for (const doc of docs) {
+      const id = doc.sourceFileId || doc.source_file_id;
+      if (id) docsBySourceId.set(id, doc);
+    }
+
+    const enrichedJobs = jobs.map((job) => {
+      const sourceFileId = job.sourceFileId || job.source_file_id || null;
+      const matchedDoc = sourceFileId ? docsBySourceId.get(sourceFileId) : null;
+      const fileName = job.fileName || job.file_name
+        || (matchedDoc && (matchedDoc.fileName || matchedDoc.file_name || matchedDoc.name))
+        || null;
+      const documentId = job.documentId || job.document_id
+        || (matchedDoc && (matchedDoc.id || matchedDoc.documentId || matchedDoc.document_id))
+        || null;
+
+      return { ...job, fileName, documentId };
+    });
+
+    return { jobs: enrichedJobs };
   } catch (err) {
     if (err.response?.status === 404) return { jobs: [] };
     throw new Error(`AIKB listIngestionJobs failed: ${extractAxiosError(err)}`);

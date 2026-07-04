@@ -128,6 +128,7 @@
   const kbUploadStatus    = document.getElementById('kb-upload-status');
   const kbDocsList        = document.getElementById('kb-docs-list');
   const kbDocsCount       = document.getElementById('kb-docs-count');
+  const kbJobsList        = document.getElementById('kb-jobs-list');
   const kbQueryInput      = document.getElementById('kb-query-input');
   const kbAskBtn          = document.getElementById('kb-ask-btn');
   const kbMessages        = document.getElementById('kb-messages');
@@ -145,6 +146,31 @@
   let chatSessions     = [];
   const pendingDeletes = new Set();
   const pendingUploads = new Map();
+
+  // Dismissed ingestion jobs are hidden client-side only — the job history in Supabase is untouched.
+  const DISMISSED_JOBS_KEY = `dismissedIngestionJobs:${clientId}`;
+
+  function getDismissedJobIds() {
+    try {
+      const raw = localStorage.getItem(DISMISSED_JOBS_KEY);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function dismissJob(jobKey) {
+    const dismissed = getDismissedJobIds();
+    dismissed.add(jobKey);
+    try {
+      localStorage.setItem(DISMISSED_JOBS_KEY, JSON.stringify([...dismissed]));
+    } catch { /* storage unavailable — dismissal just won't persist */ }
+  }
+
+  function getJobKey(job) {
+    return job.id || job.job_id || job.jobId
+      || `${job.sourceFileId || job.source_file_id || ''}:${job.created_at || ''}`;
+  }
 
   // Shared state for onboarding progress — updated as docs and sessions load
   let loadedDocs      = null;
@@ -283,6 +309,18 @@
       refreshDocuments();
     }
   });
+
+  if (kbJobsList) {
+    kbJobsList.addEventListener('click', (e) => {
+      const dismissBtn = e.target.closest('.btn-kb-job-dismiss');
+      if (!dismissBtn) return;
+      // Prevent the click from also toggling the <details> row open/closed
+      e.preventDefault();
+      e.stopPropagation();
+      dismissJob(dismissBtn.dataset.jobKey);
+      refreshJobs();
+    });
+  }
 
   kbSessionsList.addEventListener('click', async (e) => {
     const deleteBtn = e.target.closest('.btn-kb-session-delete');
@@ -595,8 +633,10 @@
 
   function renderJobs(jobs) {
     const jobsList = document.getElementById('kb-jobs-list');
+    const dismissed = getDismissedJobIds();
+    const visible = jobs.filter(job => !dismissed.has(getJobKey(job)));
 
-    if (!jobs.length) {
+    if (!visible.length) {
       if (jobsList) jobsList.innerHTML = `
         <div class="empty-state-card">
           <span class="empty-state-icon">⏱</span>
@@ -606,7 +646,7 @@
       return;
     }
 
-    const recent = jobs.slice(0, 5);
+    const recent = visible.slice(0, 5);
     const html = recent.map(job => {
       const status = job.status || 'unknown';
       const statusClass = {
@@ -616,23 +656,46 @@
         failed:    'badge--failed',
       }[status] || 'badge--indexing';
 
-      const name = job.fileName || job.file_name || job.sourceFileId || job.source_file_id || 'Unknown file';
+      const sourceFileId = job.sourceFileId || job.source_file_id || '';
+      const documentId   = job.documentId || job.document_id || '';
+      const jobId        = job.id || job.job_id || job.jobId || '';
+      const updatedAt    = job.updated_at || job.updatedAt || '';
+      const name = job.fileName || job.file_name || sourceFileId || 'Unknown file';
       const date = job.created_at
         ? new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : '';
-      const errorHtml = status === 'failed' && job.error_message
-        ? `<span class="kb-doc-meta kb-job-error">${escHtml(job.error_message)}</span>`
-        : '';
+      const jobKey = getJobKey(job);
+
+      const detailRows = [
+        jobId        && ['Job ID', jobId],
+        sourceFileId && ['Source File ID', sourceFileId],
+        documentId   && ['Document ID', documentId],
+        job.created_at && ['Created', new Date(job.created_at).toLocaleString()],
+        updatedAt    && ['Updated', new Date(updatedAt).toLocaleString()],
+        (status === 'failed' && job.error_message) && ['Error', job.error_message],
+      ].filter(Boolean).map(([label, value]) => {
+        const isError = label === 'Error';
+        return `
+          <div class="kb-job-detail-row${isError ? ' kb-job-detail-row--error' : ''}">
+            <span>${escHtml(label)}</span>
+            <span>${escHtml(String(value))}</span>
+          </div>`;
+      }).join('');
 
       return `
-        <div class="kb-doc-row">
-          <div class="kb-doc-info">
-            <span class="kb-doc-name">${escHtml(name)}</span>
-            ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
-            ${errorHtml}
+        <details class="kb-job-row" data-job-key="${escHtml(jobKey)}">
+          <summary class="kb-job-summary">
+            <div class="kb-doc-info">
+              <span class="kb-doc-name" title="${escHtml(name)}">${escHtml(name)}</span>
+              ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
+            </div>
+            <span class="badge ${statusClass}">${escHtml(status)}</span>
+            <button type="button" class="btn-kb-job-dismiss" data-job-key="${escHtml(jobKey)}" title="Dismiss">&times;</button>
+          </summary>
+          <div class="kb-job-details">
+            ${detailRows || '<div class="kb-job-detail-row"><span>No additional details available.</span></div>'}
           </div>
-          <span class="badge ${statusClass}">${escHtml(status)}</span>
-        </div>
+        </details>
       `;
     }).join('');
 
