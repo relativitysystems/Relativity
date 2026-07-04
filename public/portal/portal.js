@@ -345,10 +345,9 @@
     });
 
     const placeholders = [];
-    for (const [fileName] of pendingUploads) {
+    for (const [fileName, meta] of pendingUploads) {
       const alreadySettled = documents.find(d =>
-        (d.fileName || d.file_name || d.name) === fileName &&
-        (d.status === 'indexed' || d.status === 'failed')
+        docMatchesTarget(d, meta) && (d.status === 'indexed' || d.status === 'failed')
       );
       if (!alreadySettled) {
         placeholders.push({ fileName, status: 'indexing', _isPending: true });
@@ -389,6 +388,49 @@
       };
       setTimeout(tick, intervalMs);
     });
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Robust document matching: prefer sourceFileId, fall back to fileName.
+  function docMatchesTarget(doc, { fileName, sourceFileId } = {}) {
+    const docSourceId = doc.sourceFileId || doc.source_file_id || null;
+    if (sourceFileId && docSourceId) return docSourceId === sourceFileId;
+    const docName = doc.fileName || doc.file_name || doc.name || null;
+    return !!fileName && docName === fileName;
+  }
+
+  // Refreshes both documents and ingestion jobs together, keeping onboarding progress in sync.
+  async function refreshKnowledgeStatus() {
+    const [docs, jobs] = await Promise.all([refreshDocuments(), refreshJobs()]);
+    if (docs) { loadedDocs = docs; maybeUpdateProgress(); }
+    return { docs, jobs };
+  }
+
+  // Polls documents + jobs until every target (matched by sourceFileId or fileName) is
+  // indexed/failed, or timeoutMs elapses. Returns per-target settle results for the caller.
+  async function pollKnowledgeStatusUntilSettled({ fileNames = [], sourceFileIds = [], intervalMs = 1500, timeoutMs = 45000 } = {}) {
+    const targets = fileNames.map((fileName, i) => ({ fileName, sourceFileId: sourceFileIds[i] || null }));
+    const results = new Map();
+    const start = Date.now();
+
+    while (true) {
+      const { docs } = await refreshKnowledgeStatus();
+      let allSettled = true;
+      for (const target of targets) {
+        const match = (docs || []).find(d => docMatchesTarget(d, target));
+        if (match && (match.status === 'indexed' || match.status === 'failed')) {
+          results.set(target.fileName, match);
+        } else {
+          allSettled = false;
+        }
+      }
+      if (allSettled) return { settled: true, timedOut: false, docs, results };
+      if (Date.now() - start >= timeoutMs) return { settled: false, timedOut: true, docs, results };
+      await delay(intervalMs);
+    }
   }
 
   async function loadDocuments() {
@@ -480,6 +522,19 @@
 
   // ---- Ingestion Jobs ----
 
+  async function fetchJobs() {
+    try {
+      const res = await fetch('/api/knowledge/jobs', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.jobs || (Array.isArray(data) ? data : []);
+    } catch {
+      return null;
+    }
+  }
+
   async function loadJobs() {
     const jobsList = document.getElementById('kb-jobs-list');
     if (!jobsList) return;
@@ -498,17 +553,16 @@
         <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
       </div>`;
 
-    try {
-      const res = await fetch('/api/knowledge/jobs', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) { renderJobs([]); return; }
-      const data = await res.json();
-      const jobs = data.jobs || (Array.isArray(data) ? data : []);
-      renderJobs(jobs);
-    } catch {
-      renderJobs([]);
-    }
+    const jobs = await fetchJobs();
+    renderJobs(jobs || []);
+  }
+
+  // Like loadJobs(), but skips the loading skeleton — used while polling so the
+  // Recent Ingestion Jobs list doesn't flicker on every refresh tick.
+  async function refreshJobs() {
+    const jobs = await fetchJobs();
+    renderJobs(jobs || []);
+    return jobs;
   }
 
   async function loadAnalytics() {
@@ -847,37 +901,32 @@
         showUploadPhase('Processing document…', 100, file.name);
 
         // Show placeholder row immediately while indexing is in progress
-        pendingUploads.set(file.name, { fileName: file.name });
-        refreshDocuments();
+        const sourceFileId = result.body.sourceFileId || result.body.source_file_id || null;
+        pendingUploads.set(file.name, { fileName: file.name, sourceFileId });
+        await refreshKnowledgeStatus();
 
         showUploadPhase('Indexing in knowledge base…', 100, file.name);
 
-        // Poll until the document appears as indexed or failed
-        const settled = await pollUntilSettled(async () => {
-          const docs = await fetchDocuments();
-          if (docs) {
-            loadedDocs = docs;
-            renderDocuments(docs);
-            maybeUpdateProgress();
-          }
-          if (!docs) return false;
-          const found = docs.find(d => (d.fileName || d.file_name || d.name) === file.name);
-          return !!(found && (found.status === 'indexed' || found.status === 'failed'));
+        // Poll documents + jobs together until the document is indexed or failed
+        const { settled } = await pollKnowledgeStatusUntilSettled({
+          fileNames: [file.name],
+          sourceFileIds: [sourceFileId],
         });
 
         pendingUploads.delete(file.name);
 
         if (!settled) {
+          showUploadPhase('Indexing is taking longer than expected…', 100, file.name);
           showBanner('error', 'Indexing is taking longer than expected. Refresh in a moment.');
         } else {
+          showUploadPhase('Ready in knowledge base.', 100, file.name);
           kbUploadStatus.textContent = `"${file.name}" is ready in your knowledge base.`;
           kbUploadStatus.className   = 'kb-upload-status kb-upload-status--success';
           kbUploadStatus.hidden      = false;
         }
 
-        const finalDocs = await refreshDocuments();
-        if (finalDocs) { loadedDocs = finalDocs; maybeUpdateProgress(); }
-        loadJobs();
+        await refreshKnowledgeStatus();
+        await delay(900);
       } else {
         kbUploadStatus.textContent = result.body.error || 'Upload failed. Please try again.';
         kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
@@ -970,39 +1019,85 @@
     const files = docs.map(d => ({ id: d.id, name: d.name, mimeType: d.mimeType }));
     const total = files.length;
 
-    showImportStatus(`Importing ${total} file${total > 1 ? 's' : ''} from Google Drive…`);
+    const imported = [];       // { fileName, sourceFileId } — successfully requested imports
+    const importErrors = [];   // fileNames that failed the import request itself
 
     try {
-      let completed = 0;
-      for (const file of files) {
-        showImportStatus(`Importing file ${completed + 1} of ${total}: “${file.name}”…`);
+      for (let i = 0; i < total; i++) {
+        const file = files[i];
+        showImportStatus(`Importing file ${i + 1} of ${total}: “${file.name}”…`);
 
-        const res = await fetch('/api/google-drive/import', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-            'X-Google-Access-Token': tempToken,
-          },
-          body: JSON.stringify({ files: [file] }),
-        });
-        const body = await res.json();
+        try {
+          const res = await fetch('/api/google-drive/import', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`,
+              'X-Google-Access-Token': tempToken,
+            },
+            body: JSON.stringify({ files: [file] }),
+          });
+          const body = await res.json().catch(() => ({}));
 
-        if (!res.ok) {
-          kbUploadStatus.textContent = body.error || 'Import failed. Please try again.';
-          kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
-          kbUploadStatus.hidden = false;
-          return;
+          if (!res.ok) {
+            importErrors.push(file.name);
+            continue;
+          }
+
+          const entry = (body.imported && body.imported[0]) || {};
+          const sourceFileId = entry.sourceFileId || entry.source_file_id || null;
+
+          // Show a pending placeholder row immediately for this file
+          pendingUploads.set(file.name, { fileName: file.name, sourceFileId });
+          imported.push({ fileName: file.name, sourceFileId });
+          await refreshKnowledgeStatus();
+        } catch {
+          importErrors.push(file.name);
         }
-        completed++;
       }
 
-      kbUploadStatus.textContent = `${total} file${total > 1 ? 's' : ''} imported from Google Drive.`;
-      kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
-      kbUploadStatus.hidden = false;
-      await refreshDocuments();
-      loadJobs();
+      if (imported.length === 0) {
+        kbUploadStatus.textContent = importErrors.length === 1
+          ? `Failed to import "${importErrors[0]}". Please try again.`
+          : 'Failed to import files. Please try again.';
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.hidden = false;
+        await delay(900);
+        return;
+      }
 
+      showImportStatus('Indexing imported documents…');
+
+      const { settled, results } = await pollKnowledgeStatusUntilSettled({
+        fileNames: imported.map(f => f.fileName),
+        sourceFileIds: imported.map(f => f.sourceFileId),
+      });
+
+      imported.forEach(f => pendingUploads.delete(f.fileName));
+
+      const indexFailed  = imported.filter(f => results.get(f.fileName)?.status === 'failed').map(f => f.fileName);
+      const stillPending = imported.filter(f => !results.get(f.fileName)).map(f => f.fileName);
+      const failedNames  = [...importErrors, ...indexFailed];
+
+      if (stillPending.length > 0) {
+        showBanner('error', `Still indexing: ${stillPending.join(', ')}. Refresh again in a moment.`);
+      }
+
+      if (failedNames.length > 0) {
+        const readyCount = total - failedNames.length - stillPending.length;
+        kbUploadStatus.textContent = `${readyCount} of ${total} file${total > 1 ? 's' : ''} ready. Failed: ${failedNames.join(', ')}.`;
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+      } else if (settled) {
+        kbUploadStatus.textContent = `${total} file${total > 1 ? 's' : ''} ready in your knowledge base.`;
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
+      } else {
+        kbUploadStatus.textContent = `Import queued — ${stillPending.length} of ${total} file${total > 1 ? 's' : ''} still indexing.`;
+        kbUploadStatus.className = 'kb-upload-status';
+      }
+      kbUploadStatus.hidden = false;
+
+      await refreshKnowledgeStatus();
+      await delay(900);
     } catch (err) {
       kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
       kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
