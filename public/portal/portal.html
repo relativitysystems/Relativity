@@ -19,8 +19,13 @@
 <body>
 
   <nav class="nav">
-    <a href="/" class="nav-logo"><img src="/assets/relativity_white.png" alt="Relativity" class="logo-img"></a>
-    <span class="nav-label">Client Portal</span>
+    <div class="nav-start">
+      <button class="btn-menu-toggle" id="btn-menu-toggle" type="button" aria-label="Toggle menu" aria-expanded="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <a href="/" class="nav-logo"><img src="/assets/relativity_white.png" alt="Relativity" class="logo-img"></a>
+      <span class="nav-label">Client Portal</span>
+    </div>
     <div class="nav-end">
       <button class="theme-toggle" aria-label="Toggle theme">
         <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -32,226 +37,275 @@
 
   <main class="main">
 
-    <div class="portal-header portal-header--with-identity">
-      <div class="portal-heading">
-        <h1 class="portal-title">Operations Hub</h1>
-        <p class="portal-subtitle">Your AI knowledge base, document status, and support — all in one place.</p>
-      </div>
+    <div class="portal-topbar">
+      <div class="portal-header portal-header--with-identity">
+        <div class="portal-heading">
+          <h1 class="portal-title">Operations Hub</h1>
+          <p class="portal-subtitle">Your AI knowledge base, document status, and support — all in one place.</p>
+        </div>
 
-      <div class="portal-identity">
-        <span class="portal-identity-label">Signed in as</span>
-        <span class="portal-identity-name" id="clientIdentityName">Loading…</span>
-        <span class="portal-identity-id" id="clientIdentityId"></span>
+        <div class="portal-identity">
+          <span class="portal-identity-label">Signed in as</span>
+          <span class="portal-identity-name" id="clientIdentityName">Loading…</span>
+          <span class="portal-identity-id" id="clientIdentityId"></span>
+        </div>
       </div>
     </div>
 
-    <!-- 1. Overview -->
-    <section class="portal-section" id="overview">
-      <h2 class="section-label">Overview</h2>
+    <div class="portal-shell">
 
-      <div class="overview-panels">
-        <details class="kb-history-dropdown panel" open>
-          <summary class="kb-history-summary panel-header">
-            <span class="kb-history-summary-label panel-title">Setup Progress</span>
-          </summary>
-          <div class="kb-history-body panel-body panel-body--top" id="progress-checklist">
-            <div class="empty-state"><span>Loading…</span></div>
+      <aside class="portal-sidebar" id="portal-sidebar">
+        <nav class="sidebar-nav">
+          <button class="sidebar-tab" data-tab="overview" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>Overview</span>
+          </button>
+          <button class="sidebar-tab" data-tab="knowledge" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span>Knowledge Base</span>
+          </button>
+          <button class="sidebar-tab" data-tab="documents" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            <span>Documents</span>
+          </button>
+          <button class="sidebar-tab" data-tab="chat-history" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/><polyline points="12 7 12 12 16 14"/></svg>
+            <span>Chat History</span>
+          </button>
+          <button class="sidebar-tab" data-tab="team" type="button" id="sidebar-tab-team" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Team</span>
+          </button>
+          <button class="sidebar-tab" data-tab="support" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/></svg>
+            <span>Support</span>
+          </button>
+        </nav>
+      </aside>
+
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+      <div class="portal-content">
+
+        <!-- 1. Overview -->
+        <section class="portal-section tab-panel" id="tab-overview">
+          <h2 class="section-label">Overview</h2>
+
+          <div class="overview-panels">
+            <details class="kb-history-dropdown panel" open>
+              <summary class="kb-history-summary panel-header">
+                <span class="kb-history-summary-label panel-title">Setup Progress</span>
+              </summary>
+              <div class="kb-history-body panel-body panel-body--top" id="progress-checklist">
+                <div class="empty-state"><span>Loading…</span></div>
+              </div>
+            </details>
+            <details class="kb-history-dropdown panel" open>
+              <summary class="kb-history-summary panel-header">
+                <span class="kb-history-summary-label panel-title">Quick Tips</span>
+              </summary>
+              <div class="kb-history-body panel-body panel-body--top">
+                <ul class="update-list">
+                  <li>Upload SOP, FAQ, pricing, or training documents</li>
+                  <li>Ask test questions to verify your knowledge base</li>
+                  <li>Check source citations to confirm accuracy</li>
+                  <li>Report any gaps or issues using the Support tab</li>
+                </ul>
+              </div>
+            </details>
           </div>
-        </details>
-        <details class="kb-history-dropdown panel" open>
-          <summary class="kb-history-summary panel-header">
-            <span class="kb-history-summary-label panel-title">Quick Tips</span>
-          </summary>
-          <div class="kb-history-body panel-body panel-body--top">
-            <ul class="update-list">
-              <li>Upload SOP, FAQ, pricing, or training documents</li>
-              <li>Ask test questions to verify your knowledge base</li>
-              <li>Check source citations to confirm accuracy</li>
-              <li>Report any gaps or issues using the form below</li>
-            </ul>
-          </div>
-        </details>
-      </div>
-    </section>
+        </section>
 
-    <!-- 2. AI Knowledge Assistant -->
-    <section class="portal-section" id="knowledge">
-      <h2 class="section-label">AI Knowledge Assistant</h2>
-      <p class="section-desc">Upload documents to your knowledge base and ask questions in natural language.</p>
+        <!-- 2. Knowledge Base (AI chat) -->
+        <section class="portal-section tab-panel" id="tab-knowledge">
+          <h2 class="section-label">Knowledge Base</h2>
+          <p class="section-desc">Ask questions in natural language and get instant answers from your uploaded documents.</p>
 
-      <div class="assistant-card">
+          <div class="chat-card chat-card--spacious">
 
-        <!-- Upload -->
-        <div class="kb-upload-row">
-          <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
-          <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
-          <button class="btn-kb-upload btn-kb-gdrive" id="kb-gdrive-btn" type="button">Upload from Google Drive</button>
-          <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
-        </div>
-        <div id="upload-progress-panel" class="upload-progress-panel" hidden>
-          <div class="upload-progress-header">
-            <span id="upload-file-name" class="upload-file-name"></span>
-            <span id="upload-percent-text" class="upload-percent-text">0%</span>
-          </div>
-          <div class="upload-progress-track">
-            <div id="upload-progress-bar" class="upload-progress-fill"></div>
-          </div>
-          <span id="upload-phase-text" class="upload-phase-text">Preparing upload…</span>
-        </div>
-        <p id="kb-upload-status" class="kb-upload-status" hidden></p>
-
-        <!-- Indexed documents -->
-        <details class="kb-history-dropdown">
-          <summary class="kb-history-summary">
-            <span class="kb-history-summary-label">Indexed Documents</span>
-            <span id="kb-docs-count" class="kb-docs-count"></span>
-          </summary>
-          <div class="kb-history-body">
-            <div class="kb-collapsible-pad">
-              <div id="kb-docs-list" class="kb-docs-list"></div>
+            <!-- Chat messages -->
+            <div id="kb-messages" class="kb-messages"></div>
+            <div id="chat-welcome" class="chat-welcome">
+              <div class="chat-welcome-title">Ask your company knowledge base</div>
+              <p class="chat-welcome-desc">Get instant answers from your uploaded documents.</p>
+              <div class="chat-welcome-chips">
+                <button class="chat-chip" type="button">What is our refund policy?</button>
+                <button class="chat-chip" type="button">Summarize our onboarding process</button>
+                <button class="chat-chip" type="button">How should we respond to a pricing question?</button>
+              </div>
             </div>
-          </div>
-        </details>
 
-        <!-- Ingestion Jobs -->
-        <details class="kb-history-dropdown">
-          <summary class="kb-history-summary">
-            <span class="kb-history-summary-label">Recent Ingestion Jobs</span>
-          </summary>
-          <div class="kb-history-body">
-            <div class="kb-collapsible-pad">
-              <div id="kb-jobs-list" class="kb-docs-list"></div>
+            <!-- Query input -->
+            <div class="assistant-search">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <textarea id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" rows="1"></textarea>
+              <button class="search-btn" id="kb-ask-btn">Ask</button>
             </div>
-          </div>
-        </details>
 
-        <!-- Chat history dropdown -->
-        <details class="kb-history-dropdown">
-          <summary class="kb-history-summary">
-            <span class="kb-history-summary-label">Chat History</span>
+          </div>
+        </section>
+
+        <!-- 3. Documents -->
+        <section class="portal-section tab-panel" id="tab-documents">
+          <h2 class="section-label">Documents</h2>
+          <p class="section-desc">Upload documents to your knowledge base and monitor indexing status.</p>
+
+          <div class="assistant-card">
+
+            <!-- Upload -->
+            <div class="kb-upload-row">
+              <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
+              <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
+              <button class="btn-kb-upload btn-kb-gdrive" id="kb-gdrive-btn" type="button">Upload from Google Drive</button>
+              <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB</span>
+            </div>
+            <div id="upload-progress-panel" class="upload-progress-panel" hidden>
+              <div class="upload-progress-header">
+                <span id="upload-file-name" class="upload-file-name"></span>
+                <span id="upload-percent-text" class="upload-percent-text">0%</span>
+              </div>
+              <div class="upload-progress-track">
+                <div id="upload-progress-bar" class="upload-progress-fill"></div>
+              </div>
+              <span id="upload-phase-text" class="upload-phase-text">Preparing upload…</span>
+            </div>
+            <p id="kb-upload-status" class="kb-upload-status" hidden></p>
+
+            <!-- Indexed documents -->
+            <details class="kb-history-dropdown" open>
+              <summary class="kb-history-summary">
+                <span class="kb-history-summary-label">Indexed Documents</span>
+                <span id="kb-docs-count" class="kb-docs-count"></span>
+              </summary>
+              <div class="kb-history-body">
+                <div class="kb-collapsible-pad">
+                  <div id="kb-docs-list" class="kb-docs-list"></div>
+                </div>
+              </div>
+            </details>
+
+            <!-- Ingestion Jobs -->
+            <details class="kb-history-dropdown" open>
+              <summary class="kb-history-summary">
+                <span class="kb-history-summary-label">Recent Ingestion Jobs</span>
+              </summary>
+              <div class="kb-history-body">
+                <div class="kb-collapsible-pad">
+                  <div id="kb-jobs-list" class="kb-docs-list"></div>
+                </div>
+              </div>
+            </details>
+
+          </div>
+        </section>
+
+        <!-- 4. Chat History -->
+        <section class="portal-section tab-panel" id="tab-chat-history">
+          <div class="team-section-header">
+            <div>
+              <h2 class="section-label">Chat History</h2>
+              <p class="section-desc">Browse and manage your past conversations with the AI assistant.</p>
+            </div>
             <button id="kb-new-chat-btn" class="btn-kb-new-chat" type="button">New Chat</button>
-          </summary>
-          <div class="kb-history-body">
-            <div id="kb-sessions-list" class="kb-sessions-list"></div>
+          </div>
+
+          <div class="assistant-card chat-history-card">
+            <div id="kb-sessions-list" class="kb-sessions-list kb-sessions-list--tall"></div>
             <div class="kb-history-footer">
               <button id="kb-clear-history-btn" class="btn-kb-clear-history" type="button">Clear All History</button>
             </div>
           </div>
-        </details>
+        </section>
 
-
-      </div>
-
-      <div class="chat-card">
-
-        <!-- Chat messages -->
-        <div id="kb-messages" class="kb-messages"></div>
-        <div id="chat-welcome" class="chat-welcome">
-          <div class="chat-welcome-title">Ask your company knowledge base</div>
-          <p class="chat-welcome-desc">Get instant answers from your uploaded documents.</p>
-          <div class="chat-welcome-chips">
-            <button class="chat-chip" type="button">What is our refund policy?</button>
-            <button class="chat-chip" type="button">Summarize our onboarding process</button>
-            <button class="chat-chip" type="button">How should we respond to a pricing question?</button>
+        <!-- 5. Team Members (owner/admin only) -->
+        <section class="portal-section tab-panel" id="tab-team">
+          <div class="team-section-header">
+            <div>
+              <h2 class="section-label">Team Members</h2>
+              <p class="section-desc">Manage who has access to your company's AI knowledge base.</p>
+            </div>
+            <button class="btn-team-invite" id="btn-team-invite" type="button">+ Invite Member</button>
           </div>
-        </div>
 
-        <!-- Query input -->
-        <div class="assistant-search">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <textarea id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" rows="1"></textarea>
-          <button class="search-btn" id="kb-ask-btn">Ask</button>
-        </div>
+          <!-- Members table -->
+          <div class="team-table-wrap">
+            <table class="team-table">
+              <thead>
+                <tr>
+                  <th>Name / Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Invited</th>
+                  <th>Last Active</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="team-members-tbody">
+                <tr><td colspan="6" class="team-empty-state">Loading team…</td></tr>
+              </tbody>
+            </table>
+          </div>
 
-      </div>
-    </section>
+          <!-- Invite modal -->
+          <div id="team-invite-modal" class="team-invite-modal" hidden>
+            <div class="team-invite-modal-inner">
+              <h3 class="team-modal-title">Invite Team Member</h3>
+              <form id="team-invite-form" novalidate>
+                <div class="form-group">
+                  <label class="form-label" for="team-invite-email">Email Address</label>
+                  <input type="email" id="team-invite-email" class="form-input" placeholder="colleague@company.com" required />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="team-invite-role">Role</label>
+                  <select id="team-invite-role" class="form-input">
+                    <option value="member">Member — can chat and upload</option>
+                    <option value="admin">Admin — can manage team</option>
+                    <option value="viewer">Viewer — can chat only</option>
+                  </select>
+                </div>
+                <div id="team-invite-error" class="login-error" hidden></div>
+                <div class="team-modal-actions">
+                  <button type="button" id="team-invite-cancel" class="btn-team-cancel">Cancel</button>
+                  <button type="submit" id="team-invite-submit" class="btn-team-invite-submit">Send Invite</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
 
-    <!-- 3. Team Members (owner/admin only) -->
-    <section class="portal-section" id="section-team" style="display:none">
-      <div class="team-section-header">
-        <div>
-          <h2 class="section-label">Team Members</h2>
-          <p class="section-desc">Manage who has access to your company's AI knowledge base.</p>
-        </div>
-        <button class="btn-team-invite" id="btn-team-invite" type="button">+ Invite Member</button>
-      </div>
+        <!-- 6. Support (Report an Issue) -->
+        <section class="portal-section tab-panel" id="tab-support">
+          <h2 class="section-label">Support</h2>
+          <p class="section-desc">Something isn't working as expected? Let us know and we'll respond within one business day.</p>
 
-      <!-- Members table -->
-      <div class="team-table-wrap">
-        <table class="team-table">
-          <thead>
-            <tr>
-              <th>Name / Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Invited</th>
-              <th>Last Active</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="team-members-tbody">
-            <tr><td colspan="6" class="team-empty-state">Loading team…</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Invite modal -->
-      <div id="team-invite-modal" class="team-invite-modal" hidden>
-        <div class="team-invite-modal-inner">
-          <h3 class="team-modal-title">Invite Team Member</h3>
-          <form id="team-invite-form" novalidate>
+          <form id="issue-form" class="issue-form" novalidate>
             <div class="form-group">
-              <label class="form-label" for="team-invite-email">Email Address</label>
-              <input type="email" id="team-invite-email" class="form-input" placeholder="colleague@company.com" required />
+              <label class="form-label" for="issue-subject">Subject</label>
+              <input type="text" id="issue-subject" class="form-input" placeholder="Brief description of the issue" required />
             </div>
             <div class="form-group">
-              <label class="form-label" for="team-invite-role">Role</label>
-              <select id="team-invite-role" class="form-input">
-                <option value="member">Member — can chat and upload</option>
-                <option value="admin">Admin — can manage team</option>
-                <option value="viewer">Viewer — can chat only</option>
+              <label class="form-label" for="issue-type">Issue Type</label>
+              <select id="issue-type" class="form-input" required>
+                <option value="">Select a type…</option>
+                <option value="bug">Bug</option>
+                <option value="question">Question</option>
+                <option value="document_issue">Document Issue</option>
+                <option value="account_issue">Account Issue</option>
+                <option value="other">Other</option>
               </select>
             </div>
-            <div id="team-invite-error" class="login-error" hidden></div>
-            <div class="team-modal-actions">
-              <button type="button" id="team-invite-cancel" class="btn-team-cancel">Cancel</button>
-              <button type="submit" id="team-invite-submit" class="btn-team-invite-submit">Send Invite</button>
+            <div class="form-group">
+              <label class="form-label" for="issue-message">Message</label>
+              <textarea id="issue-message" class="form-input issue-textarea" rows="4" placeholder="Describe the issue in detail…" required></textarea>
             </div>
+            <div id="issue-error" class="issue-feedback issue-feedback--error" hidden></div>
+            <div id="issue-success" class="issue-feedback issue-feedback--success" hidden></div>
+            <button type="submit" id="issue-submit" class="btn-submit-issue">Submit Issue</button>
           </form>
-        </div>
+        </section>
+
       </div>
-    </section>
-
-    <!-- 4. Report an Issue -->
-    <section class="portal-section" id="requests">
-      <h2 class="section-label">Report an Issue</h2>
-      <p class="section-desc">Something isn't working as expected? Let us know and we'll respond within one business day.</p>
-
-      <form id="issue-form" class="issue-form" novalidate>
-        <div class="form-group">
-          <label class="form-label" for="issue-subject">Subject</label>
-          <input type="text" id="issue-subject" class="form-input" placeholder="Brief description of the issue" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="issue-type">Issue Type</label>
-          <select id="issue-type" class="form-input" required>
-            <option value="">Select a type…</option>
-            <option value="bug">Bug</option>
-            <option value="question">Question</option>
-            <option value="document_issue">Document Issue</option>
-            <option value="account_issue">Account Issue</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="issue-message">Message</label>
-          <textarea id="issue-message" class="form-input issue-textarea" rows="4" placeholder="Describe the issue in detail…" required></textarea>
-        </div>
-        <div id="issue-error" class="issue-feedback issue-feedback--error" hidden></div>
-        <div id="issue-success" class="issue-feedback issue-feedback--success" hidden></div>
-        <button type="submit" id="issue-submit" class="btn-submit-issue">Submit Issue</button>
-      </form>
-    </section>
+    </div>
 
   </main>
 

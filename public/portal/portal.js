@@ -34,13 +34,78 @@
   identityId.textContent = `${clientName || 'Client'} • ${roleLabel}`;
 }
 
-  // Show team section for owner and admin roles
-  if (memberRole === 'owner' || memberRole === 'admin') {
-    const teamSection = document.getElementById('section-team');
-    if (teamSection) teamSection.style.display = '';
+  const isOwnerAdmin = memberRole === 'owner' || memberRole === 'admin';
+
+  // Show team tab for owner and admin roles
+  if (isOwnerAdmin) {
+    const teamTabBtn = document.getElementById('sidebar-tab-team');
+    if (teamTabBtn) teamTabBtn.hidden = false;
     initTeamSection();
     loadMembers();
   }
+
+  // ---- Sidebar / tab navigation ----
+  const TAB_NAMES = ['overview', 'knowledge', 'documents', 'chat-history', 'team', 'support'];
+  const DEFAULT_TAB = 'knowledge';
+
+  const portalSidebar  = document.getElementById('portal-sidebar');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  const menuToggleBtn  = document.getElementById('btn-menu-toggle');
+  const sidebarTabBtns = document.querySelectorAll('.sidebar-tab');
+
+  function closeSidebarMobile() {
+    if (portalSidebar) portalSidebar.classList.remove('portal-sidebar--open');
+    if (sidebarOverlay) sidebarOverlay.classList.remove('sidebar-overlay--visible');
+    if (menuToggleBtn) menuToggleBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function openSidebarMobile() {
+    if (portalSidebar) portalSidebar.classList.add('portal-sidebar--open');
+    if (sidebarOverlay) sidebarOverlay.classList.add('sidebar-overlay--visible');
+    if (menuToggleBtn) menuToggleBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  function setActiveTab(tabName, { updateHash = true } = {}) {
+    if (!TAB_NAMES.includes(tabName)) tabName = DEFAULT_TAB;
+    if (tabName === 'team' && !isOwnerAdmin) tabName = DEFAULT_TAB;
+
+    TAB_NAMES.forEach((name) => {
+      const panel = document.getElementById(`tab-${name}`);
+      if (panel) panel.classList.toggle('tab-panel--active', name === tabName);
+    });
+
+    sidebarTabBtns.forEach((btn) => {
+      btn.classList.toggle('sidebar-tab--active', btn.dataset.tab === tabName);
+    });
+
+    if (updateHash) {
+      window.history.replaceState(null, '', `#${tabName}`);
+    }
+
+    closeSidebarMobile();
+  }
+
+  sidebarTabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+  });
+
+  if (menuToggleBtn) {
+    menuToggleBtn.addEventListener('click', () => {
+      if (portalSidebar && portalSidebar.classList.contains('portal-sidebar--open')) {
+        closeSidebarMobile();
+      } else {
+        openSidebarMobile();
+      }
+    });
+  }
+
+  if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebarMobile);
+
+  window.addEventListener('hashchange', () => {
+    setActiveTab(window.location.hash.replace('#', ''), { updateHash: false });
+  });
+
+  setActiveTab(window.location.hash.replace('#', '') || DEFAULT_TAB, { updateHash: false });
 
   // 4. Handle post-OAuth redirect params
   const params = new URLSearchParams(window.location.search);
@@ -49,12 +114,12 @@
 
   if (connected) {
     showBanner('success', 'Connection updated successfully.');
-    window.history.replaceState({}, '', '/portal/portal.html');
+    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
   }
 
   if (error) {
     showBanner('error', 'Connection failed. Please try again or contact support.');
-    window.history.replaceState({}, '', '/portal/portal.html');
+    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
   }
 
   // 5. Knowledge Base

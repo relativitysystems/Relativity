@@ -38,10 +38,35 @@ body {
   text-transform: uppercase;
 }
 
+.nav-start {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .nav-end {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.btn-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.btn-menu-toggle:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
 }
 
 .btn-logout {
@@ -64,15 +89,90 @@ body {
 /* ---- Main ---- */
 .main {
   flex: 1;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 56px 32px 96px;
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
+
+/* ---- Portal Shell (sidebar dashboard layout) ---- */
+.portal-topbar {
+  padding: 40px 40px 0;
+}
+
+.portal-shell {
+  flex: 1;
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  margin-top: 32px;
+}
+
+.portal-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 20px 14px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.sidebar-tab svg { flex-shrink: 0; opacity: 0.7; transition: opacity var(--transition); }
+
+.sidebar-tab:hover {
+  background: var(--surface-tint-3);
+  color: var(--text-primary);
+}
+
+.sidebar-tab--active {
+  background: var(--surface-tint-4);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sidebar-tab--active svg { opacity: 1; }
+
+.sidebar-tab[hidden] { display: none; }
+
+.sidebar-overlay {
+  display: none;
+}
+
+.portal-content {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 40px 96px;
+}
+
+.tab-panel { display: none; }
+.tab-panel--active { display: block; }
+.portal-content .portal-section { margin-bottom: 0; }
 
 /* ---- Portal Header ---- */
 .portal-header {
-  margin-bottom: 48px;
+  margin-bottom: 32px;
 }
 
 .portal-title {
@@ -293,6 +393,24 @@ body {
   border-radius: var(--radius);
   padding: 28px;
   margin-top: 10px;
+}
+
+.chat-card--spacious {
+  margin-top: 0;
+  padding: 32px;
+}
+
+.chat-card--spacious .kb-messages {
+  min-height: 340px;
+  max-height: 60vh;
+}
+
+.chat-history-card {
+  padding: 8px 0 0;
+}
+
+.kb-sessions-list--tall {
+  max-height: 480px;
 }
 
 .assistant-search {
@@ -1112,6 +1230,52 @@ select.form-input {
   .doc-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+@media (max-width: 880px) {
+  .btn-menu-toggle { display: inline-flex; }
+
+  .portal-shell { border-top: none; margin-top: 20px; }
+
+  .portal-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    max-width: 80vw;
+    z-index: 950;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    padding: 84px 16px 24px;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+
+  .portal-sidebar--open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-card);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .sidebar-overlay--visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .portal-topbar { padding: 24px 20px 0; }
+  .portal-content { padding: 24px 20px 64px; }
+}
+
 @media (max-width: 720px) {
   .portal-header--with-identity {
     flex-direction: column;
@@ -1125,14 +1289,15 @@ select.form-input {
 @media (max-width: 640px) {
   .nav { padding: 16px 20px; }
   .nav-label { display: none; }
-  .main { padding: 36px 20px 64px; }
   .overview-grid { grid-template-columns: repeat(2, 1fr); }
   .overview-panels { grid-template-columns: 1fr; }
   .request-grid { grid-template-columns: 1fr; }
   .doc-grid { grid-template-columns: repeat(2, 1fr); }
   .footer { padding: 16px 20px; }
   .kb-sessions-list { max-height: 160px; }
+  .kb-sessions-list--tall { max-height: 320px; }
   .kb-messages { max-height: 300px; }
+  .chat-card--spacious .kb-messages { max-height: 300px; }
   .kb-upload-row { flex-wrap: wrap; gap: 10px; }
   .search-btn { min-width: 52px; }
   .toast-container { left: 16px; right: 16px; bottom: 16px; }
