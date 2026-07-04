@@ -135,6 +135,7 @@
   const kbSessionsList    = document.getElementById('kb-sessions-list');
   const kbNewChatBtn      = document.getElementById('kb-new-chat-btn');
   const kbClearHistoryBtn = document.getElementById('kb-clear-history-btn');
+  const kbClearChatBtn    = document.getElementById('kb-clear-chat-btn');
   const kbGdriveBtn       = document.getElementById('kb-gdrive-btn');
 
   let _pickerConfig       = null;
@@ -223,14 +224,27 @@
     }
   });
 
-  kbNewChatBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
+  // Clears the visible conversation only — saved sessions in Chat History are untouched.
+  function startFreshChat() {
     currentSessionId = null;
     kbMessages.innerHTML = '';
     updateChatWelcome();
     renderSessions(chatSessions);
+    adjustQueryHeight();
     kbQueryInput.focus();
+  }
+
+  kbNewChatBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setActiveTab('knowledge');
+    startFreshChat();
   });
+
+  if (kbClearChatBtn) {
+    kbClearChatBtn.addEventListener('click', () => {
+      startFreshChat();
+    });
+  }
 
   // Chat welcome chips — fill textarea on click, no auto-submit
   document.querySelectorAll('.chat-chip').forEach(chip => {
