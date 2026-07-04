@@ -316,7 +316,7 @@
     const item = e.target.closest('.kb-session-item');
     if (item) {
       const sessionId = item.dataset.sessionId;
-      await loadSessionMessages(sessionId);
+      await openChatFromHistory(sessionId);
     }
   });
 
@@ -641,6 +641,13 @@
       kbMessages.innerHTML = `<div class="empty-state"><span>Failed to load messages.</span></div>`;
       updateChatWelcome();
     }
+  }
+
+  async function openChatFromHistory(sessionId) {
+    setActiveTab('knowledge');
+    await loadSessionMessages(sessionId);
+    kbMessages.scrollTop = kbMessages.scrollHeight;
+    if (kbQueryInput) kbQueryInput.focus();
   }
 
   function appendMessage(role, content, sources) {
