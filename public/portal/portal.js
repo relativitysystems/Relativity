@@ -1390,6 +1390,8 @@
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.text) {
+      // TEMP DEBUG — surfaces the exact backend error/status during development.
+      console.error('[voice] /api/voice/transcribe failed:', res.status, body);
       throw new Error(body.error || 'Transcription failed. Please try again.');
     }
     return body.text;
