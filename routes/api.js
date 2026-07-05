@@ -9,6 +9,7 @@ const googleDriveService = require('../services/googleDriveService');
 const googleDriveImportService = require('../services/googleDriveImportService');
 const aikbService = require('../services/aikbService');
 const supabaseService = require('../services/supabaseService');
+const openaiService = require('../services/openaiService');
 const config = require('../config');
 const { googleDrive: googleDriveConfig } = require('../config');
 
@@ -20,6 +21,16 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     cb(null, ALLOWED_EXTENSIONS.has(path.extname(file.originalname).toLowerCase()));
+  },
+});
+
+const MAX_AUDIO_MB = config.limits.maxAudioSizeMb;
+
+const uploadAudio = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_AUDIO_MB * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, typeof file.mimetype === 'string' && file.mimetype.startsWith('audio/'));
   },
 });
 
@@ -111,6 +122,35 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
   } catch (err) {
     console.error('POST /api/knowledge/upload error:', err.message);
     res.status(500).json({ error: 'Upload failed. Please try again.' });
+  }
+});
+
+// ---- Voice Input (transcription) ----
+
+router.post('/voice/transcribe', clientAuth, (req, res, next) => {
+  uploadAudio.single('audio')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? `Audio too large. Maximum size is ${MAX_AUDIO_MB} MB.`
+        : (err.message || 'Audio upload error.');
+      return res.status(400).json({ error: msg });
+    }
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+    return res.status(400).json({ error: 'No audio provided.' });
+  }
+
+  try {
+    const text = await openaiService.transcribeAudio(req.file.buffer, req.file.mimetype);
+    if (!text) {
+      return res.status(422).json({ error: 'Could not transcribe audio. Please try again.' });
+    }
+    res.json({ text });
+  } catch (err) {
+    console.error('POST /api/voice/transcribe error:', err.message);
+    res.status(500).json({ error: 'Transcription failed. Please try again.' });
   }
 });
 

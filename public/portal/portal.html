@@ -138,8 +138,21 @@
             <div class="assistant-search">
               <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <textarea id="kb-query-input" class="search-input" placeholder="Ask a question about your documents…" rows="1"></textarea>
+              <span id="kb-mic-timer" class="kb-mic-timer" hidden>0:00</span>
+              <button class="mic-btn" id="kb-mic-btn" type="button" title="Record voice question" aria-label="Record voice question" aria-pressed="false">
+                <svg class="mic-icon mic-icon--mic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                  <line x1="12" y1="18" x2="12" y2="22"/>
+                  <line x1="8" y1="22" x2="16" y2="22"/>
+                </svg>
+                <svg class="mic-icon mic-icon--stop" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <rect x="6" y="6" width="12" height="12" rx="2"/>
+                </svg>
+              </button>
               <button class="search-btn" id="kb-ask-btn">Ask</button>
             </div>
+            <div id="kb-mic-error" class="kb-mic-error" role="status" aria-live="polite" hidden></div>
 
           </div>
         </section>

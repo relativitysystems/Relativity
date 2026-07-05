@@ -464,6 +464,70 @@ body {
   cursor: not-allowed;
 }
 
+.mic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  background: var(--surface-tint-4);
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), transform 0.15s ease;
+}
+
+.mic-btn:hover:not(:disabled) {
+  background: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.mic-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mic-btn:focus-visible {
+  outline: 2px solid var(--border-hover);
+  outline-offset: 2px;
+}
+
+.mic-btn.is-recording {
+  background: var(--error);
+  color: #fff;
+  animation: mic-pulse 1.4s ease-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
+  70%  { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+.mic-icon--stop { display: none; }
+.mic-btn.is-recording .mic-icon--mic  { display: none; }
+.mic-btn.is-recording .mic-icon--stop { display: block; }
+
+.kb-mic-timer {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--error);
+  min-width: 28px;
+}
+
+.kb-mic-error {
+  color: var(--error);
+  font-size: 0.76rem;
+  margin-top: 6px;
+}
+
+.kb-mic-error--notice {
+  color: var(--text-muted);
+}
+
 .assistant-placeholder {
   display: flex;
   flex-direction: column;
@@ -1284,6 +1348,7 @@ select.form-input {
   .chat-card--spacious .kb-messages { max-height: 300px; }
   .kb-upload-row { flex-wrap: wrap; gap: 10px; }
   .search-btn { min-width: 52px; }
+  .mic-btn { width: 36px; height: 36px; }
   .toast-container { left: 16px; right: 16px; bottom: 16px; }
   .toast { max-width: none; }
   .team-table { min-width: 560px; }

@@ -137,6 +137,9 @@
   const kbClearHistoryBtn = document.getElementById('kb-clear-history-btn');
   const kbClearChatBtn    = document.getElementById('kb-clear-chat-btn');
   const kbGdriveBtn       = document.getElementById('kb-gdrive-btn');
+  const kbMicBtn          = document.getElementById('kb-mic-btn');
+  const kbMicTimer        = document.getElementById('kb-mic-timer');
+  const kbMicError        = document.getElementById('kb-mic-error');
 
   let _pickerConfig       = null;
   let _gapiPickerLoaded   = false;
@@ -147,6 +150,16 @@
   let chatSessions     = [];
   const pendingDeletes = new Set();
   const pendingUploads = new Map();
+
+  const MAX_RECORDING_MS = 2 * 60 * 1000; // auto-stop safety timeout
+
+  let mediaRecorder       = null;
+  let recordedChunks      = [];
+  let micState            = 'idle'; // 'idle' | 'recording' | 'transcribing'
+  let micPermissionDenied = false;
+  let recordingStartedAt  = null;
+  let recordingTimerId    = null;   // setInterval — updates the elapsed display
+  let recordingTimeoutId  = null;   // setTimeout  — enforces MAX_RECORDING_MS
 
   // Dismissed ingestion jobs are hidden client-side only — the job history in Supabase is untouched.
   const DISMISSED_JOBS_KEY = `dismissedIngestionJobs:${clientId}`;
@@ -216,6 +229,11 @@
   });
 
   kbAskBtn.addEventListener('click', askQuestion);
+  kbMicBtn.addEventListener('click', () => {
+    if (micState === 'idle') startRecording();
+    else if (micState === 'recording') stopRecording();
+    // 'transcribing': button is disabled, click is a no-op
+  });
   kbQueryInput.addEventListener('input', adjustQueryHeight);
   kbQueryInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1203,6 +1221,219 @@
     if (panel) panel.hidden = true;
   }
 
+  // ---- Voice input: recording ----
+
+  function isVoiceInputSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+
+  function pickRecorderMimeType() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+    ];
+    return candidates.find(type => window.MediaRecorder.isTypeSupported(type)) || '';
+  }
+
+  function formatElapsed(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  }
+
+  function showMicNotice(message, { isError = true } = {}) {
+    kbMicError.textContent = message;
+    kbMicError.classList.toggle('kb-mic-error--notice', !isError);
+    kbMicError.hidden = false;
+    clearTimeout(showMicNotice._t);
+    showMicNotice._t = setTimeout(() => { kbMicError.hidden = true; }, 5000);
+  }
+
+  // ---- Voice input: UI state ----
+
+  function setMicState(next) {
+    micState = next;
+    kbMicBtn.classList.toggle('is-recording', next === 'recording');
+    kbMicBtn.setAttribute('aria-pressed', String(next === 'recording'));
+    kbMicBtn.disabled = next === 'transcribing';
+
+    const label = next === 'recording' ? 'Stop recording'
+      : next === 'transcribing' ? 'Transcribing…'
+      : 'Record voice question';
+    kbMicBtn.title = label;
+    kbMicBtn.setAttribute('aria-label', label);
+
+    // Don't let a question be submitted while a transcript is still being
+    // recorded/produced. askQuestion() independently disables kbMicBtn
+    // while a typed question is in flight, so the two guard each other.
+    if (next !== 'idle') {
+      kbAskBtn.disabled = true;
+    } else if (!kbAskBtn.dataset.askInFlight) {
+      kbAskBtn.disabled = false;
+    }
+  }
+
+  // ---- Voice input: elapsed timer ----
+
+  function startRecordingTimer() {
+    recordingStartedAt = Date.now();
+    kbMicTimer.hidden = false;
+    kbMicTimer.textContent = '0:00';
+    recordingTimerId = setInterval(() => {
+      kbMicTimer.textContent = formatElapsed(Date.now() - recordingStartedAt);
+    }, 1000);
+  }
+
+  function stopRecordingTimer() {
+    clearInterval(recordingTimerId);
+    recordingTimerId = null;
+    kbMicTimer.hidden = true;
+    kbMicTimer.textContent = '0:00';
+  }
+
+  // ---- Voice input: permission + recording ----
+
+  async function resolveMicPermission() {
+    if (!navigator.permissions || !navigator.permissions.query) return 'unknown';
+    try {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      return status.state; // 'granted' | 'denied' | 'prompt'
+    } catch {
+      return 'unknown'; // e.g. Safari doesn't support the 'microphone' permission name
+    }
+  }
+
+  async function startRecording() {
+    if (!isVoiceInputSupported()) {
+      showMicNotice('Voice input is not supported in this browser.');
+      return;
+    }
+
+    const permissionState = await resolveMicPermission();
+    if (permissionState === 'denied' || micPermissionDenied) {
+      showMicNotice('Microphone access is disabled. Please enable microphone permissions in your browser settings.');
+      return;
+    }
+
+    const mimeType = pickRecorderMimeType();
+    if (!mimeType) {
+      showMicNotice('Voice input is not supported in this browser.');
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        micPermissionDenied = true;
+        showMicNotice('Microphone access is disabled. Please enable microphone permissions in your browser settings.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        showMicNotice('No microphone was found on this device.');
+      } else {
+        showMicNotice('Could not access the microphone. Please try again.');
+      }
+      return;
+    }
+
+    recordedChunks = [];
+    try {
+      mediaRecorder = new MediaRecorder(stream, { mimeType });
+    } catch {
+      stream.getTracks().forEach(t => t.stop());
+      showMicNotice('Voice input is not supported in this browser.');
+      return;
+    }
+
+    mediaRecorder.addEventListener('dataavailable', (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+
+    let stoppedByTimeout = false;
+    mediaRecorder.addEventListener('stop', () => {
+      stream.getTracks().forEach(t => t.stop());
+      stopRecordingTimer();
+      clearTimeout(recordingTimeoutId);
+      handleRecordingStopped(mimeType, stoppedByTimeout);
+    });
+
+    mediaRecorder.start();
+    setMicState('recording');
+    startRecordingTimer();
+
+    recordingTimeoutId = setTimeout(() => {
+      stoppedByTimeout = true;
+      stopRecording();
+    }, MAX_RECORDING_MS);
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  }
+
+  // ---- Voice input: upload + transcribe (isolated so a future streaming mode can replace just this) ----
+
+  async function uploadAndTranscribe(blob, ext) {
+    const formData = new FormData();
+    formData.append('audio', blob, `recording.${ext}`);
+
+    const res = await fetch('/api/voice/transcribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.text) {
+      throw new Error(body.error || 'Transcription failed. Please try again.');
+    }
+    return body.text;
+  }
+
+  async function handleRecordingStopped(mimeType, stoppedByTimeout) {
+    setMicState('transcribing');
+
+    const blob = new Blob(recordedChunks, { type: mimeType });
+    recordedChunks = [];
+
+    if (!blob.size) {
+      setMicState('idle');
+      showMicNotice('No audio recorded. Please try again.');
+      return;
+    }
+
+    const ext = (mimeType.split(';')[0].split('/')[1]) || 'webm';
+
+    try {
+      const text = await uploadAndTranscribe(blob, ext);
+      insertTranscript(text);
+      if (stoppedByTimeout) {
+        showMicNotice('Maximum recording length (2:00) reached.', { isError: false });
+      }
+    } catch (err) {
+      showMicNotice(err.message || 'Transcription failed. Please try again.');
+    }
+
+    setMicState('idle');
+  }
+
+  // ---- Voice input: transcript insertion ----
+
+  function insertTranscript(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    kbQueryInput.value = kbQueryInput.value.trim()
+      ? `${kbQueryInput.value.trim()} ${trimmed}`
+      : trimmed;
+    adjustQueryHeight();
+    kbQueryInput.focus();
+  }
+
   async function askQuestion() {
     const query = kbQueryInput.value.trim();
     if (!query) return;
@@ -1210,7 +1441,9 @@
     kbQueryInput.value = '';
     adjustQueryHeight();
     kbAskBtn.disabled = true;
+    kbAskBtn.dataset.askInFlight = '1';
     kbAskBtn.textContent = '…';
+    kbMicBtn.disabled = true;
 
     appendMessage('user', query, []);
     const loadingBubble = appendLoadingBubble();
@@ -1247,8 +1480,10 @@
       appendMessage('assistant', 'Network error. Please try again.', []);
     }
 
+    delete kbAskBtn.dataset.askInFlight;
     kbAskBtn.disabled = false;
     kbAskBtn.textContent = 'Ask';
+    kbMicBtn.disabled = micState === 'transcribing';
   }
 
   function shortId(id) {

@@ -41,10 +41,14 @@ module.exports = {
     supabaseServiceRoleKey: process.env.AIKB_SUPABASE_SERVICE_ROLE_KEY,
     storageBucket: process.env.AIKB_STORAGE_BUCKET || 'aikb-documents',
   },
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+  },
   limits: {
     maxDocuments: parseInt(process.env.MAX_DOCUMENTS || '50', 10),
     maxMonthlyQuestions: parseInt(process.env.MAX_MONTHLY_QUESTIONS || '500', 10),
     maxStorageMb: parseInt(process.env.MAX_STORAGE_MB || '500', 10),
     maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB || '20', 10),
+    maxAudioSizeMb: parseInt(process.env.MAX_AUDIO_SIZE_MB || '10', 10),
   },
 };
