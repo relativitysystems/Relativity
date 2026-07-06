@@ -50,5 +50,9 @@ module.exports = {
     maxStorageMb: parseInt(process.env.MAX_STORAGE_MB || '500', 10),
     maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB || '20', 10),
     maxAudioSizeMb: parseInt(process.env.MAX_AUDIO_SIZE_MB || '10', 10),
+    maxZipSizeMb: parseInt(process.env.MAX_ZIP_SIZE_MB || '50', 10),
+    maxZipFiles: parseInt(process.env.MAX_ZIP_FILES || '100', 10),
+    maxZipEntryMb: parseInt(process.env.MAX_ZIP_ENTRY_MB || '20', 10),
+    maxZipTotalMb: parseInt(process.env.MAX_ZIP_TOTAL_MB || '200', 10),
   },
 };

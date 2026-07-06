@@ -591,6 +591,41 @@ body {
 .kb-upload-status--success { color: var(--success); }
 .kb-upload-status--error   { color: var(--error); }
 
+.kb-import-heading {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.btn-kb-zip {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  margin-left: 8px;
+}
+
+.btn-kb-zip:hover:not(:disabled) {
+  background: var(--bg-secondary, rgba(0,0,0,0.04));
+  opacity: 1;
+}
+
+.kb-import-summary {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kb-import-summary-item--imported { color: var(--success); }
+.kb-import-summary-item--skipped  { color: var(--text-muted); }
+.kb-import-summary-item--failed   { color: var(--error); }
+
 .kb-docs-section { margin-bottom: 24px; }
 
 .kb-docs-header {

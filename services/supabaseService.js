@@ -654,6 +654,61 @@ async function deleteMemberAllSessions(clientId, memberId) {
 }
 
 // ─────────────────────────────────────────────
+// Document import provenance / grouped history
+// ─────────────────────────────────────────────
+
+// Best-effort — a logging failure must never fail an import. Callers should
+// catch and swallow errors from this the same way the maxDocuments count
+// check is treated as non-blocking elsewhere in routes/api.js.
+async function logImportBatch(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return;
+
+  const rows = entries.map((e) => ({
+    client_id: e.clientId,
+    import_batch_id: e.importBatchId,
+    source_type: e.sourceType,
+    source_path: e.sourcePath || null,
+    file_name: e.fileName,
+    source_file_id: e.sourceFileId,
+    imported_by: e.importedBy || null,
+  }));
+
+  const { error } = await supabase.from('document_import_log').insert(rows);
+  if (error) throw new Error(`logImportBatch failed: ${error.message}`);
+}
+
+async function getImportHistory(clientId, limit = 20) {
+  const { data, error } = await supabase
+    .from('document_import_log')
+    .select('import_batch_id, source_type, created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(500); // enough rows to reconstruct the most recent `limit` batches
+
+  if (error) throw new Error(`getImportHistory failed: ${error.message}`);
+
+  const batches = new Map();
+  for (const row of data || []) {
+    const existing = batches.get(row.import_batch_id);
+    if (existing) {
+      existing.fileCount += 1;
+      if (row.created_at < existing.createdAt) existing.createdAt = row.created_at;
+    } else {
+      batches.set(row.import_batch_id, {
+        importBatchId: row.import_batch_id,
+        sourceType: row.source_type,
+        fileCount: 1,
+        createdAt: row.created_at,
+      });
+    }
+  }
+
+  return [...batches.values()]
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, limit);
+}
+
+// ─────────────────────────────────────────────
 // Upsert owner member for original admin-invited client
 // ─────────────────────────────────────────────
 
@@ -720,4 +775,7 @@ module.exports = {
   deleteMemberAllSessions,
   // Owner member upsert
   upsertOwnerMember,
+  // Document import provenance / grouped history
+  logImportBatch,
+  getImportHistory,
 };

@@ -166,12 +166,15 @@
 
           <div class="assistant-card">
 
-            <!-- Upload -->
+            <!-- Import Knowledge -->
+            <h3 class="kb-import-heading">Import Knowledge</h3>
             <div class="kb-upload-row">
-              <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" style="display:none">
-              <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Document</button>
+              <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" multiple style="display:none">
+              <input type="file" id="kb-zip-input" accept=".zip" style="display:none">
+              <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Files</button>
+              <button class="btn-kb-upload btn-kb-zip" id="kb-zip-btn" type="button">Import Archive</button>
               <button class="btn-kb-upload btn-kb-gdrive" id="kb-gdrive-btn" type="button">Upload from Google Drive</button>
-              <span class="kb-upload-hint">PDF, DOCX, TXT, MD, CSV &middot; Max 20 MB</span>
+              <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB per file &middot; Archive up to 50 MB</span>
             </div>
             <div id="upload-progress-panel" class="upload-progress-panel" hidden>
               <div class="upload-progress-header">
@@ -184,6 +187,17 @@
               <span id="upload-phase-text" class="upload-phase-text">Preparing upload…</span>
             </div>
             <p id="kb-upload-status" class="kb-upload-status" hidden></p>
+            <details id="kb-import-result" class="kb-history-dropdown" hidden>
+              <summary class="kb-history-summary">
+                <span class="kb-history-summary-label">Import Complete</span>
+                <span id="kb-import-result-counts" class="kb-docs-count"></span>
+              </summary>
+              <div class="kb-history-body">
+                <div class="kb-collapsible-pad">
+                  <ul id="kb-import-summary" class="kb-import-summary"></ul>
+                </div>
+              </div>
+            </details>
 
             <!-- Indexed documents -->
             <details class="kb-history-dropdown" open>
@@ -194,6 +208,18 @@
               <div class="kb-history-body">
                 <div class="kb-collapsible-pad">
                   <div id="kb-docs-list" class="kb-docs-list"></div>
+                </div>
+              </div>
+            </details>
+
+            <!-- Recent Imports -->
+            <details class="kb-history-dropdown" open>
+              <summary class="kb-history-summary">
+                <span class="kb-history-summary-label">Recent Imports</span>
+              </summary>
+              <div class="kb-history-body">
+                <div class="kb-collapsible-pad">
+                  <div id="kb-import-history-list" class="kb-docs-list"></div>
                 </div>
               </div>
             </details>

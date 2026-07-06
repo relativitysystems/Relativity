@@ -137,6 +137,8 @@
   const kbClearHistoryBtn = document.getElementById('kb-clear-history-btn');
   const kbClearChatBtn    = document.getElementById('kb-clear-chat-btn');
   const kbGdriveBtn       = document.getElementById('kb-gdrive-btn');
+  const kbZipInput        = document.getElementById('kb-zip-input');
+  const kbZipBtn          = document.getElementById('kb-zip-btn');
   const kbMicBtn          = document.getElementById('kb-mic-btn');
   const kbMicTimer        = document.getElementById('kb-mic-timer');
   const kbMicError        = document.getElementById('kb-mic-error');
@@ -206,14 +208,30 @@
   loadJobs();
   loadAnalytics();
   loadPickerConfig();
+  loadImportHistory();
 
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
-    if (kbFileInput.files[0]) {
-      kbUploadStatus.hidden = true;
-      kbUploadStatus.textContent = '';
-      uploadDocument(kbFileInput.files[0]);
+    const files = Array.from(kbFileInput.files || []);
+    kbFileInput.value = '';
+    if (files.length === 0) return;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.textContent = '';
+    if (files.length === 1) {
+      uploadDocument(files[0]);
+    } else {
+      uploadMultipleFiles(files);
     }
+  });
+
+  kbZipBtn.addEventListener('click', () => kbZipInput.click());
+  kbZipInput.addEventListener('change', () => {
+    const file = kbZipInput.files[0];
+    kbZipInput.value = '';
+    if (!file) return;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.textContent = '';
+    uploadZipFile(file);
   });
 
   kbGdriveBtn.addEventListener('click', () => {
@@ -649,6 +667,55 @@
     }
   }
 
+  const IMPORT_SOURCE_LABELS = {
+    local: 'Manual Upload',
+    zip: 'Archive Import',
+    google_drive: 'Google Drive',
+  };
+
+  async function loadImportHistory() {
+    const listEl = document.getElementById('kb-import-history-list');
+    if (!listEl) return;
+    try {
+      const res = await fetch('/api/knowledge/import-history', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      renderImportHistory(data.batches || []);
+    } catch {
+      renderImportHistory([]);
+    }
+  }
+
+  function renderImportHistory(batches) {
+    const listEl = document.getElementById('kb-import-history-list');
+    if (!listEl) return;
+
+    if (!batches.length) {
+      listEl.innerHTML = `
+        <div class="empty-state-card">
+          <span class="empty-state-icon">📥</span>
+          <span class="empty-state-title">No imports yet</span>
+          <span class="empty-state-desc">Batches from Upload Files, Import Archive, and Google Drive will appear here.</span>
+        </div>`;
+      return;
+    }
+
+    listEl.innerHTML = batches.map(b => {
+      const label = IMPORT_SOURCE_LABELS[b.sourceType] || b.sourceType;
+      const date = b.createdAt
+        ? new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '';
+      return `
+        <div class="kb-doc-row">
+          <div class="kb-doc-info">
+            <span class="kb-doc-name">${escHtml(label)}</span>
+            <span class="kb-doc-meta">${b.fileCount} document${b.fileCount === 1 ? '' : 's'}${date ? ` · ${date}` : ''}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
   async function loadMembers() {
     try {
       const res = await fetch('/api/team/members', {
@@ -947,20 +1014,20 @@
     `;
   }
 
-  async function uploadDocument(file) {
-    kbUploadStatus.hidden = true;
-    kbUploadStatus.textContent = '';
-    kbUploadStatus.className = 'kb-upload-status';
-    kbUploadBtn.disabled = true;
-    kbFileInput.value = '';
-
+  // Uploads a single file to /api/knowledge/upload and polls until it settles.
+  // UI-agnostic w.r.t. shared button/status state — callers own kbUploadBtn/kbUploadStatus.
+  // Returns { status: 'ok'|'limit'|'error'|'timeout', message?, sourceFileId?, indexStatus? }.
+  async function uploadOneFile(file, { relativePath, batchId } = {}) {
     showUploadPhase('Preparing upload…', 0, file.name);
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('relativePath', relativePath || file.name);
+    if (batchId) formData.append('importBatchId', batchId);
 
+    let result;
     try {
-      const result = await new Promise((resolve, reject) => {
+      result = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
         xhr.upload.onprogress = (e) => {
@@ -984,49 +1051,64 @@
         xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
         xhr.send(formData);
       });
+    } catch (err) {
+      return { status: 'error', message: err.message || 'Network error. Please try again.' };
+    }
 
-      if (result.status === 429) {
-        kbUploadStatus.textContent = result.body.error || 'Document limit reached.';
+    if (result.status === 429) {
+      return { status: 'limit', message: result.body.error || 'Document limit reached.' };
+    }
+    if (result.status < 200 || result.status >= 300) {
+      return { status: 'error', message: result.body.error || 'Upload failed. Please try again.' };
+    }
+
+    showUploadPhase('Processing document…', 100, file.name);
+    const sourceFileId = result.body.sourceFileId || result.body.source_file_id || null;
+    pendingUploads.set(file.name, { fileName: file.name, sourceFileId });
+    await refreshKnowledgeStatus();
+
+    showUploadPhase('Indexing in knowledge base…', 100, file.name);
+
+    const { settled, results } = await pollKnowledgeStatusUntilSettled({
+      fileNames: [file.name],
+      sourceFileIds: [sourceFileId],
+    });
+    pendingUploads.delete(file.name);
+
+    if (!settled) {
+      showUploadPhase('Indexing is taking longer than expected…', 100, file.name);
+      return { status: 'timeout', sourceFileId };
+    }
+
+    showUploadPhase('Ready in knowledge base.', 100, file.name);
+    return { status: 'ok', sourceFileId, indexStatus: results.get(file.name)?.status };
+  }
+
+  // Thin single-file wrapper — preserves the exact pre-refactor single-file UX/messages.
+  async function uploadDocument(file) {
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.textContent = '';
+    kbUploadStatus.className = 'kb-upload-status';
+    kbUploadBtn.disabled = true;
+
+    try {
+      const r = await uploadOneFile(file);
+
+      if (r.status === 'limit' || r.status === 'error') {
+        kbUploadStatus.textContent = r.message;
         kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
         kbUploadStatus.hidden      = false;
-        return;
-      }
-
-      if (result.status >= 200 && result.status < 300) {
-        showUploadPhase('Processing document…', 100, file.name);
-
-        // Show placeholder row immediately while indexing is in progress
-        const sourceFileId = result.body.sourceFileId || result.body.source_file_id || null;
-        pendingUploads.set(file.name, { fileName: file.name, sourceFileId });
-        await refreshKnowledgeStatus();
-
-        showUploadPhase('Indexing in knowledge base…', 100, file.name);
-
-        // Poll documents + jobs together until the document is indexed or failed
-        const { settled } = await pollKnowledgeStatusUntilSettled({
-          fileNames: [file.name],
-          sourceFileIds: [sourceFileId],
-        });
-
-        pendingUploads.delete(file.name);
-
-        if (!settled) {
-          showUploadPhase('Indexing is taking longer than expected…', 100, file.name);
-          showBanner('error', 'Indexing is taking longer than expected. Refresh in a moment.');
-        } else {
-          showUploadPhase('Ready in knowledge base.', 100, file.name);
-          kbUploadStatus.textContent = `"${file.name}" is ready in your knowledge base.`;
-          kbUploadStatus.className   = 'kb-upload-status kb-upload-status--success';
-          kbUploadStatus.hidden      = false;
-        }
-
-        await refreshKnowledgeStatus();
-        await delay(900);
+      } else if (r.status === 'timeout') {
+        showBanner('error', 'Indexing is taking longer than expected. Refresh in a moment.');
       } else {
-        kbUploadStatus.textContent = result.body.error || 'Upload failed. Please try again.';
-        kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.textContent = `"${file.name}" is ready in your knowledge base.`;
+        kbUploadStatus.className   = 'kb-upload-status kb-upload-status--success';
         kbUploadStatus.hidden      = false;
       }
+
+      await refreshKnowledgeStatus();
+      loadImportHistory();
+      await delay(900);
     } catch (err) {
       kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
       kbUploadStatus.className   = 'kb-upload-status kb-upload-status--error';
@@ -1035,6 +1117,171 @@
       hideUploadPanel();
       kbUploadBtn.disabled = false;
     }
+  }
+
+  // Multi-file local upload — concurrency-2 worker pool over uploadOneFile, continues on
+  // individual failure. Folder-upload-ready: relativePath threads webkitRelativePath through
+  // untouched today (webkitdirectory isn't enabled yet, so it always equals file.name).
+  async function uploadMultipleFiles(fileArray) {
+    kbUploadBtn.disabled = true;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.className = 'kb-upload-status';
+    hideImportResult();
+
+    const batchId = crypto.randomUUID();
+    const total = fileArray.length;
+    let doneCount = 0;
+    const imported = [];
+    const failed = [];
+
+    showImportStatus(`Uploading file 1 of ${total}…`);
+
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < fileArray.length) {
+        const i = nextIndex++;
+        const item = fileArray[i];
+        const relativePath = item.webkitRelativePath || item.name;
+        showImportStatus(`Uploading file ${Math.min(doneCount + 1, total)} of ${total}: "${item.name}"…`);
+        const r = await uploadOneFile(item, { relativePath, batchId });
+        doneCount++;
+        if (r.status === 'ok' && r.indexStatus !== 'failed') {
+          imported.push({ fileName: item.name, sourceFileId: r.sourceFileId });
+        } else {
+          failed.push({
+            fileName: item.name,
+            reason: r.message || (r.status === 'timeout' ? 'Indexing is taking longer than expected' : 'Indexing failed'),
+          });
+        }
+        showImportStatus(`Uploaded ${doneCount} of ${total} file${total > 1 ? 's' : ''}…`);
+      }
+    }
+
+    const CONCURRENCY = 2;
+    try {
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
+      await finishImportResult({ imported, skipped: [], failed });
+    } finally {
+      hideUploadPanel();
+      hideImportStatus();
+      kbUploadBtn.disabled = false;
+    }
+  }
+
+  // Archive import — one request to the server, which extracts + ingests entries itself and
+  // returns the aggregated {imported, skipped, failed} shape directly; we only poll + render.
+  async function uploadZipFile(file) {
+    kbZipBtn.disabled = true;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.className = 'kb-upload-status';
+    hideImportResult();
+    showImportStatus(`Processing archive "${file.name}"…`);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/knowledge/import-zip', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: formData,
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        kbUploadStatus.textContent = body.error || 'Archive import failed. Please try again.';
+        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+        kbUploadStatus.hidden = false;
+        return;
+      }
+
+      const imported = body.imported || [];
+      const skipped  = body.skipped || [];
+      const failed   = [...(body.failed || [])];
+
+      imported.forEach(f => pendingUploads.set(f.fileName, { fileName: f.fileName, sourceFileId: f.sourceFileId }));
+      await refreshKnowledgeStatus();
+
+      let settledImported = imported;
+      if (imported.length > 0) {
+        showImportStatus(`Indexing ${imported.length} imported document${imported.length === 1 ? '' : 's'}…`);
+        const { results } = await pollKnowledgeStatusUntilSettled({
+          fileNames: imported.map(f => f.fileName),
+          sourceFileIds: imported.map(f => f.sourceFileId),
+        });
+        imported.forEach(f => pendingUploads.delete(f.fileName));
+
+        settledImported = imported.filter(f => results.get(f.fileName)?.status !== 'failed');
+        imported
+          .filter(f => results.get(f.fileName)?.status === 'failed')
+          .forEach(f => failed.push({ fileName: f.fileName, reason: 'Indexing failed' }));
+      }
+
+      await finishImportResult({ imported: settledImported, skipped, failed });
+    } catch (err) {
+      kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
+      kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
+      kbUploadStatus.hidden = false;
+    } finally {
+      hideUploadPanel();
+      hideImportStatus();
+      kbZipBtn.disabled = false;
+    }
+  }
+
+  // Shared result-handling tail for every multi-outcome import source (local multi-file,
+  // archive import, Google Drive) — renders the aggregate status + Import Complete card,
+  // refreshes knowledge status, and refreshes the Recent Imports history.
+  async function finishImportResult({ imported = [], skipped = [], failed = [] }) {
+    const importedCount = imported.length;
+
+    const parts = [];
+    if (importedCount > 0) parts.push(`Imported ${importedCount} document${importedCount === 1 ? '' : 's'}`);
+    if (skipped.length)    parts.push(`Skipped ${skipped.length} unsupported file${skipped.length === 1 ? '' : 's'}`);
+    if (failed.length)     parts.push(`Failed ${failed.length} file${failed.length === 1 ? '' : 's'}`);
+
+    kbUploadStatus.textContent = parts.length ? `${parts.join('. ')}.` : 'No files were imported.';
+    kbUploadStatus.className = 'kb-upload-status' + (failed.length ? ' kb-upload-status--error' : ' kb-upload-status--success');
+    kbUploadStatus.hidden = false;
+
+    renderImportResult({ importedCount, skipped, failed });
+
+    await refreshKnowledgeStatus();
+    loadImportHistory();
+    await delay(900);
+  }
+
+  function renderImportResult({ importedCount = 0, skipped = [], failed = [] }) {
+    const details = document.getElementById('kb-import-result');
+    const counts  = document.getElementById('kb-import-result-counts');
+    const list    = document.getElementById('kb-import-summary');
+    if (!details || !counts || !list) return;
+
+    if (importedCount === 0 && skipped.length === 0 && failed.length === 0) {
+      details.hidden = true;
+      list.innerHTML = '';
+      return;
+    }
+
+    const parts = [`✓ ${importedCount}`];
+    if (skipped.length) parts.push(`Skipped ${skipped.length}`);
+    if (failed.length)  parts.push(`Failed ${failed.length}`);
+    counts.textContent = parts.join(' · ');
+
+    const rows = [];
+    skipped.forEach(s => rows.push(
+      `<li class="kb-import-summary-item--skipped">Skipped "${escHtml(s.fileName)}" — ${escHtml(s.reason || 'unsupported')}</li>`));
+    failed.forEach(f => rows.push(
+      `<li class="kb-import-summary-item--failed">Failed "${escHtml(f.fileName)}"${f.reason ? ` — ${escHtml(f.reason)}` : ''}</li>`));
+    list.innerHTML = rows.join('');
+    details.hidden = false;
+  }
+
+  function hideImportResult() {
+    const details = document.getElementById('kb-import-result');
+    if (details) details.hidden = true;
+    const list = document.getElementById('kb-import-summary');
+    if (list) list.innerHTML = '';
   }
 
   function showUploadPhase(phase, pct, fileName) {
@@ -1110,9 +1357,11 @@
     kbGdriveBtn.disabled = true;
     kbUploadStatus.hidden = true;
     kbUploadStatus.className = 'kb-upload-status';
+    hideImportResult();
 
     const files = docs.map(d => ({ id: d.id, name: d.name, mimeType: d.mimeType }));
     const total = files.length;
+    const batchId = crypto.randomUUID();
 
     const imported = [];       // { fileName, sourceFileId } — successfully requested imports
     const importErrors = [];   // fileNames that failed the import request itself
@@ -1130,7 +1379,7 @@
               'Authorization': `Bearer ${accessToken}`,
               'X-Google-Access-Token': tempToken,
             },
-            body: JSON.stringify({ files: [file] }),
+            body: JSON.stringify({ files: [file], importBatchId: batchId }),
           });
           const body = await res.json().catch(() => ({}));
 
@@ -1151,48 +1400,32 @@
         }
       }
 
-      if (imported.length === 0) {
-        kbUploadStatus.textContent = importErrors.length === 1
-          ? `Failed to import "${importErrors[0]}". Please try again.`
-          : 'Failed to import files. Please try again.';
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
-        kbUploadStatus.hidden = false;
-        await delay(900);
-        return;
+      const failed = importErrors.map(name => ({ fileName: name, reason: 'Import failed' }));
+      let settledImported = imported;
+
+      if (imported.length > 0) {
+        showImportStatus('Indexing imported documents…');
+
+        const { results } = await pollKnowledgeStatusUntilSettled({
+          fileNames: imported.map(f => f.fileName),
+          sourceFileIds: imported.map(f => f.sourceFileId),
+        });
+
+        imported.forEach(f => pendingUploads.delete(f.fileName));
+
+        settledImported = imported.filter(f => results.get(f.fileName)?.status !== 'failed');
+        imported
+          .filter(f => results.get(f.fileName)?.status === 'failed')
+          .forEach(f => failed.push({ fileName: f.fileName, reason: 'Indexing failed' }));
+
+        const stillPending = imported.filter(f => !results.get(f.fileName));
+        if (stillPending.length > 0) {
+          showBanner('error', `Still indexing: ${stillPending.map(f => f.fileName).join(', ')}. Refresh again in a moment.`);
+          settledImported = settledImported.filter(f => results.get(f.fileName));
+        }
       }
 
-      showImportStatus('Indexing imported documents…');
-
-      const { settled, results } = await pollKnowledgeStatusUntilSettled({
-        fileNames: imported.map(f => f.fileName),
-        sourceFileIds: imported.map(f => f.sourceFileId),
-      });
-
-      imported.forEach(f => pendingUploads.delete(f.fileName));
-
-      const indexFailed  = imported.filter(f => results.get(f.fileName)?.status === 'failed').map(f => f.fileName);
-      const stillPending = imported.filter(f => !results.get(f.fileName)).map(f => f.fileName);
-      const failedNames  = [...importErrors, ...indexFailed];
-
-      if (stillPending.length > 0) {
-        showBanner('error', `Still indexing: ${stillPending.join(', ')}. Refresh again in a moment.`);
-      }
-
-      if (failedNames.length > 0) {
-        const readyCount = total - failedNames.length - stillPending.length;
-        kbUploadStatus.textContent = `${readyCount} of ${total} file${total > 1 ? 's' : ''} ready. Failed: ${failedNames.join(', ')}.`;
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
-      } else if (settled) {
-        kbUploadStatus.textContent = `${total} file${total > 1 ? 's' : ''} ready in your knowledge base.`;
-        kbUploadStatus.className = 'kb-upload-status kb-upload-status--success';
-      } else {
-        kbUploadStatus.textContent = `Import queued — ${stillPending.length} of ${total} file${total > 1 ? 's' : ''} still indexing.`;
-        kbUploadStatus.className = 'kb-upload-status';
-      }
-      kbUploadStatus.hidden = false;
-
-      await refreshKnowledgeStatus();
-      await delay(900);
+      await finishImportResult({ imported: settledImported, skipped: [], failed });
     } catch (err) {
       kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
       kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';

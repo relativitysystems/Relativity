@@ -3,6 +3,7 @@ const router = express.Router();
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
+const AdmZip = require('adm-zip');
 const apiKey = require('../middleware/apiKey');
 const clientAuth = require('../middleware/clientAuth');
 const googleDriveService = require('../services/googleDriveService');
@@ -33,6 +34,27 @@ const uploadAudio = multer({
     cb(null, typeof file.mimetype === 'string' && file.mimetype.startsWith('audio/'));
   },
 });
+
+// ---- ZIP / archive import ----
+
+const MAX_ZIP_MB = config.limits.maxZipSizeMb;
+
+const uploadZip = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ZIP_MB * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, path.extname(file.originalname).toLowerCase() === '.zip');
+  },
+});
+
+// Zip entries carry no browser-supplied mimetype — map by extension instead,
+// reusing the same allow-list as direct upload (ALLOWED_EXTENSIONS below).
+const EXTENSION_MIME_MAP = {
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 /**
  * GET /api/google-drive/files/:clientId
@@ -118,11 +140,195 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
       mimeType: req.file.mimetype,
       fileBuffer: req.file.buffer,
     });
+
+    const importBatchId = req.body.importBatchId || crypto.randomUUID();
+    supabaseService.logImportBatch([{
+      clientId,
+      importBatchId,
+      sourceType: 'local',
+      sourcePath: req.body.relativePath || null,
+      fileName: req.file.originalname,
+      sourceFileId,
+      importedBy: req.member?.id,
+    }]).catch((err) => console.error('logImportBatch (upload) failed:', err.message));
+
     res.status(201).json({ success: true, sourceFileId });
   } catch (err) {
     console.error('POST /api/knowledge/upload error:', err.message);
     res.status(500).json({ error: 'Upload failed. Please try again.' });
   }
+});
+
+router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
+  if (req.member && req.member.role === 'viewer') {
+    return res.status(403).json({ error: 'Viewers cannot import documents' });
+  }
+  next();
+}, (req, res, next) => {
+  uploadZip.single('file')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? `ZIP too large. Maximum size is ${MAX_ZIP_MB} MB.`
+        : (err.message || 'ZIP upload error.');
+      return res.status(400).json({ error: msg });
+    }
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No ZIP file provided.' });
+  }
+
+  const clientId = req.client.id;
+
+  let zip;
+  try {
+    zip = new AdmZip(req.file.buffer);
+  } catch {
+    return res.status(400).json({ error: 'Could not read ZIP archive. It may be corrupted.' });
+  }
+
+  const entries = zip.getEntries();
+
+  // --- Pass 1: classify entries (no decompression yet) ---
+  const valid = [];   // { entry, fileName, relativePath, ext }
+  const skipped = []; // { fileName, reason }
+
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+
+    const rawName = entry.entryName;
+    const normalized = rawName.replace(/\\/g, '/');
+
+    // Zip-slip / path traversal / absolute-path guard. Entries are never
+    // written to disk (they go straight to aikbService.uploadAndIngest,
+    // which stores under a server-generated uploads/${clientId}/${sourceFileId}
+    // path), but we still reject unsafe names outright as defense in depth.
+    if (
+      normalized.startsWith('/') ||
+      normalized.includes('..') ||
+      path.isAbsolute(normalized) ||
+      /^[a-zA-Z]:/.test(normalized)
+    ) {
+      skipped.push({ fileName: rawName, reason: 'Unsafe path in archive' });
+      continue;
+    }
+
+    const baseName = normalized.split('/').pop();
+    if (!baseName) continue;
+
+    if (
+      normalized.startsWith('__MACOSX/') ||
+      baseName.toLowerCase() === '.ds_store' ||
+      baseName.toLowerCase() === 'thumbs.db' ||
+      baseName.startsWith('.')
+    ) {
+      skipped.push({ fileName: baseName, reason: 'Hidden/system file' });
+      continue;
+    }
+
+    const ext = path.extname(baseName).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      skipped.push({ fileName: baseName, reason: `Unsupported file type (${ext || 'no extension'})` });
+      continue;
+    }
+
+    valid.push({ entry, fileName: baseName, relativePath: normalized, ext });
+  }
+
+  if (valid.length > config.limits.maxZipFiles) {
+    return res.status(400).json({
+      error: `ZIP contains too many files (${valid.length}). Maximum is ${config.limits.maxZipFiles}.`,
+    });
+  }
+
+  if (valid.length === 0) {
+    return res.status(200).json({ success: true, imported: [], skipped, failed: [] });
+  }
+
+  // --- Enforce max individual extracted size + max total extracted size ---
+  // header.size is the uncompressed size, known without calling getData().
+  let totalSize = 0;
+  const sizedValid = [];
+  for (const item of valid) {
+    const size = item.entry.header.size;
+    if (size > config.limits.maxZipEntryMb * 1024 * 1024) {
+      skipped.push({ fileName: item.fileName, reason: `File exceeds ${config.limits.maxZipEntryMb} MB limit` });
+      continue;
+    }
+    totalSize += size;
+    sizedValid.push(item);
+  }
+  if (totalSize > config.limits.maxZipTotalMb * 1024 * 1024) {
+    return res.status(400).json({
+      error: `Extracted contents too large (limit ${config.limits.maxZipTotalMb} MB total).`,
+    });
+  }
+
+  if (sizedValid.length === 0) {
+    return res.status(200).json({ success: true, imported: [], skipped, failed: [] });
+  }
+
+  // --- Enforce document count limit, accounting for all valid entries ---
+  try {
+    const existing = await aikbService.listDocuments(clientId);
+    const count = (existing.documents || (Array.isArray(existing) ? existing : [])).filter(d => d.status !== 'deleted').length;
+    if (count + sizedValid.length > config.limits.maxDocuments) {
+      return res.status(429).json({
+        error: `Document limit reached (${config.limits.maxDocuments} max). Delete some documents to import more.`,
+      });
+    }
+  } catch { /* non-blocking — proceed if count check fails */ }
+
+  // --- Pass 2: extract + ingest, concurrency-2, continue on individual failure ---
+  const imported = [];
+  const failed = [];
+
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < sizedValid.length) {
+      const i = nextIndex++;
+      const { entry, fileName, relativePath, ext } = sizedValid[i];
+      const sourceFileId = crypto.randomUUID();
+      try {
+        const fileBuffer = entry.getData();
+        await aikbService.uploadAndIngest({
+          clientId,
+          sourceFileId,
+          fileName,
+          mimeType: EXTENSION_MIME_MAP[ext] || 'application/octet-stream',
+          fileBuffer,
+        });
+        imported.push({ fileName, sourceFileId, relativePath });
+      } catch (err) {
+        console.error(`ZIP import failed for ${fileName}:`, err.message);
+        failed.push({ fileName, reason: 'Ingestion failed' });
+      }
+    }
+  }
+
+  const CONCURRENCY = 2;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, sizedValid.length) }, worker));
+
+  if (imported.length > 0) {
+    const importBatchId = crypto.randomUUID();
+    supabaseService.logImportBatch(imported.map((f) => ({
+      clientId,
+      importBatchId,
+      sourceType: 'zip',
+      sourcePath: f.relativePath,
+      fileName: f.fileName,
+      sourceFileId: f.sourceFileId,
+      importedBy: req.member?.id,
+    }))).catch((err) => console.error('logImportBatch (import-zip) failed:', err.message));
+  }
+
+  res.status(201).json({
+    success: true,
+    imported: imported.map(({ fileName, sourceFileId }) => ({ fileName, sourceFileId })),
+    skipped,
+    failed,
+  });
 });
 
 // ---- Voice Input (transcription) ----
@@ -242,6 +448,18 @@ router.post('/google-drive/import', clientAuth, async (req, res) => {
     }
   }
 
+  if (imported.length > 0) {
+    const importBatchId = req.body.importBatchId || crypto.randomUUID();
+    supabaseService.logImportBatch(imported.map((f) => ({
+      clientId,
+      importBatchId,
+      sourceType: 'google_drive',
+      fileName: f.fileName,
+      sourceFileId: f.sourceFileId,
+      importedBy: req.member?.id,
+    }))).catch((err) => console.error('logImportBatch (google-drive) failed:', err.message));
+  }
+
   res.status(201).json({ success: true, imported });
 });
 
@@ -262,6 +480,16 @@ router.get('/knowledge/jobs', clientAuth, async (req, res) => {
   } catch (err) {
     console.error('GET /api/knowledge/jobs error:', err.message);
     res.json({ jobs: [] }); // graceful fallback — endpoint may not exist on AIKB yet
+  }
+});
+
+router.get('/knowledge/import-history', clientAuth, async (req, res) => {
+  try {
+    const batches = await supabaseService.getImportHistory(req.client.id);
+    res.json({ batches });
+  } catch (err) {
+    console.error('GET /api/knowledge/import-history error:', err.message);
+    res.json({ batches: [] }); // graceful fallback — this is a nice-to-have history view
   }
 });
 
