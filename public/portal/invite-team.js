@@ -4,6 +4,7 @@
   let inviteEmail = null;
   let inviteRole = null;
   let inviteClientName = null;
+  let acceptingInvite = false;
 
   // ── DOM refs ──────────────────────────────────────────────
   const $ = id => document.getElementById(id);
@@ -27,6 +28,72 @@
 
   function roleLabel(role) {
     return { owner: 'Owner', admin: 'Admin', member: 'Member', viewer: 'Viewer' }[role] || role;
+  }
+
+  // ── Accept invite via backend ─────────────────────────────
+  async function acceptInvite(accessToken) {
+    const res = await fetch('/auth/accept-team-invite', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ inviteToken }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to accept invite');
+    }
+    return res.json();
+  }
+
+  // ── Shared accept-and-redirect flow, used by the manual button,
+  //    the auto-accept-after-confirmation path, and the "already
+  //    accepted, session still valid" recovery path. Guarded by
+  //    acceptingInvite so an auto-trigger and a manual click can't
+  //    both fire a request at once. ─────────────────────────────
+  async function tryAcceptAndRedirect(session, { auto = false } = {}) {
+    if (acceptingInvite) return;
+    acceptingInvite = true;
+
+    const btn = $('acceptBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = auto ? 'Finishing setup…' : 'Accepting…';
+    }
+    clearError('loginError');
+
+    try {
+      await acceptInvite(session.access_token);
+      window.location.href = '/portal.html';
+    } catch (err) {
+      showError('loginError', err.message || 'Could not accept invite. Please try again.');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Accept Invitation';
+      }
+      acceptingInvite = false;
+    }
+  }
+
+  // ── If a session already resolves this invite's email, try to finish
+  //    silently (used for the "already accepted" verify response, where a
+  //    prior tab/attempt may have already linked this same browser). ────
+  async function tryResumeAlreadyAccepted(candidateEmail) {
+    const { data: { session: existingSession } } = await supabase.auth.getSession();
+    if (!existingSession?.user) return false;
+    if (existingSession.user.email.toLowerCase() !== candidateEmail.toLowerCase()) return false;
+    if (acceptingInvite) return true;
+
+    acceptingInvite = true;
+    try {
+      await acceptInvite(existingSession.access_token);
+      window.location.href = '/portal.html';
+      return true;
+    } catch {
+      acceptingInvite = false;
+      return false;
+    }
   }
 
   // ── Init Supabase ─────────────────────────────────────────
@@ -54,6 +121,15 @@
   }
 
   if (!verifyData.valid) {
+    // An "already accepted" invite might just mean this same browser
+    // already finished the flow (e.g. the confirmation link was opened
+    // twice) — if the current session matches, resume straight to the
+    // portal instead of dead-ending on an error screen.
+    if (verifyData.reason === 'already_accepted' && verifyData.email) {
+      const resumed = await tryResumeAlreadyAccepted(verifyData.email);
+      if (resumed) return;
+    }
+
     showState('invalidState');
     const messages = {
       revoked: 'This invitation has been revoked. Contact the team admin for a new invite.',
@@ -62,6 +138,8 @@
       not_found: 'Invite not found. Please check your email for the correct link.',
     };
     $('invalidMessage').textContent = messages[verifyData.reason] || 'This invite link is invalid.';
+    const signInLink = $('invalidSignInLink');
+    if (signInLink) signInLink.hidden = verifyData.reason !== 'already_accepted';
     return;
   }
 
@@ -85,6 +163,10 @@
     if (session.user.email.toLowerCase() !== inviteEmail.toLowerCase()) {
       $('alreadyLoggedIn').hidden = true;
       $('loginForm').hidden = false;
+    } else {
+      // Matching account already signed in — finish automatically rather
+      // than making the user click "Accept Invitation" again.
+      tryAcceptAndRedirect(session, { auto: true });
     }
   } else {
     // New user — show signup form by default
@@ -92,23 +174,6 @@
     $('companyNameSignup').textContent = inviteClientName;
     $('signupSubtext').textContent = `You've been invited as a ${roleLabel(inviteRole)}. Create an account to get started.`;
     $('signupEmail').value = inviteEmail;
-  }
-
-  // ── Accept invite via backend ─────────────────────────────
-  async function acceptInvite(accessToken) {
-    const res = await fetch('/auth/accept-team-invite', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ inviteToken }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'Failed to accept invite');
-    }
-    return res.json();
   }
 
   // ── Sign up form ──────────────────────────────────────────
@@ -125,16 +190,24 @@
     $('signupBtn').textContent = 'Creating account…';
 
     try {
+      const confirmationRedirectUrl =
+        `${window.location.origin}/invite-team.html?token=${encodeURIComponent(inviteToken)}`;
+
       const { data, error } = await supabase.auth.signUp({
         email: inviteEmail,
         password,
-        options: { data: { full_name: name } },
+        options: {
+          emailRedirectTo: confirmationRedirectUrl,
+          data: {
+            full_name: name,
+          },
+        },
       });
 
       if (error) throw error;
       if (!data.session) {
         // Email confirmation required
-        showError('signupError', 'Check your email to confirm your account, then come back and sign in.');
+        showError('signupError', 'Check your email to confirm your account. Clicking the confirmation link will bring you back here and finish joining automatically.');
         $('signupBtn').disabled = false;
         $('signupBtn').textContent = 'Create Account & Accept';
         return;
@@ -151,19 +224,8 @@
 
   // ── Accept button (already logged in) ────────────────────
   $('acceptBtn').addEventListener('click', async () => {
-    clearError('loginError');
-    $('acceptBtn').disabled = true;
-    $('acceptBtn').textContent = 'Accepting…';
-
-    try {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      await acceptInvite(s.access_token);
-      window.location.href = '/portal.html';
-    } catch (err) {
-      showError('loginError', err.message || 'Could not accept invite. Please try again.');
-      $('acceptBtn').disabled = false;
-      $('acceptBtn').textContent = 'Accept Invitation';
-    }
+    const { data: { session: s } } = await supabase.auth.getSession();
+    await tryAcceptAndRedirect(s);
   });
 
   // ── Sign in form (existing user on wrong account) ─────────

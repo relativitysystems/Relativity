@@ -44,7 +44,14 @@ router.get('/team/invites/verify', async (req, res) => {
 
     if (!invite) return res.json({ valid: false, reason: 'not_found' });
     if (invite.revoked_at) return res.json({ valid: false, reason: 'revoked' });
-    if (invite.accepted_at) return res.json({ valid: false, reason: 'already_accepted' });
+    if (invite.accepted_at) {
+      return res.json({
+        valid: false,
+        reason: 'already_accepted',
+        email: invite.email,
+        clientName: invite.clients?.name || 'your company',
+      });
+    }
     if (new Date(invite.expires_at) < new Date()) return res.json({ valid: false, reason: 'expired' });
 
     res.json({

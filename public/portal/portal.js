@@ -20,7 +20,10 @@
   const me = await meRes.json();
 
   if (!me.authenticated) {
-    window.location.href = '/login.html';
+    // Session exists but there's no usable client membership behind it —
+    // sign out first so login.js doesn't just bounce us straight back here.
+    await supabase.auth.signOut();
+    window.location.href = '/login.html?error=' + encodeURIComponent(me.reason || 'session_invalid');
     return;
   }
 

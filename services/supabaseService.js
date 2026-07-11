@@ -393,6 +393,18 @@ async function getClientMemberByAuthUserId(authUserId, clientId) {
   return data;
 }
 
+async function getMemberByAuthUserId(authUserId) {
+  const { data, error } = await supabase
+    .from('client_members')
+    .select('id, client_id, email, role, status')
+    .eq('auth_user_id', authUserId)
+    .single();
+
+  if (error && error.code === 'PGRST116') return null;
+  if (error) throw new Error(`getMemberByAuthUserId failed: ${error.message}`);
+  return data;
+}
+
 async function createClientMember({ clientId, email, fullName, role, status, invitedBy, invitedAt }) {
   const { data, error } = await supabase
     .from('client_members')
@@ -527,27 +539,49 @@ async function getPendingInviteByMemberId(memberId, clientId) {
   return data;
 }
 
-async function acceptTeamInvite(token, authUserId) {
+async function acceptTeamInvite(token, authUserId, clientId, email) {
   const now = new Date().toISOString();
 
+  // Link the member row first, and verify a row was actually matched.
+  // Only rows in 'invited' or 'active' status may be (re)linked — this
+  // stops a replayed/stale invite token from reactivating a member that
+  // was later disabled or revoked.
+  const { data: member, error: memberError } = await supabase
+    .from('client_members')
+    .update({ auth_user_id: authUserId, status: 'active', accepted_at: now, updated_at: now })
+    .eq('client_id', clientId)
+    .eq('email', email)
+    .in('status', ['invited', 'active'])
+    .select('id, status')
+    .single();
+
+  if (memberError || !member) {
+    const err = new Error(`acceptTeamInvite (member link) failed: ${memberError ? memberError.message : 'no matching member row'}`);
+    err.code = 'MEMBER_LINK_FAILED';
+    throw err;
+  }
+
+  // Only mark the invite accepted after the member link succeeded, so a
+  // failed link leaves the invite retryable instead of permanently spent.
+  // A concurrent caller may have already marked it accepted — that's a
+  // benign race now that the member link itself is idempotent, so treat
+  // a 0-row result here as success rather than an error.
   const { data: invite, error: inviteError } = await supabase
     .from('team_invites')
     .update({ accepted_at: now })
     .eq('token', token)
+    .is('accepted_at', null)
     .select('client_id, email, role')
-    .single();
+    .maybeSingle();
 
   if (inviteError) throw new Error(`acceptTeamInvite (invite update) failed: ${inviteError.message}`);
 
-  const { error: memberError } = await supabase
-    .from('client_members')
-    .update({ auth_user_id: authUserId, status: 'active', accepted_at: now, updated_at: now })
-    .eq('client_id', invite.client_id)
-    .eq('email', invite.email);
-
-  if (memberError) throw new Error(`acceptTeamInvite (member update) failed: ${memberError.message}`);
-
-  return invite;
+  return {
+    client_id: clientId,
+    email,
+    role: invite ? invite.role : null,
+    alreadyAccepted: !invite,
+  };
 }
 
 async function revokeTeamInvite(memberId, clientId) {
@@ -756,6 +790,7 @@ module.exports = {
   getPortalIssueSummary,
   // Team members
   getClientMemberByAuthUserId,
+  getMemberByAuthUserId,
   createClientMember,
   getClientMembers,
   getClientMembersByClientIds,

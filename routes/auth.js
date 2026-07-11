@@ -29,7 +29,9 @@ router.get('/config', (req, res) => {
  * GET /auth/me
  *
  * Soft-auth: always returns 200.
- * { authenticated: false } when token is missing or invalid.
+ * { authenticated: false, reason } when token is missing or invalid, or the
+ * session has no usable client membership. reason is one of:
+ * missing_token | invalid_token | membership_not_found | membership_disabled | client_inactive
  * { authenticated: true, clientId, clientName, email, dropboxConnected } when valid.
  */
 router.get('/me', async (req, res) => {
@@ -38,28 +40,33 @@ router.get('/me', async (req, res) => {
     ? authHeader.slice(7)
     : null;
 
-  if (!token) return res.json({ authenticated: false });
+  if (!token) return res.json({ authenticated: false, reason: 'missing_token' });
 
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !user) return res.json({ authenticated: false });
+  if (authError || !user) return res.json({ authenticated: false, reason: 'invalid_token' });
 
-  const { data: member } = await supabase
-    .from('client_members')
-    .select('id, client_id, email, role, status')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (!member || member.status === 'disabled' || member.status === 'revoked') {
-    return res.json({ authenticated: false });
+  let member;
+  try {
+    member = await supabaseService.getMemberByAuthUserId(user.id);
+  } catch (err) {
+    console.error('auth/me member lookup error:', err.message);
+    return res.json({ authenticated: false, reason: 'membership_not_found' });
   }
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, name, is_active')
-    .eq('id', member.client_id)
-    .single();
+  if (!member) return res.json({ authenticated: false, reason: 'membership_not_found' });
+  if (member.status === 'disabled' || member.status === 'revoked') {
+    return res.json({ authenticated: false, reason: 'membership_disabled' });
+  }
 
-  if (!client || !client.is_active) return res.json({ authenticated: false });
+  let client;
+  try {
+    client = await supabaseService.getClientById(member.client_id);
+  } catch (err) {
+    console.error('auth/me client lookup error:', err.message);
+    return res.json({ authenticated: false, reason: 'client_inactive' });
+  }
+
+  if (!client || !client.is_active) return res.json({ authenticated: false, reason: 'client_inactive' });
 
   const connectionStatus = await supabaseService.getClientConnectionStatus(client.id);
 
@@ -332,20 +339,41 @@ router.post('/accept-team-invite', async (req, res) => {
 
   if (!invite) return res.status(404).json({ error: 'Invite not found' });
   if (invite.revoked_at) return res.status(400).json({ error: 'This invite has been revoked' });
-  if (invite.accepted_at) return res.status(400).json({ error: 'This invite has already been accepted' });
-  if (new Date(invite.expires_at) < new Date()) return res.status(400).json({ error: 'This invite has expired' });
   if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
     return res.status(403).json({ error: 'This invite was sent to a different email address' });
   }
 
+  if (invite.accepted_at) {
+    // Already accepted — only a safe no-op if it's this same authenticated
+    // user who is correctly, actively linked. Otherwise reject; an accepted
+    // invite must never be reassigned to a different Auth user.
+    let existingMember;
+    try {
+      existingMember = await supabaseService.getClientMemberByAuthUserId(user.id, invite.client_id);
+    } catch (err) {
+      console.error('accept-team-invite already-accepted lookup error:', err.message);
+      return res.status(500).json({ error: 'Could not verify invite status' });
+    }
+
+    if (existingMember && existingMember.status === 'active') {
+      return res.json({ success: true, alreadyAccepted: true });
+    }
+    return res.status(409).json({ error: 'This invite has already been accepted by another account' });
+  }
+
+  if (new Date(invite.expires_at) < new Date()) return res.status(400).json({ error: 'This invite has expired' });
+
   try {
-    await supabaseService.acceptTeamInvite(inviteToken, user.id);
+    const result = await supabaseService.acceptTeamInvite(inviteToken, user.id, invite.client_id, invite.email);
+    return res.json({ success: true, alreadyAccepted: !!result.alreadyAccepted });
   } catch (err) {
+    if (err.code === 'MEMBER_LINK_FAILED') {
+      console.error('accept-team-invite member link failed:', err.message);
+      return res.status(403).json({ error: 'This invite is no longer valid for your account' });
+    }
     console.error('accept-team-invite error:', err.message);
     return res.status(500).json({ error: 'Failed to accept invite' });
   }
-
-  res.json({ success: true });
 });
 
 /**
