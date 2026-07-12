@@ -1905,6 +1905,7 @@
         const isOwner       = m.role === 'owner';
         const isPending     = m.status === 'invited';
         const isDisabled    = m.status === 'disabled' || m.status === 'revoked';
+        const isReenableable = m.status === 'disabled';
         const nameOrEmail   = m.full_name
           ? `<span class="team-member-name">${esc(m.full_name)}</span><br><span class="team-member-email">${esc(m.email)}</span>`
           : `<span class="team-member-email">${esc(m.email)}</span>`;
@@ -1918,6 +1919,8 @@
           if (isPending) {
             actions += `<button class="btn-team-action" data-action="resend" data-id="${m.id}">Resend</button>`;
             actions += `<button class="btn-team-action btn-team-action--danger" data-action="revoke" data-id="${m.id}">Revoke</button>`;
+          } else if (isReenableable) {
+            actions += `<button class="btn-team-action btn-team-action--success" data-action="enable" data-id="${m.id}">Re-enable</button>`;
           } else if (!isDisabled) {
             actions += `<button class="btn-team-action btn-team-action--danger" data-action="disable" data-id="${m.id}">Disable</button>`;
           }
@@ -1989,6 +1992,13 @@
             } else if (action === 'disable') {
               if (!confirm('Disable this member? They will no longer be able to access the portal.')) { btn.disabled = false; return; }
               const res = await fetch(`/api/team/members/${mid}/disable`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
+            } else if (action === 'enable') {
+              if (!confirm('Re-enable this member? They will regain access to the portal.')) { btn.disabled = false; return; }
+              const res = await fetch(`/api/team/members/${mid}/enable`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${accessToken}` },
               });

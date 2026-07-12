@@ -1876,6 +1876,8 @@ select.form-input {
 .btn-team-action:hover { border-color: var(--border-hover); color: var(--text-primary); }
 .btn-team-action--danger { border-color: rgba(239, 68, 68, 0.3); color: var(--error); }
 .btn-team-action--danger:hover { border-color: var(--error); }
+.btn-team-action--success { border-color: rgba(34, 197, 94, 0.3); color: var(--success); }
+.btn-team-action--success:hover { border-color: var(--success); }
 
 .team-you-label {
   color: var(--text-muted);

@@ -282,4 +282,27 @@ router.post('/team/members/:memberId/disable', clientAuth, requireRole(...OWNER_
   }
 });
 
+/**
+ * POST /api/team/members/:memberId/enable
+ */
+router.post('/team/members/:memberId/enable', clientAuth, requireRole(...OWNER_ADMIN), async (req, res) => {
+  const { memberId } = req.params;
+
+  try {
+    const members = await supabaseService.getClientMembers(req.client.id);
+    const target = members.find(m => m.id === memberId);
+    if (!target) return res.status(404).json({ error: 'Member not found' });
+
+    if (target.status !== 'disabled') {
+      return res.status(400).json({ error: 'Only disabled members can be re-enabled' });
+    }
+
+    const updated = await supabaseService.updateClientMember(memberId, req.client.id, { status: 'active' });
+    res.json(updated);
+  } catch (err) {
+    console.error('POST /api/team/members/:memberId/enable error:', err.message);
+    res.status(500).json({ error: 'Could not re-enable member' });
+  }
+});
+
 module.exports = router;
