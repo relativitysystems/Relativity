@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
 const aikbService = require('./aikbService');
+const { sourceLabelFor } = require('./importMetadata');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -731,6 +732,7 @@ async function getImportHistory(clientId, limit = 20) {
       batches.set(row.import_batch_id, {
         importBatchId: row.import_batch_id,
         sourceType: row.source_type,
+        sourceLabel: sourceLabelFor(row.source_type),
         fileCount: 1,
         createdAt: row.created_at,
       });
@@ -740,6 +742,30 @@ async function getImportHistory(clientId, limit = 20) {
   return [...batches.values()]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
     .slice(0, limit);
+}
+
+// One row per source_file_id, keyed for the documents-list enrichment merge.
+// Portal-specific context only — AIKB remains the source of truth for the
+// document itself (existence, file name, status).
+async function getImportLogMap(clientId) {
+  const { data, error } = await supabase
+    .from('document_import_log')
+    .select('source_file_id, source_type, source_path, file_name, imported_by, created_at')
+    .eq('client_id', clientId);
+
+  if (error) throw new Error(`getImportLogMap failed: ${error.message}`);
+
+  const map = new Map();
+  for (const row of data || []) {
+    map.set(row.source_file_id, {
+      sourceType: row.source_type,
+      sourceLabel: sourceLabelFor(row.source_type),
+      sourcePath: row.source_path,
+      importedBy: row.imported_by,
+      importedAt: row.created_at,
+    });
+  }
+  return map;
 }
 
 // ─────────────────────────────────────────────
@@ -813,4 +839,6 @@ module.exports = {
   // Document import provenance / grouped history
   logImportBatch,
   getImportHistory,
+  sourceLabelFor,
+  getImportLogMap,
 };

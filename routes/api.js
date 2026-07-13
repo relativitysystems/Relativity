@@ -13,9 +13,13 @@ const supabaseService = require('../services/supabaseService');
 const openaiService = require('../services/openaiService');
 const config = require('../config');
 const { googleDrive: googleDriveConfig } = require('../config');
+const { ALLOWED_EXTENSIONS, sanitizeRelativePath, classifyZipEntries, mergeDocumentImportContext } = require('../services/importMetadata');
 
-const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
 const MAX_FILE_MB = config.limits.maxFileSizeMb;
+
+// sourceType values a plain-upload request may claim for itself (ZIP/Google Drive
+// routes set their own source_type server-side and never take this from the client).
+const ALLOWED_UPLOAD_SOURCE_TYPES = new Set(['local', 'folder_upload']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -142,11 +146,12 @@ router.post('/knowledge/upload', clientAuth, (req, res, next) => {
     });
 
     const importBatchId = req.body.importBatchId || crypto.randomUUID();
+    const sourceType = ALLOWED_UPLOAD_SOURCE_TYPES.has(req.body.sourceType) ? req.body.sourceType : 'local';
     supabaseService.logImportBatch([{
       clientId,
       importBatchId,
-      sourceType: 'local',
-      sourcePath: req.body.relativePath || null,
+      sourceType,
+      sourcePath: sanitizeRelativePath(req.body.relativePath),
       fileName: req.file.originalname,
       sourceFileId,
       importedBy: req.member?.id,
@@ -180,6 +185,17 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
   }
 
   const clientId = req.client.id;
+  const importBatchId = req.body.importBatchId || crypto.randomUUID();
+
+  // Retry-only support: client re-sends the whole archive (extracted bytes aren't kept
+  // between requests) but asks us to only reprocess specific previously-failed paths.
+  let retryOnlySet = null;
+  if (req.body.retryOnly) {
+    try {
+      const paths = JSON.parse(req.body.retryOnly);
+      if (Array.isArray(paths)) retryOnlySet = new Set(paths.map((p) => String(p).replace(/\\/g, '/')));
+    } catch { /* malformed retryOnly — ignore and process the full archive */ }
+  }
 
   let zip;
   try {
@@ -190,50 +206,22 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
 
   const entries = zip.getEntries();
 
-  // --- Pass 1: classify entries (no decompression yet) ---
-  const valid = [];   // { entry, fileName, relativePath, ext }
-  const skipped = []; // { fileName, reason }
+  // Pass 1: classify entries (no decompression yet) — validates paths, skips hidden/system
+  // files and unsupported extensions, applies retryOnly, and catches in-batch duplicates.
+  const { valid, skipped } = classifyZipEntries(entries, { retryOnlySet });
 
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
-
-    const rawName = entry.entryName;
-    const normalized = rawName.replace(/\\/g, '/');
-
-    // Zip-slip / path traversal / absolute-path guard. Entries are never
-    // written to disk (they go straight to aikbService.uploadAndIngest,
-    // which stores under a server-generated uploads/${clientId}/${sourceFileId}
-    // path), but we still reject unsafe names outright as defense in depth.
-    if (
-      normalized.startsWith('/') ||
-      normalized.includes('..') ||
-      path.isAbsolute(normalized) ||
-      /^[a-zA-Z]:/.test(normalized)
-    ) {
-      skipped.push({ fileName: rawName, reason: 'Unsafe path in archive' });
-      continue;
+  // A retryOnly path that isn't in the re-uploaded archive at all (edited out between
+  // attempts) would otherwise vanish silently — surface it as a failure instead.
+  const retryMissing = [];
+  if (retryOnlySet) {
+    const presentPaths = new Set(
+      entries.filter((e) => !e.isDirectory).map((e) => e.entryName.replace(/\\/g, '/'))
+    );
+    for (const p of retryOnlySet) {
+      if (!presentPaths.has(p)) {
+        retryMissing.push({ fileName: p.split('/').pop() || p, reason: 'File no longer present in archive', relativePath: p });
+      }
     }
-
-    const baseName = normalized.split('/').pop();
-    if (!baseName) continue;
-
-    if (
-      normalized.startsWith('__MACOSX/') ||
-      baseName.toLowerCase() === '.ds_store' ||
-      baseName.toLowerCase() === 'thumbs.db' ||
-      baseName.startsWith('.')
-    ) {
-      skipped.push({ fileName: baseName, reason: 'Hidden/system file' });
-      continue;
-    }
-
-    const ext = path.extname(baseName).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
-      skipped.push({ fileName: baseName, reason: `Unsupported file type (${ext || 'no extension'})` });
-      continue;
-    }
-
-    valid.push({ entry, fileName: baseName, relativePath: normalized, ext });
   }
 
   if (valid.length > config.limits.maxZipFiles) {
@@ -243,7 +231,7 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
   }
 
   if (valid.length === 0) {
-    return res.status(200).json({ success: true, imported: [], skipped, failed: [] });
+    return res.status(200).json({ success: true, imported: [], skipped, failed: retryMissing, importBatchId });
   }
 
   // --- Enforce max individual extracted size + max total extracted size ---
@@ -266,7 +254,7 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
   }
 
   if (sizedValid.length === 0) {
-    return res.status(200).json({ success: true, imported: [], skipped, failed: [] });
+    return res.status(200).json({ success: true, imported: [], skipped, failed: retryMissing, importBatchId });
   }
 
   // --- Enforce document count limit, accounting for all valid entries ---
@@ -282,7 +270,7 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
 
   // --- Pass 2: extract + ingest, concurrency-2, continue on individual failure ---
   const imported = [];
-  const failed = [];
+  const failed = [...retryMissing];
 
   let nextIndex = 0;
   async function worker() {
@@ -302,7 +290,7 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
         imported.push({ fileName, sourceFileId, relativePath });
       } catch (err) {
         console.error(`ZIP import failed for ${fileName}:`, err.message);
-        failed.push({ fileName, reason: 'Ingestion failed' });
+        failed.push({ fileName, reason: 'Ingestion failed', relativePath });
       }
     }
   }
@@ -311,7 +299,6 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, sizedValid.length) }, worker));
 
   if (imported.length > 0) {
-    const importBatchId = crypto.randomUUID();
     supabaseService.logImportBatch(imported.map((f) => ({
       clientId,
       importBatchId,
@@ -325,9 +312,10 @@ router.post('/knowledge/import-zip', clientAuth, (req, res, next) => {
 
   res.status(201).json({
     success: true,
-    imported: imported.map(({ fileName, sourceFileId }) => ({ fileName, sourceFileId })),
+    imported: imported.map(({ fileName, sourceFileId, relativePath }) => ({ fileName, sourceFileId, relativePath })),
     skipped,
     failed,
+    importBatchId,
   });
 });
 
@@ -466,7 +454,19 @@ router.post('/google-drive/import', clientAuth, async (req, res) => {
 router.get('/knowledge/documents', clientAuth, async (req, res) => {
   try {
     const data = await aikbService.listDocuments(req.client.id);
-    res.json(data);
+    const docs = data.documents || (Array.isArray(data) ? data : null);
+
+    if (!docs) {
+      res.json(data);
+      return;
+    }
+
+    // Merge in portal-specific import context (source type/label/path/imported-at).
+    // AIKB remains authoritative for the document itself — fileName/status are untouched.
+    const importLogMap = await supabaseService.getImportLogMap(req.client.id).catch(() => new Map());
+    const enriched = mergeDocumentImportContext(docs, importLogMap);
+
+    res.json(Array.isArray(data) ? enriched : { ...data, documents: enriched });
   } catch (err) {
     console.error('GET /api/knowledge/documents error:', err.message);
     res.status(500).json({ error: 'Could not load your documents. Please try again.' });

@@ -142,6 +142,8 @@
   const kbGdriveBtn       = document.getElementById('kb-gdrive-btn');
   const kbZipInput        = document.getElementById('kb-zip-input');
   const kbZipBtn          = document.getElementById('kb-zip-btn');
+  const kbFolderInput     = document.getElementById('kb-folder-input');
+  const kbFolderBtn       = document.getElementById('kb-folder-btn');
   const kbMicBtn          = document.getElementById('kb-mic-btn');
   const kbMicTimer        = document.getElementById('kb-mic-timer');
   const kbMicError        = document.getElementById('kb-mic-error');
@@ -213,6 +215,15 @@
   loadPickerConfig();
   loadImportHistory();
 
+  // Mirrors the server's allow-list (routes/api.js ALLOWED_EXTENSIONS) — folder pickers
+  // ignore `accept`, so we pre-filter client-side to avoid wasted upload requests.
+  const KB_ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.pdf', '.docx']);
+  function hasAllowedExtension(file) {
+    const dot = file.name.lastIndexOf('.');
+    const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+    return KB_ALLOWED_EXTENSIONS.has(ext);
+  }
+
   kbUploadBtn.addEventListener('click', () => kbFileInput.click());
   kbFileInput.addEventListener('change', () => {
     const files = Array.from(kbFileInput.files || []);
@@ -235,6 +246,16 @@
     kbUploadStatus.hidden = true;
     kbUploadStatus.textContent = '';
     uploadZipFile(file);
+  });
+
+  kbFolderBtn.addEventListener('click', () => kbFolderInput.click());
+  kbFolderInput.addEventListener('change', () => {
+    const files = Array.from(kbFolderInput.files || []).filter(hasAllowedExtension);
+    kbFolderInput.value = '';
+    if (files.length === 0) return;
+    kbUploadStatus.hidden = true;
+    kbUploadStatus.textContent = '';
+    uploadMultipleFiles(files, { sourceType: 'folder_upload', triggerBtn: kbFolderBtn });
   });
 
   kbGdriveBtn.addEventListener('click', () => {
@@ -670,12 +691,6 @@
     }
   }
 
-  const IMPORT_SOURCE_LABELS = {
-    local: 'Manual Upload',
-    zip: 'Archive Import',
-    google_drive: 'Google Drive',
-  };
-
   async function loadImportHistory() {
     const listEl = document.getElementById('kb-import-history-list');
     if (!listEl) return;
@@ -705,7 +720,7 @@
     }
 
     listEl.innerHTML = batches.map(b => {
-      const label = IMPORT_SOURCE_LABELS[b.sourceType] || b.sourceType;
+      const label = b.sourceLabel || 'Local upload';
       const date = b.createdAt
         ? new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : '';
@@ -991,9 +1006,25 @@
 
     const fileName = doc.fileName || doc.file_name || doc.name || 'Untitled';
     const sourceFileId = doc.sourceFileId || doc.source_file_id || '';
-    const date = doc.created_at
-      ? new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+    // Source label / folder path / imported date — portal-specific import context merged
+    // onto the AIKB document by GET /knowledge/documents. AIKB's own fileName/status stay
+    // authoritative; this is purely additive display metadata.
+    const sourceLabel = doc.sourceLabel || 'Local upload';
+    let folderPath = '';
+    if (doc.sourceType === 'folder_upload' && doc.sourcePath) {
+      const segments = doc.sourcePath.split('/');
+      segments.pop(); // drop the trailing filename segment — it's already the row title
+      folderPath = segments.join('/');
+    }
+    const importedRaw = doc.importedAt || doc.created_at;
+    const importedDate = importedRaw
+      ? new Date(importedRaw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
+    const metaParts = [sourceLabel];
+    if (folderPath) metaParts.push(folderPath);
+    if (importedDate) metaParts.push(`Imported ${importedDate}`);
+    const sourceMeta = metaParts.map(escHtml).join(' · ');
 
     let deleteBtn = '';
     if (!doc._isPending) {
@@ -1009,7 +1040,7 @@
       <div class="kb-doc-row">
         <div class="kb-doc-info">
           <span class="kb-doc-name" title="${escHtml(fileName)}">${escHtml(fileName)}</span>
-          ${date ? `<span class="kb-doc-meta">${date}</span>` : ''}
+          <span class="kb-doc-meta">${sourceMeta}</span>
         </div>
         ${badge}
         ${deleteBtn}
@@ -1020,13 +1051,14 @@
   // Uploads a single file to /api/knowledge/upload and polls until it settles.
   // UI-agnostic w.r.t. shared button/status state — callers own kbUploadBtn/kbUploadStatus.
   // Returns { status: 'ok'|'limit'|'error'|'timeout', message?, sourceFileId?, indexStatus? }.
-  async function uploadOneFile(file, { relativePath, batchId } = {}) {
+  async function uploadOneFile(file, { relativePath, batchId, sourceType } = {}) {
     showUploadPhase('Preparing upload…', 0, file.name);
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('relativePath', relativePath || file.name);
     if (batchId) formData.append('importBatchId', batchId);
+    if (sourceType) formData.append('sourceType', sourceType);
 
     let result;
     try {
@@ -1122,19 +1154,22 @@
     }
   }
 
-  // Multi-file local upload — concurrency-2 worker pool over uploadOneFile, continues on
-  // individual failure. Folder-upload-ready: relativePath threads webkitRelativePath through
-  // untouched today (webkitdirectory isn't enabled yet, so it always equals file.name).
-  async function uploadMultipleFiles(fileArray) {
-    kbUploadBtn.disabled = true;
+  // Multi-file / folder upload — concurrency-2 worker pool over uploadOneFile, continues on
+  // individual failure. One batchId per call (reused across a retry so everything traces
+  // back to the same logical import). `priorImported` lets a retry-failed-only call produce
+  // a cumulative summary instead of resetting counts; failed entries retain their actual
+  // File object so "Retry failed" has something to resend.
+  async function uploadMultipleFiles(fileArray, { batchId, priorImported = [], sourceType, triggerBtn } = {}) {
+    const btn = triggerBtn || kbUploadBtn;
+    const effectiveBatchId = batchId || crypto.randomUUID();
+    btn.disabled = true;
     kbUploadStatus.hidden = true;
     kbUploadStatus.className = 'kb-upload-status';
     hideImportResult();
 
-    const batchId = crypto.randomUUID();
     const total = fileArray.length;
     let doneCount = 0;
-    const imported = [];
+    const imported = [...priorImported];
     const failed = [];
 
     showImportStatus(`Uploading file 1 of ${total}…`);
@@ -1146,7 +1181,7 @@
         const item = fileArray[i];
         const relativePath = item.webkitRelativePath || item.name;
         showImportStatus(`Uploading file ${Math.min(doneCount + 1, total)} of ${total}: "${item.name}"…`);
-        const r = await uploadOneFile(item, { relativePath, batchId });
+        const r = await uploadOneFile(item, { relativePath, batchId: effectiveBatchId, sourceType });
         doneCount++;
         if (r.status === 'ok' && r.indexStatus !== 'failed') {
           imported.push({ fileName: item.name, sourceFileId: r.sourceFileId });
@@ -1154,6 +1189,7 @@
           failed.push({
             fileName: item.name,
             reason: r.message || (r.status === 'timeout' ? 'Indexing is taking longer than expected' : 'Indexing failed'),
+            file: item,
           });
         }
         showImportStatus(`Uploaded ${doneCount} of ${total} file${total > 1 ? 's' : ''}…`);
@@ -1163,17 +1199,29 @@
     const CONCURRENCY = 2;
     try {
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
-      await finishImportResult({ imported, skipped: [], failed });
+      const onRetry = failed.length > 0
+        ? () => uploadMultipleFiles(failed.map(f => f.file), {
+            batchId: effectiveBatchId,
+            priorImported: imported,
+            sourceType,
+            triggerBtn: btn,
+          })
+        : null;
+      await finishImportResult({ imported, skipped: [], failed, onRetry });
     } finally {
       hideUploadPanel();
       hideImportStatus();
-      kbUploadBtn.disabled = false;
+      btn.disabled = false;
     }
   }
 
   // Archive import — one request to the server, which extracts + ingests entries itself and
   // returns the aggregated {imported, skipped, failed} shape directly; we only poll + render.
-  async function uploadZipFile(file) {
+  // One batchId per archive submission, reused for a retry so both attempts trace back to the
+  // same logical import. Retry re-sends the whole file (extracted bytes aren't kept server-side
+  // between requests) but asks the server to only reprocess the previously-failed paths.
+  async function uploadZipFile(file, { batchId, retryOnly, priorImported = [] } = {}) {
+    const effectiveBatchId = batchId || crypto.randomUUID();
     kbZipBtn.disabled = true;
     kbUploadStatus.hidden = true;
     kbUploadStatus.className = 'kb-upload-status';
@@ -1182,6 +1230,8 @@
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('importBatchId', effectiveBatchId);
+    if (retryOnly) formData.append('retryOnly', JSON.stringify(retryOnly));
 
     try {
       const res = await fetch('/api/knowledge/import-zip', {
@@ -1198,29 +1248,37 @@
         return;
       }
 
-      const imported = body.imported || [];
+      const imported = [...priorImported, ...(body.imported || [])];
       const skipped  = body.skipped || [];
       const failed   = [...(body.failed || [])];
 
-      imported.forEach(f => pendingUploads.set(f.fileName, { fileName: f.fileName, sourceFileId: f.sourceFileId }));
+      body.imported?.forEach(f => pendingUploads.set(f.fileName, { fileName: f.fileName, sourceFileId: f.sourceFileId }));
       await refreshKnowledgeStatus();
 
       let settledImported = imported;
-      if (imported.length > 0) {
-        showImportStatus(`Indexing ${imported.length} imported document${imported.length === 1 ? '' : 's'}…`);
+      if (body.imported?.length > 0) {
+        showImportStatus(`Indexing ${body.imported.length} imported document${body.imported.length === 1 ? '' : 's'}…`);
         const { results } = await pollKnowledgeStatusUntilSettled({
-          fileNames: imported.map(f => f.fileName),
-          sourceFileIds: imported.map(f => f.sourceFileId),
+          fileNames: body.imported.map(f => f.fileName),
+          sourceFileIds: body.imported.map(f => f.sourceFileId),
         });
-        imported.forEach(f => pendingUploads.delete(f.fileName));
+        body.imported.forEach(f => pendingUploads.delete(f.fileName));
 
         settledImported = imported.filter(f => results.get(f.fileName)?.status !== 'failed');
-        imported
+        body.imported
           .filter(f => results.get(f.fileName)?.status === 'failed')
-          .forEach(f => failed.push({ fileName: f.fileName, reason: 'Indexing failed' }));
+          .forEach(f => failed.push({ fileName: f.fileName, reason: 'Indexing failed', relativePath: f.relativePath }));
       }
 
-      await finishImportResult({ imported: settledImported, skipped, failed });
+      const onRetry = failed.length > 0
+        ? () => uploadZipFile(file, {
+            batchId: effectiveBatchId,
+            priorImported: settledImported,
+            retryOnly: failed.map(f => f.relativePath || f.fileName),
+          })
+        : null;
+
+      await finishImportResult({ imported: settledImported, skipped, failed, onRetry });
     } catch (err) {
       kbUploadStatus.textContent = err.message || 'Network error. Please try again.';
       kbUploadStatus.className = 'kb-upload-status kb-upload-status--error';
@@ -1235,7 +1293,7 @@
   // Shared result-handling tail for every multi-outcome import source (local multi-file,
   // archive import, Google Drive) — renders the aggregate status + Import Complete card,
   // refreshes knowledge status, and refreshes the Recent Imports history.
-  async function finishImportResult({ imported = [], skipped = [], failed = [] }) {
+  async function finishImportResult({ imported = [], skipped = [], failed = [], onRetry = null }) {
     const importedCount = imported.length;
 
     const parts = [];
@@ -1247,22 +1305,24 @@
     kbUploadStatus.className = 'kb-upload-status' + (failed.length ? ' kb-upload-status--error' : ' kb-upload-status--success');
     kbUploadStatus.hidden = false;
 
-    renderImportResult({ importedCount, skipped, failed });
+    renderImportResult({ importedCount, skipped, failed, onRetry });
 
     await refreshKnowledgeStatus();
     loadImportHistory();
     await delay(900);
   }
 
-  function renderImportResult({ importedCount = 0, skipped = [], failed = [] }) {
-    const details = document.getElementById('kb-import-result');
-    const counts  = document.getElementById('kb-import-result-counts');
-    const list    = document.getElementById('kb-import-summary');
+  function renderImportResult({ importedCount = 0, skipped = [], failed = [], onRetry = null }) {
+    const details  = document.getElementById('kb-import-result');
+    const counts   = document.getElementById('kb-import-result-counts');
+    const list     = document.getElementById('kb-import-summary');
+    const retryBtn = document.getElementById('kb-import-retry-btn');
     if (!details || !counts || !list) return;
 
     if (importedCount === 0 && skipped.length === 0 && failed.length === 0) {
       details.hidden = true;
       list.innerHTML = '';
+      if (retryBtn) retryBtn.hidden = true;
       return;
     }
 
@@ -1278,6 +1338,17 @@
       `<li class="kb-import-summary-item--failed">Failed "${escHtml(f.fileName)}"${f.reason ? ` — ${escHtml(f.reason)}` : ''}</li>`));
     list.innerHTML = rows.join('');
     details.hidden = false;
+
+    if (retryBtn) {
+      if (onRetry) {
+        retryBtn.hidden = false;
+        retryBtn.onclick = () => { retryBtn.disabled = true; onRetry(); };
+        retryBtn.disabled = false;
+      } else {
+        retryBtn.hidden = true;
+        retryBtn.onclick = null;
+      }
+    }
   }
 
   function hideImportResult() {
@@ -1285,6 +1356,8 @@
     if (details) details.hidden = true;
     const list = document.getElementById('kb-import-summary');
     if (list) list.innerHTML = '';
+    const retryBtn = document.getElementById('kb-import-retry-btn');
+    if (retryBtn) retryBtn.hidden = true;
   }
 
   function showUploadPhase(phase, pct, fileName) {

@@ -171,11 +171,14 @@
             <div class="kb-upload-row">
               <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.docx" multiple style="display:none">
               <input type="file" id="kb-zip-input" accept=".zip" style="display:none">
+              <input type="file" id="kb-folder-input" webkitdirectory directory mozdirectory multiple style="display:none">
               <button class="btn-kb-upload" id="kb-upload-btn" type="button">Upload Files</button>
               <button class="btn-kb-upload btn-kb-zip" id="kb-zip-btn" type="button">Import Archive</button>
+              <button class="btn-kb-upload btn-kb-folder" id="kb-folder-btn" type="button">Upload Folder</button>
               <button class="btn-kb-upload btn-kb-gdrive" id="kb-gdrive-btn" type="button">Upload from Google Drive</button>
               <span class="kb-upload-hint">PDF, DOCX, TXT, MD &middot; Max 20 MB per file &middot; Archive up to 50 MB</span>
             </div>
+            <p class="kb-upload-hint">Google Drive imports are one-time copies &mdash; future changes in Google Drive will not update automatically.</p>
             <div id="upload-progress-panel" class="upload-progress-panel" hidden>
               <div class="upload-progress-header">
                 <span id="upload-file-name" class="upload-file-name"></span>
@@ -195,6 +198,7 @@
               <div class="kb-history-body">
                 <div class="kb-collapsible-pad">
                   <ul id="kb-import-summary" class="kb-import-summary"></ul>
+                  <button class="btn-kb-upload" id="kb-import-retry-btn" type="button" hidden>Retry failed file(s)</button>
                 </div>
               </div>
             </details>

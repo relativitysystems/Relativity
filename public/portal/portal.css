@@ -612,6 +612,18 @@ body {
   opacity: 1;
 }
 
+.btn-kb-folder {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  margin-left: 8px;
+}
+
+.btn-kb-folder:hover:not(:disabled) {
+  background: var(--bg-secondary, rgba(0,0,0,0.04));
+  opacity: 1;
+}
+
 .kb-import-summary {
   list-style: none;
   margin: 0;
@@ -625,6 +637,8 @@ body {
 .kb-import-summary-item--imported { color: var(--success); }
 .kb-import-summary-item--skipped  { color: var(--text-muted); }
 .kb-import-summary-item--failed   { color: var(--error); }
+
+#kb-import-retry-btn { margin-top: 10px; }
 
 .kb-docs-section { margin-bottom: 24px; }
 
