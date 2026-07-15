@@ -375,6 +375,46 @@ body {
   opacity: 0.6;
 }
 
+/* ---- Overview: Integrations ---- */
+.integration-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.integration-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.integration-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.integration-workspace {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.integration-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-integration-disconnect {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.btn-integration-disconnect:hover { opacity: 0.85; }
+
 /* ---- Knowledge Assistant ---- */
 .assistant-card {
   background: var(--bg-card);

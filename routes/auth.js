@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, dropbox: dropboxConfig, slack: slackConfig, googleDrive: googleDriveConfig, appBaseUrl } = require('../config');
+const { supabase: supabaseConfig, dropbox: dropboxConfig, googleDrive: googleDriveConfig, appBaseUrl } = require('../config');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const clientAuth = require('../middleware/clientAuth');
 const apiKey = require('../middleware/apiKey');
 const dropboxService = require('../services/dropboxService');
-const slackService = require('../services/slackService');
 const googleDriveService = require('../services/googleDriveService');
 const supabaseService = require('../services/supabaseService');
 
@@ -145,63 +144,38 @@ router.get('/dropbox/callback', async (req, res) => {
 
 /**
  * GET /auth/slack/start
- *
- * Requires a valid Supabase Bearer token.
- * Returns JSON { url } — portal.js redirects the browser there.
- * Slack prompts the user to pick a workspace and channel.
- */
-router.get('/slack/start', clientAuth, (req, res) => {
-  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
-
-  const authUrl = new URL('https://slack.com/oauth/v2/authorize');
-  authUrl.searchParams.set('client_id', slackConfig.appId);
-  authUrl.searchParams.set('redirect_uri', slackConfig.redirectUri);
-  authUrl.searchParams.set('scope', 'chat:write,incoming-webhook');
-  authUrl.searchParams.set('state', state);
-
-  res.json({ url: authUrl.toString() });
-});
-
-/**
  * GET /auth/slack/callback
  *
- * Slack redirects here after the user authorizes.
- * Stores the bot token in oauth_tokens and the chosen channel in clients.
+ * RETIRED (Architecture Review Phase 4, Milestone 3). The Slack OAuth
+ * connection flow has moved to routes/integrations/slack.js, mounted at
+ * /api/integrations/slack/{start,callback,status,disconnect} — a fresh
+ * implementation with server-side hashed OAuth state, encrypted credential
+ * storage (oauth_connections/oauth_credentials via
+ * services/oauthConnectionsService.js), and owner/admin-only connect/
+ * disconnect. It does not extend this old flow.
+ *
+ * These two routes are deliberately NOT deleted outright and NOT silently
+ * left as a 404: the old flow (unsigned base64(JSON) state that trusted a
+ * client-supplied clientId, the incoming-webhook scope, plaintext tokens in
+ * oauth_tokens) is unsafe and must never run again — Phase 1 §11 Decision 4
+ * already approved discarding it, and
+ * supabase/migrations/20260714_oauth_connections.sql §4 already deleted the
+ * plaintext Slack rows this flow used to write, so upsertToken/
+ * updateClientSlackChannel below would be writing into a path nothing else
+ * ever reads again anyway. Returning a deliberate 410 Gone (rather than a
+ * plain 404, which looks identical to "route never existed") gives an
+ * operator a clear signal if anything — a stale bookmark, an old cached
+ * portal.js — ever hits this URL again, mirroring the same reasoning
+ * Milestone 1 used to neutralize AIKB's legacy Slack route. All of the old
+ * flow's unsafe logic is deleted here, not flagged off, so there is no
+ * config toggle that could silently re-arm it.
  */
-router.get('/slack/callback', async (req, res) => {
-  const { code, state, error } = req.query;
+router.get('/slack/start', (req, res) => {
+  res.status(410).json({ error: 'This Slack integration endpoint has been retired. Use /api/integrations/slack/start instead.' });
+});
 
-  if (error) {
-    return res.redirect('/portal.html?error=slack_denied');
-  }
-
-  if (!code || !state) {
-    return res.status(400).json({ error: 'Missing code or state param' });
-  }
-
-  let clientId;
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-    clientId = decoded.clientId;
-  } catch {
-    return res.status(400).json({ error: 'Invalid state param' });
-  }
-
-  try {
-    const tokenData = await slackService.exchangeCodeForToken(code);
-    const { access_token, incoming_webhook } = tokenData;
-
-    await supabaseService.upsertToken(clientId, 'slack', access_token, null, null);
-
-    if (incoming_webhook && incoming_webhook.channel_id) {
-      await supabaseService.updateClientSlackChannel(clientId, incoming_webhook.channel_id);
-    }
-
-    res.redirect('/portal.html?connected=slack');
-  } catch (err) {
-    console.error('Slack callback error:', err.message);
-    res.redirect('/portal.html?error=slack_failed');
-  }
+router.get('/slack/callback', (req, res) => {
+  res.status(410).json({ error: 'This Slack integration endpoint has been retired. Use /api/integrations/slack/callback instead.' });
 });
 
 /**

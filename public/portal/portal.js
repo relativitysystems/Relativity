@@ -114,16 +114,114 @@
   const params = new URLSearchParams(window.location.search);
   const connected = params.get('connected');
   const error = params.get('error');
+  const integrationParam = params.get('integration');
+  const statusParam = params.get('status');
 
-  if (connected) {
-    showBanner('success', 'Connection updated successfully.');
+  const SLACK_ERROR_MESSAGES = {
+    access_denied: 'Slack authorization was cancelled.',
+    invalid_state: 'Your Slack connection attempt was invalid or already used. Please try connecting again.',
+    expired_state: 'Your Slack connection attempt expired. Please try connecting again.',
+    connection_failed: 'Could not connect Slack. Please try again or contact support.',
+  };
+
+  if (integrationParam === 'slack') {
+    if (statusParam === 'connected') {
+      showBanner('success', 'Slack connected successfully.');
+    } else if (error) {
+      showBanner('error', SLACK_ERROR_MESSAGES[error] || 'Slack connection failed. Please try again.');
+    }
     window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+  } else {
+    if (connected) {
+      showBanner('success', 'Connection updated successfully.');
+      window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+    }
+
+    if (error) {
+      showBanner('error', 'Connection failed. Please try again or contact support.');
+      window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+    }
   }
 
-  if (error) {
-    showBanner('error', 'Connection failed. Please try again or contact support.');
-    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+  // 4b. Slack Integration
+  const slackStatusBadge   = document.getElementById('slack-status-badge');
+  const slackWorkspaceName = document.getElementById('slack-workspace-name');
+  const slackConnectBtn    = document.getElementById('slack-connect-btn');
+  const slackDisconnectBtn = document.getElementById('slack-disconnect-btn');
+
+  function renderSlackStatus(data) {
+    if (!slackStatusBadge) return;
+    const isConnected = !!data.connected;
+    slackStatusBadge.textContent = isConnected ? 'Connected' : 'Not connected';
+    slackStatusBadge.className = `integration-status badge ${isConnected ? 'badge--indexed' : 'badge--soon'}`;
+    if (slackWorkspaceName) {
+      slackWorkspaceName.textContent = isConnected && data.workspaceName ? data.workspaceName : '';
+    }
+    if (slackConnectBtn) slackConnectBtn.hidden = !isOwnerAdmin || isConnected;
+    if (slackDisconnectBtn) slackDisconnectBtn.hidden = !isOwnerAdmin || !isConnected;
   }
+
+  async function loadSlackStatus() {
+    if (!slackStatusBadge) return;
+    try {
+      const res = await fetch('/api/integrations/slack/status', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error('status request failed');
+      renderSlackStatus(await res.json());
+    } catch {
+      slackStatusBadge.textContent = 'Unavailable';
+      slackStatusBadge.className = 'integration-status badge badge--failed';
+      if (slackWorkspaceName) slackWorkspaceName.textContent = '';
+    }
+  }
+
+  if (slackConnectBtn) {
+    slackConnectBtn.addEventListener('click', async () => {
+      slackConnectBtn.disabled = true;
+      try {
+        const res = await fetch('/api/integrations/slack/start', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body.url) {
+          window.location.href = body.url;
+          return;
+        }
+        showBanner('error', body.error || 'Could not start Slack connection.');
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      } finally {
+        slackConnectBtn.disabled = false;
+      }
+    });
+  }
+
+  if (slackDisconnectBtn) {
+    slackDisconnectBtn.addEventListener('click', async () => {
+      if (!confirm('Disconnect Slack from this organization?')) return;
+      slackDisconnectBtn.disabled = true;
+      try {
+        const res = await fetch('/api/integrations/slack/disconnect', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) {
+          showBanner('success', 'Slack disconnected.');
+        } else {
+          const body = await res.json().catch(() => ({}));
+          showBanner('error', body.error || 'Could not disconnect Slack.');
+        }
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      } finally {
+        slackDisconnectBtn.disabled = false;
+        loadSlackStatus();
+      }
+    });
+  }
+
+  loadSlackStatus();
 
   // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');

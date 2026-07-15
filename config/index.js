@@ -13,9 +13,16 @@ module.exports = {
     redirectUri: process.env.DROPBOX_REDIRECT_URI,
     basePath: process.env.DROPBOX_BASE_PATH || '',
   },
+  // Slack OAuth v2 (Architecture Review Phase 4, Milestone 3). appId/appSecret
+  // (the old SLACK_APP_ID/SLACK_APP_SECRET vars) are gone along with the
+  // retired /auth/slack/{start,callback} flow — see routes/auth.js.
+  // signingSecret is read here for discoverability/future use (the Slack
+  // Events endpoint, not built in this milestone); the OAuth connect/
+  // callback flow itself does not use it.
   slack: {
-    appId: process.env.SLACK_APP_ID,
-    appSecret: process.env.SLACK_APP_SECRET,
+    clientId: process.env.SLACK_CLIENT_ID,
+    clientSecret: process.env.SLACK_CLIENT_SECRET,
+    signingSecret: process.env.SLACK_SIGNING_SECRET,
     redirectUri: process.env.SLACK_REDIRECT_URI,
   },
   // Provider-neutral OAuth credential encryption (starts with Slack, applies

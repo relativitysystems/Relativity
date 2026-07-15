@@ -2,6 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
 const aikbService = require('./aikbService');
 const { sourceLabelFor } = require('./importMetadata');
+const oauthConnectionsService = require('./oauthConnectionsService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -68,20 +69,25 @@ async function getClientByAuthUserId(authUserId) {
   return getClientById(clientUser.client_id);
 }
 
-// NOTE: still reads oauth_tokens for all three providers, including Slack —
-// left unchanged in Milestone 2 to avoid breaking current portal behavior
-// (GET /auth/me, the admin client list) before the new Slack OAuth routes
-// exist. Once Milestone 3 lands, Slack's status here must switch to
-// services/oauthConnectionsService.js#getSafeConnectionStatus — the
-// oauth_tokens table no longer receives new Slack rows as of this
-// migration (see supabase/migrations/20260714_oauth_connections.sql §4),
-// so this function would otherwise silently report Slack as
-// never-connected once the new flow is live.
+// Dropbox and Google Drive are unchanged from Milestone 2 — still read from
+// oauth_tokens via getToken, exactly as before. Slack (Milestone 3) now
+// reads from oauth_connections/oauth_credentials via
+// services/oauthConnectionsService.js#getSafeConnectionStatus instead: the
+// oauth_tokens table no longer receives new Slack rows as of
+// supabase/migrations/20260714_oauth_connections.sql §4, so continuing to
+// read oauth_tokens for Slack here would silently report every workspace as
+// never-connected once the new OAuth flow (routes/integrations/slack.js) is
+// live.
 async function getClientConnectionStatus(clientId) {
-  const providers = ['dropbox', 'slack', 'google_drive'];
-  const results = await Promise.all(providers.map(p => getToken(clientId, p)));
+  const legacyProviders = ['dropbox', 'google_drive'];
+  const [legacyResults, slackStatus] = await Promise.all([
+    Promise.all(legacyProviders.map(p => getToken(clientId, p))),
+    oauthConnectionsService.getSafeConnectionStatus(clientId, 'slack'),
+  ]);
+
   const status = {};
-  providers.forEach((p, i) => { status[p] = results[i] !== null; });
+  legacyProviders.forEach((p, i) => { status[p] = legacyResults[i] !== null; });
+  status.slack = slackStatus.connected;
   return status;
 }
 
@@ -227,9 +233,14 @@ async function getAllClientsWithStatus() {
 
   const clientIds = clients.map(c => c.id);
 
-  const [{ data: activeMembers }, { data: tokens }] = await Promise.all([
+  // Slack status now comes from oauth_connections (Milestone 3) instead of
+  // oauth_tokens — see the note on getClientConnectionStatus above. Only
+  // client_id is read here (an oauth_connections column, never
+  // oauth_credentials), so no credential material is touched.
+  const [{ data: activeMembers }, { data: tokens }, { data: slackConnections }] = await Promise.all([
     supabase.from('client_members').select('client_id').not('auth_user_id', 'is', null).in('client_id', clientIds),
     supabase.from('oauth_tokens').select('client_id, provider').in('client_id', clientIds),
+    supabase.from('oauth_connections').select('client_id').eq('provider', 'slack').eq('status', 'active').in('client_id', clientIds),
   ]);
 
   const acceptedSet = new Set((activeMembers || []).map(m => m.client_id));
@@ -238,6 +249,7 @@ async function getAllClientsWithStatus() {
     if (!tokenMap[t.client_id]) tokenMap[t.client_id] = {};
     tokenMap[t.client_id][t.provider] = true;
   });
+  const slackConnectedSet = new Set((slackConnections || []).map(c => c.client_id));
 
   return clients.map(client => ({
     id: client.id,
@@ -247,7 +259,7 @@ async function getAllClientsWithStatus() {
     created_at: client.created_at,
     invite_accepted: acceptedSet.has(client.id),
     dropbox: !!(tokenMap[client.id] && tokenMap[client.id]['dropbox']),
-    slack: !!(tokenMap[client.id] && tokenMap[client.id]['slack']),
+    slack: slackConnectedSet.has(client.id),
     google_drive: !!(tokenMap[client.id] && tokenMap[client.id]['google_drive']),
   }));
 }
@@ -409,6 +421,24 @@ async function getClientMemberByAuthUserId(authUserId, clientId) {
 
   if (error && error.code === 'PGRST116') return null;
   if (error) throw new Error(`getClientMemberByAuthUserId failed: ${error.message}`);
+  return data;
+}
+
+// Looks up a member by client_members.id (not auth_user_id), scoped to a
+// specific client_id. Used by the Slack OAuth callback (routes/integrations/
+// slack.js) to re-verify — server-side, never from browser input — that the
+// member who initiated /start (resolved from the consumed oauth_states row)
+// is still active and still owner/admin before a connection is persisted.
+async function getClientMemberById(memberId, clientId) {
+  const { data, error } = await supabase
+    .from('client_members')
+    .select('id, client_id, email, role, status, full_name')
+    .eq('id', memberId)
+    .eq('client_id', clientId)
+    .single();
+
+  if (error && error.code === 'PGRST116') return null;
+  if (error) throw new Error(`getClientMemberById failed: ${error.message}`);
   return data;
 }
 
@@ -834,6 +864,7 @@ module.exports = {
   getPortalIssueSummary,
   // Team members
   getClientMemberByAuthUserId,
+  getClientMemberById,
   getMemberByAuthUserId,
   createClientMember,
   getClientMembers,
