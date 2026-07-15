@@ -18,6 +18,17 @@ module.exports = {
     appSecret: process.env.SLACK_APP_SECRET,
     redirectUri: process.env.SLACK_REDIRECT_URI,
   },
+  // Provider-neutral OAuth credential encryption (starts with Slack, applies
+  // to every future provider on oauth_connections/oauth_credentials).
+  // Exposed here for discoverability/status checks only — the encryption
+  // service (services/integrationCredentialEncryption.js) reads
+  // process.env directly rather than this cached value, so a key rotation
+  // or misconfiguration is caught at the moment of use, not only at
+  // server-start time — see that file for details, including its
+  // temporary deprecated fallback to SLACK_TOKEN_ENCRYPTION_KEY.
+  integrationCredentials: {
+    encryptionKey: process.env.INTEGRATION_CREDENTIAL_ENCRYPTION_KEY,
+  },
   googleDrive: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,

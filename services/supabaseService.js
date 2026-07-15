@@ -5,6 +5,14 @@ const { sourceLabelFor } = require('./importMetadata');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
+// @deprecated for new providers — stores tokens in PLAINTEXT. Architecture
+// Review Phase 4, Milestone 2 introduces services/oauthConnectionsService.js
+// (backed by the encrypted oauth_connections/oauth_credentials tables) as
+// the replacement. Slack's new implementation (Milestone 3) must use that
+// service instead — do not call upsertToken/getToken for provider='slack'
+// in any new code. Google Drive and Dropbox continue to use this path
+// unchanged until a later, separate migration moves them over; existing
+// rows for those providers are untouched by this milestone.
 async function upsertToken(clientId, provider, accessToken, refreshToken, expiresAt, scope = null) {
   const record = {
     client_id: clientId,
@@ -23,6 +31,7 @@ async function upsertToken(clientId, provider, accessToken, refreshToken, expire
   if (error) throw new Error(`Supabase upsertToken failed: ${error.message}`);
 }
 
+// @deprecated for new providers — see the note on upsertToken above.
 async function getToken(clientId, provider) {
   const { data, error } = await supabase
     .from('oauth_tokens')
@@ -59,6 +68,15 @@ async function getClientByAuthUserId(authUserId) {
   return getClientById(clientUser.client_id);
 }
 
+// NOTE: still reads oauth_tokens for all three providers, including Slack —
+// left unchanged in Milestone 2 to avoid breaking current portal behavior
+// (GET /auth/me, the admin client list) before the new Slack OAuth routes
+// exist. Once Milestone 3 lands, Slack's status here must switch to
+// services/oauthConnectionsService.js#getSafeConnectionStatus — the
+// oauth_tokens table no longer receives new Slack rows as of this
+// migration (see supabase/migrations/20260714_oauth_connections.sql §4),
+// so this function would otherwise silently report Slack as
+// never-connected once the new flow is live.
 async function getClientConnectionStatus(clientId) {
   const providers = ['dropbox', 'slack', 'google_drive'];
   const results = await Promise.all(providers.map(p => getToken(clientId, p)));
