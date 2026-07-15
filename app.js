@@ -11,7 +11,17 @@ const slackIntegrationRoutes = require('./routes/integrations/slack');
 
 const app = express();
 
-app.use(express.json());
+// Slack Events signature verification (routes/integrations/slack.js, POST
+// /events and /deliver) needs the exact raw request bytes — re-serializing
+// req.body with JSON.stringify can silently change key order/whitespace and
+// invalidate a legitimate signature. This verify callback is the cheapest,
+// lowest-risk way to retain those bytes: every other route already ignores
+// req.rawBody, so this has no effect on any existing behavior.
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 // Local dev only — Vercel serves public/ as static files directly from CDN
 app.use(express.static(path.join(__dirname, 'public')));

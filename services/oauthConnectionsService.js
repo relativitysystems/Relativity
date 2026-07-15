@@ -164,6 +164,26 @@ function createOauthConnectionsService(client) {
     return data || null;
   }
 
+  /**
+   * Metadata-only lookup by connection id (never touches oauth_credentials).
+   * Added for Architecture Review Phase 4, Milestone 4 — the Slack delivery
+   * path (§4.13) and the delivery sweep (§4.8) both need to re-verify a
+   * specific connection is still active without going back through the
+   * team_id/client_id lookups.
+   */
+  async function getConnectionById(connectionId) {
+    if (!connectionId) throw new Error('getConnectionById requires connectionId');
+
+    const { data, error } = await client
+      .from('oauth_connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+
+    if (error) throw new Error(`getConnectionById failed: ${error.message}`);
+    return data || null;
+  }
+
   async function getSafeConnectionStatus(clientId, provider) {
     const connection = await getActiveConnectionForClient(clientId, provider);
     return toSafeConnectionStatus(connection);
@@ -242,6 +262,7 @@ function createOauthConnectionsService(client) {
     createOrReplaceConnection,
     getActiveConnectionForClient,
     getActiveConnectionByExternalAccount,
+    getConnectionById,
     getSafeConnectionStatus,
     getDecryptedCredentialForConnection,
     markConnectionRevoked,

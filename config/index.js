@@ -24,6 +24,19 @@ module.exports = {
     clientSecret: process.env.SLACK_CLIENT_SECRET,
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     redirectUri: process.env.SLACK_REDIRECT_URI,
+    // Architecture Review Phase 4, Milestone 4 — max normalized question
+    // length forwarded to AIKB from an app_mention (services/slackQuestionService.js).
+    questionMaxLength: parseInt(process.env.SLACK_QUESTION_MAX_LENGTH || '2000', 10),
+  },
+  // Architecture Review Phase 4, Milestone 4 (§4.10) — a small, additive
+  // HMAC-signed envelope scoped ONLY to POST /api/knowledge/ask (Relativity
+  // -> AIKB) and POST /api/integrations/slack/deliver (AIKB -> Relativity,
+  // reversed). Distinct from AIKB_API_KEY (unchanged, still gates every
+  // other AIKB route) and from SLACK_SIGNING_SECRET (Slack<->Relativity
+  // only). This is NOT the full future signed ServiceRequest envelope
+  // (Phase 2 §10) — see services/serviceRequestAuth.js.
+  serviceRequest: {
+    signingSecret: process.env.SERVICE_REQUEST_SIGNING_SECRET,
   },
   // Provider-neutral OAuth credential encryption (starts with Slack, applies
   // to every future provider on oauth_connections/oauth_credentials).
@@ -58,6 +71,18 @@ module.exports = {
     supabaseUrl: process.env.AIKB_SUPABASE_URL,
     supabaseServiceRoleKey: process.env.AIKB_SUPABASE_SERVICE_ROLE_KEY,
     storageBucket: process.env.AIKB_STORAGE_BUCKET || 'aikb-documents',
+    // Architecture Review Phase 4, Milestone 4 — timeout for the fast
+    // accept-and-enqueue call to POST /api/knowledge/ask made synchronously
+    // inside the Slack /events handler, before acking Slack (services/aikbAskClient.js).
+    askTimeoutMs: parseInt(process.env.AIKB_ASK_TIMEOUT_MS || '4000', 10),
+  },
+  // Architecture Review Phase 4, Milestone 4 (§4.8) — Vercel Cron calls the
+  // delivery sweep with this shared secret so the sweep route cannot be
+  // triggered by an arbitrary caller. Vercel sends
+  // `Authorization: Bearer <CRON_SECRET>` automatically for cron-triggered
+  // requests when CRON_SECRET is configured on the project.
+  cron: {
+    secret: process.env.CRON_SECRET,
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
