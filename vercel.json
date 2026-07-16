@@ -3,11 +3,5 @@
     { "source": "/api/:path*",   "destination": "/api" },
     { "source": "/auth/:path*",  "destination": "/api" },
     { "source": "/admin/:path*", "destination": "/api" }
-  ],
-  "crons": [
-    {
-      "path": "/api/integrations/slack/sweep",
-      "schedule": "*/5 * * * *"
-    }
   ]
 }
