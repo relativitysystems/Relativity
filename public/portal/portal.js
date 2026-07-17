@@ -39,16 +39,26 @@
 
   const isOwnerAdmin = memberRole === 'owner' || memberRole === 'admin';
 
+  // Milestone 5: Knowledge Collections. Shared cache of this org's
+  // collections, used both by the Collections tab's table and by the
+  // per-document "move to collection" control on the Documents tab.
+  // null = not yet fetched.
+  let loadedCollections = null;
+
   // Show team tab for owner and admin roles
   if (isOwnerAdmin) {
     const teamTabBtn = document.getElementById('sidebar-tab-team');
     if (teamTabBtn) teamTabBtn.hidden = false;
     initTeamSection();
     loadMembers();
+
+    const collectionsTabBtn = document.getElementById('sidebar-tab-collections');
+    if (collectionsTabBtn) collectionsTabBtn.hidden = false;
+    initCollectionsSection();
   }
 
   // ---- Sidebar / tab navigation ----
-  const TAB_NAMES = ['overview', 'knowledge', 'documents', 'chat-history', 'team', 'support'];
+  const TAB_NAMES = ['overview', 'knowledge', 'documents', 'chat-history', 'team', 'collections', 'support'];
   const DEFAULT_TAB = 'knowledge';
 
   const portalSidebar  = document.getElementById('portal-sidebar');
@@ -71,6 +81,7 @@
   function setActiveTab(tabName, { updateHash = true } = {}) {
     if (!TAB_NAMES.includes(tabName)) tabName = DEFAULT_TAB;
     if (tabName === 'team' && !isOwnerAdmin) tabName = DEFAULT_TAB;
+    if (tabName === 'collections' && !isOwnerAdmin) tabName = DEFAULT_TAB;
 
     TAB_NAMES.forEach((name) => {
       const panel = document.getElementById(`tab-${name}`);
@@ -159,6 +170,83 @@
     }
     if (slackConnectBtn) slackConnectBtn.hidden = !isOwnerAdmin || isConnected;
     if (slackDisconnectBtn) slackDisconnectBtn.hidden = !isOwnerAdmin || !isConnected;
+
+    // Milestone 5: which collections Slack may search — owner/admin only,
+    // and only once Slack is actually connected.
+    const slackCollectionsSection = document.getElementById('slack-collections-section');
+    if (slackCollectionsSection) {
+      const show = isConnected && isOwnerAdmin;
+      slackCollectionsSection.hidden = !show;
+      if (show) loadSlackAllowedCollections();
+    }
+  }
+
+  async function loadSlackAllowedCollections() {
+    const listEl = document.getElementById('slack-collections-list');
+    const saveBtn = document.getElementById('slack-collections-save-btn');
+    const statusEl = document.getElementById('slack-collections-save-status');
+    if (!listEl) return;
+
+    listEl.innerHTML = '<span class="kb-doc-meta">Loading…</span>';
+
+    try {
+      const [collectionsRes, allowedRes] = await Promise.all([
+        fetch('/api/collections', { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch('/api/integrations/slack/collections', { headers: { Authorization: `Bearer ${accessToken}` } }),
+      ]);
+      if (!collectionsRes.ok || !allowedRes.ok) throw new Error('failed to load');
+
+      const { collections } = await collectionsRes.json();
+      const { allowedCollectionIds } = await allowedRes.json();
+      const allowedSet = new Set(allowedCollectionIds || []);
+
+      if (!collections || !collections.length) {
+        listEl.innerHTML = '<span class="kb-doc-meta">No collections yet — create one in the Collections tab.</span>';
+        return;
+      }
+
+      listEl.innerHTML = collections.map((c) => `
+        <label class="slack-collection-option">
+          <input type="checkbox" value="${escHtml(c.id)}" ${allowedSet.has(c.id) ? 'checked' : ''} />
+          ${escHtml(c.name)}
+        </label>
+      `).join('');
+    } catch {
+      listEl.innerHTML = '<span class="kb-doc-meta">Could not load collections.</span>';
+    }
+
+    if (saveBtn && !saveBtn._bound) {
+      saveBtn._bound = true;
+      saveBtn.addEventListener('click', async () => {
+        const collectionIds = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
+        saveBtn.disabled = true;
+        if (statusEl) { statusEl.hidden = true; }
+        try {
+          const res = await fetch('/api/integrations/slack/collections', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ collectionIds }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || 'Could not save.');
+          }
+          if (statusEl) {
+            statusEl.textContent = 'Saved.';
+            statusEl.className = 'kb-upload-status kb-upload-status--success';
+            statusEl.hidden = false;
+          }
+        } catch (err) {
+          if (statusEl) {
+            statusEl.textContent = err.message || 'Could not save.';
+            statusEl.className = 'kb-upload-status kb-upload-status--error';
+            statusEl.hidden = false;
+          }
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    }
   }
 
   async function loadSlackStatus() {
@@ -479,6 +567,33 @@
       pendingDeletes.delete(sourceFileId);
       showBanner('error', 'Network error. Please try again.');
       refreshDocuments();
+    }
+  });
+
+  kbDocsList.addEventListener('change', async (e) => {
+    const select = e.target.closest('.doc-collection-select');
+    if (!select) return;
+
+    const sourceFileId = select.dataset.sourceId;
+    const collectionId = select.value;
+    select.disabled = true;
+
+    try {
+      const res = await fetch(`/api/knowledge/document/${encodeURIComponent(sourceFileId)}/collection`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ collectionId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Could not move document.');
+      }
+      refreshDocuments();
+    } catch (err) {
+      showBanner('error', err.message || 'Could not move document.');
+      refreshDocuments();
+    } finally {
+      select.disabled = false;
     }
   });
 
@@ -1134,6 +1249,18 @@
       }
     }
 
+    // Milestone 5: move-to-collection control — owner/admin only, and only
+    // once the org's collection list is known (loadedCollections is set by
+    // initCollectionsSection, which only runs for owner/admin).
+    let collectionSelect = '';
+    if (!doc._isPending && sourceFileId && isOwnerAdmin && Array.isArray(loadedCollections) && loadedCollections.length) {
+      const currentCollectionId = doc.collectionId || doc.collection_id || '';
+      const options = loadedCollections.map((c) =>
+        `<option value="${escHtml(c.id)}"${c.id === currentCollectionId ? ' selected' : ''}>${escHtml(c.name)}</option>`
+      ).join('');
+      collectionSelect = `<select class="doc-collection-select" data-source-id="${escHtml(sourceFileId)}" title="Move to collection">${options}</select>`;
+    }
+
     return `
       <div class="kb-doc-row">
         <div class="kb-doc-info">
@@ -1141,6 +1268,7 @@
           <span class="kb-doc-meta">${sourceMeta}</span>
         </div>
         ${badge}
+        ${collectionSelect}
         ${deleteBtn}
       </div>
     `;
@@ -2234,6 +2362,158 @@
     });
 
     loadTeamMembers();
+  }
+
+  // ---- Knowledge Collections (Milestone 5, owner/admin only) ----
+
+  function initCollectionsSection() {
+    const tbody      = document.getElementById('collections-tbody');
+    const modal      = document.getElementById('collection-modal');
+    const modalTitle = document.getElementById('collection-modal-title');
+    const newBtn     = document.getElementById('btn-collection-new');
+    const cancelBtn  = document.getElementById('collection-form-cancel');
+    const form       = document.getElementById('collection-form');
+    const nameInput  = document.getElementById('collection-name-input');
+    const formError  = document.getElementById('collection-form-error');
+    const submitBtn  = document.getElementById('collection-form-submit');
+
+    if (!tbody) return;
+
+    let editingCollectionId = null; // null = creating a new collection
+
+    async function loadCollectionsTable() {
+      tbody.innerHTML = `
+        <tr class="loading-row">
+          <td><div class="skeleton skeleton-line" style="width:60%"></div></td>
+          <td><div class="skeleton skeleton-line" style="width:30%"></div></td>
+          <td></td>
+        </tr>`;
+      try {
+        const res = await fetch('/api/collections', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to load collections');
+        const data = await res.json();
+        loadedCollections = data.collections || [];
+        renderCollectionsTable(loadedCollections);
+        // Refresh document rows so the "move to collection" select reflects
+        // the current collection list once it's known.
+        if (loadedDocs) renderDocuments(loadedDocs);
+      } catch (err) {
+        loadedCollections = [];
+        tbody.innerHTML = `<tr><td colspan="3" class="team-empty-state">Could not load collections.</td></tr>`;
+      }
+    }
+
+    function renderCollectionsTable(collections) {
+      if (!collections.length) {
+        tbody.innerHTML = `<tr><td colspan="3" class="team-empty-state">No collections yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = collections.map((c) => {
+        const isDefault = !!c.isDefault || !!c.is_default;
+        const docCount  = c.documentCount ?? c.document_count ?? 0;
+
+        let deleteBtn;
+        if (isDefault) {
+          deleteBtn = `<button class="btn-team-action btn-team-action--danger" disabled title="The default collection cannot be deleted">Delete</button>`;
+        } else if (docCount > 0) {
+          deleteBtn = `<button class="btn-team-action btn-team-action--danger" disabled title="Move or delete its documents first">Delete</button>`;
+        } else {
+          deleteBtn = `<button class="btn-team-action btn-team-action--danger" data-action="delete" data-id="${c.id}" data-name="${escHtml(c.name)}">Delete</button>`;
+        }
+
+        return `<tr>
+          <td>${escHtml(c.name)}${isDefault ? ' <span class="team-you-label">Default</span>' : ''}</td>
+          <td>${docCount}</td>
+          <td class="team-actions-cell">
+            <button class="btn-team-action" data-action="rename" data-id="${c.id}" data-name="${escHtml(c.name)}">Rename</button>
+            ${deleteBtn}
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.btn-team-action').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const action = btn.dataset.action;
+          if (action === 'rename') {
+            editingCollectionId = btn.dataset.id;
+            modalTitle.textContent = 'Rename Collection';
+            nameInput.value = btn.dataset.name;
+            formError.hidden = true;
+            modal.hidden = false;
+            nameInput.focus();
+          } else if (action === 'delete') {
+            if (!confirm(`Delete the "${btn.dataset.name}" collection?`)) return;
+            btn.disabled = true;
+            try {
+              const res = await fetch(`/api/collections/${btn.dataset.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || 'Could not delete collection');
+              }
+              await loadCollectionsTable();
+            } catch (err) {
+              alert(err.message);
+              btn.disabled = false;
+            }
+          }
+        });
+      });
+    }
+
+    newBtn.addEventListener('click', () => {
+      editingCollectionId = null;
+      modalTitle.textContent = 'New Collection';
+      form.reset();
+      formError.hidden = true;
+      modal.hidden = false;
+      nameInput.focus();
+    });
+
+    cancelBtn.addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      formError.hidden = true;
+      const name = nameInput.value.trim();
+      if (!name) {
+        formError.textContent = 'Name is required.';
+        formError.hidden = false;
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+
+      try {
+        const url = editingCollectionId ? `/api/collections/${editingCollectionId}` : '/api/collections';
+        const method = editingCollectionId ? 'PATCH' : 'POST';
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not save collection');
+
+        modal.hidden = true;
+        await loadCollectionsTable();
+      } catch (err) {
+        formError.textContent = err.message;
+        formError.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save';
+      }
+    });
+
+    loadCollectionsTable();
   }
 
 })();

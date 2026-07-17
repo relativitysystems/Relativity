@@ -415,6 +415,29 @@ body {
 }
 .btn-integration-disconnect:hover { opacity: 0.85; }
 
+/* ---- Overview: Slack collections checklist (Milestone 5) ---- */
+.slack-collections-section {
+  width: 100%;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.slack-collections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.slack-collection-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
 /* ---- Knowledge Assistant ---- */
 .assistant-card {
   background: var(--bg-card);
@@ -761,6 +784,18 @@ body {
 .btn-kb-delete:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.doc-collection-select {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-tint-1);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  max-width: 140px;
 }
 
 .kb-answer-area {

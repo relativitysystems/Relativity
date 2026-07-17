@@ -89,6 +89,16 @@ function createFakeSlackDeliveryService() {
   return { calls, postMessage: async (params) => { calls.push(params); return { ts: '1.0', channel: params.channel }; } };
 }
 
+// Milestone 5: processEventCallback/retryStuckRow look up the org's
+// Slack-allowed collections fresh on every call — fake it here so no test
+// in this file makes a real network call, matching this file's existing
+// all-fakes convention. Defaults to an unrestricted-looking empty allow
+// list unless a test cares about the specific value passed through to
+// aikbAskClient.
+function createFakeSlackCollectionAccessService(allowedCollectionIds = []) {
+  return { getAllowedCollectionIds: async () => allowedCollectionIds };
+}
+
 test('a valid app_mention with a real question resolves the workspace, dedupes, and enqueues via AIKB', async () => {
   const slackEventLogService = createFakeSlackEventLog();
   const aikbAskClient = createFakeAikbAskClient();
@@ -96,7 +106,7 @@ test('a valid app_mention with a real question resolves the workspace, dedupes, 
   const supabaseService = createFakeSupabaseService();
   const slackDeliveryService = createFakeSlackDeliveryService();
 
-  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService });
+  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService, slackCollectionAccessService: createFakeSlackCollectionAccessService(['col-general']) });
   const result = await service.processEventCallback(baseEventCallback());
 
   assert.equal(result.outcome, OUTCOME.ENQUEUED);
@@ -104,6 +114,7 @@ test('a valid app_mention with a real question resolves the workspace, dedupes, 
   assert.equal(aikbAskClient.calls[0].clientId, CLIENT_ID);
   assert.equal(aikbAskClient.calls[0].question, 'What is our PTO policy?');
   assert.equal(aikbAskClient.calls[0].idempotencyKey, 'slack:Ev001');
+  assert.deepEqual(aikbAskClient.calls[0].allowedCollectionIds, ['col-general'], 'the org\'s currently-allowed collections must be looked up and passed through');
 });
 
 test('never trusts a client/organization id from the Slack payload — only from the DB lookup', async () => {
@@ -111,7 +122,7 @@ test('never trusts a client/organization id from the Slack payload — only from
   const aikbAskClient = createFakeAikbAskClient();
   const oauthConnectionsService = createFakeOauthConnectionsService();
   const supabaseService = createFakeSupabaseService();
-  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService: createFakeSlackDeliveryService() });
+  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService: createFakeSlackDeliveryService(), slackCollectionAccessService: createFakeSlackCollectionAccessService() });
 
   const spoofed = baseEventCallback({ client_id: 'attacker-supplied-client-id', organization_id: 'attacker-org' });
   await service.processEventCallback(spoofed);
@@ -127,6 +138,7 @@ test('a duplicate event_id is deduped and never calls AIKB twice', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const first = await service.processEventCallback(baseEventCallback());
@@ -145,6 +157,7 @@ test('an unknown workspace (no active connection) is safely rejected, no AIKB ca
     oauthConnectionsService: { getActiveConnectionByExternalAccount: async () => null },
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback());
@@ -159,6 +172,7 @@ test('an ambiguous mapping (lookup throws) is rejected the same as unknown, neve
     oauthConnectionsService: { getActiveConnectionByExternalAccount: async () => { throw new Error('PGRST116: more than one row returned'); } },
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback());
@@ -173,6 +187,7 @@ test('an inactive organization is rejected, no AIKB call', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService({ client: activeClient({ is_active: false }) }),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback());
@@ -188,6 +203,7 @@ test('a bot-generated event is ignored', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback({ event: { bot_id: 'B123' } }));
@@ -203,6 +219,7 @@ test('a self-generated event (from RelativityBot itself) is ignored', async () =
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback({ event: { user: BOT_USER_ID } }));
@@ -217,6 +234,7 @@ test('an unsupported event type is ignored', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback({ event: { type: 'message' } }));
@@ -230,6 +248,7 @@ test('an edited-message subtype is ignored', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback({ event: { subtype: 'message_changed' } }));
@@ -243,6 +262,7 @@ test('a malformed payload (missing team_id) is safely ignored', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback({ type: 'event_callback', event_id: 'Ev001', event: { type: 'app_mention' } });
@@ -256,6 +276,7 @@ test('a malformed payload (missing event) is safely ignored', async () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback({ type: 'event_callback', team_id: TEAM_ID, event_id: 'Ev001' });
@@ -271,6 +292,7 @@ test('an empty mention (no question) never calls AIKB and replies directly with 
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService,
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback({ event: { text: `<@${BOT_USER_ID}>` } }));
@@ -287,6 +309,7 @@ test('url_verification returns the exact challenge value', () => {
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = service.handleUrlVerification({ type: 'url_verification', challenge: 'abc123' });
@@ -301,6 +324,7 @@ test('an AIKB /ask failure never throws — the row stays retryable and Slack st
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
     slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
   });
 
   const result = await service.processEventCallback(baseEventCallback());

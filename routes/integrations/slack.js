@@ -15,6 +15,7 @@ const requireServiceRequest = require('../../middleware/requireServiceRequest');
 const slackIntegrationService = require('../../services/slackIntegrationService');
 const slackEventsService = require('../../services/slackEventsService');
 const slackDeliverService = require('../../services/slackDeliverService');
+const slackCollectionAccessService = require('../../services/slackCollectionAccessService');
 const { verifySlackSignatureMiddleware } = require('../../services/slackSignatureService');
 const { requireConfiguredCronSecret } = require('../../services/cronSweepAuthService');
 
@@ -98,6 +99,42 @@ router.post('/disconnect', clientAuth, requireOwnerAdmin, async (req, res) => {
   } catch (err) {
     console.error('POST /api/integrations/slack/disconnect error:', err.message);
     res.status(500).json({ error: 'Could not disconnect Slack. Please try again.' });
+  }
+});
+
+/**
+ * GET /api/integrations/slack/collections
+ * Milestone 5. Any authenticated, active organization member — matches
+ * /status's existing openness.
+ */
+router.get('/collections', clientAuth, async (req, res) => {
+  try {
+    const allowedCollectionIds = await slackCollectionAccessService.getAllowedCollectionIds(req.client.id);
+    res.json({ allowedCollectionIds });
+  } catch (err) {
+    console.error('GET /api/integrations/slack/collections error:', err.message);
+    res.status(500).json({ error: 'Could not load Slack collection settings.' });
+  }
+});
+
+/**
+ * PUT /api/integrations/slack/collections
+ * Milestone 5. owner/admin only. Body: { collectionIds: string[] }. Replaces
+ * the full allow-list — an empty array means Slack may search nothing, not
+ * everything (see slackCollectionAccessService and
+ * aikb/migrations/006_knowledge_collections.sql for why that's safe).
+ */
+router.put('/collections', clientAuth, requireOwnerAdmin, async (req, res) => {
+  const { collectionIds } = req.body;
+  if (!Array.isArray(collectionIds) || !collectionIds.every((id) => typeof id === 'string')) {
+    return res.status(400).json({ error: 'collectionIds must be an array of strings' });
+  }
+  try {
+    const saved = await slackCollectionAccessService.setAllowedCollectionIds(req.client.id, collectionIds);
+    res.json({ success: true, allowedCollectionIds: saved });
+  } catch (err) {
+    console.error('PUT /api/integrations/slack/collections error:', err.message);
+    res.status(500).json({ error: 'Could not save Slack collection settings.' });
   }
 });
 

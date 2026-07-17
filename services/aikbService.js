@@ -156,6 +156,84 @@ async function deleteDocument(clientId, sourceFileId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge collections (Milestone 5)
+// ---------------------------------------------------------------------------
+
+async function listCollections(clientId) {
+  try {
+    const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/collections/${clientId}`, {
+      headers: aikbHeaders(),
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB listCollections failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function createCollection(clientId, name) {
+  try {
+    const res = await axios.post(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/collections`,
+      { clientId, name },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    const error = new Error(`AIKB createCollection failed: ${extractAxiosError(err)}`);
+    error.status = err.response?.status;
+    error.responseBody = err.response?.data;
+    throw error;
+  }
+}
+
+async function renameCollection(clientId, collectionId, name) {
+  try {
+    const res = await axios.patch(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/collections/${collectionId}`,
+      { clientId, name },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    const error = new Error(`AIKB renameCollection failed: ${extractAxiosError(err)}`);
+    error.status = err.response?.status;
+    error.responseBody = err.response?.data;
+    throw error;
+  }
+}
+
+async function deleteCollection(clientId, collectionId) {
+  try {
+    const res = await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/collections/${collectionId}`, {
+      headers: aikbHeaders(),
+      data: { clientId },
+    });
+    return res.data;
+  } catch (err) {
+    const error = new Error(`AIKB deleteCollection failed: ${extractAxiosError(err)}`);
+    error.status = err.response?.status;
+    error.responseBody = err.response?.data;
+    throw error;
+  }
+}
+
+async function moveDocumentCollection(clientId, sourceFileId, collectionId) {
+  try {
+    const res = await axios.patch(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/document/by-source/collection`,
+      { clientId, sourceFileId, sourceProvider: 'portal_upload', collectionId },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    const error = new Error(`AIKB moveDocumentCollection failed: ${extractAxiosError(err)}`);
+    error.status = err.response?.status;
+    error.responseBody = err.response?.data;
+    throw error;
+  }
+}
+
 async function listIngestionJobs(clientId) {
   try {
     const [jobsRes, documentsData] = await Promise.all([
@@ -265,4 +343,9 @@ module.exports = {
   getClientAnalytics,
   getClientDocumentStats,
   deleteClientData,
+  listCollections,
+  createCollection,
+  renameCollection,
+  deleteCollection,
+  moveDocumentCollection,
 };

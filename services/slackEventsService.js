@@ -15,6 +15,7 @@ const defaultSupabaseService = require('./supabaseService');
 const defaultSlackEventLogService = require('./slackEventLogService');
 const defaultSlackDeliveryService = require('./slackDeliveryService');
 const defaultAikbAskClient = require('./aikbAskClient');
+const defaultSlackCollectionAccessService = require('./slackCollectionAccessService');
 const { extractQuestion, EMPTY_QUESTION_REPLY } = require('./slackQuestionService');
 const { FALLBACK } = require('./slackAnswerFormatter');
 
@@ -47,6 +48,7 @@ function createSlackEventsService({
   slackEventLogService = defaultSlackEventLogService,
   slackDeliveryService = defaultSlackDeliveryService,
   aikbAskClient = defaultAikbAskClient,
+  slackCollectionAccessService = defaultSlackCollectionAccessService,
 } = {}) {
   /**
    * Slack's url_verification handshake. Verified by the same signature
@@ -160,6 +162,10 @@ function createSlackEventsService({
     }
 
     try {
+      // Milestone 5: look up which collections this org currently allows
+      // Slack to search, fresh at request time (not a snapshot), and pass
+      // them into the signed envelope AIKB enforces retrieval against.
+      const allowedCollectionIds = await slackCollectionAccessService.getAllowedCollectionIds(client.id);
       const { eventId: aikbEventId } = await aikbAskClient.ask({
         clientId: client.id,
         question: extraction.question,
@@ -170,6 +176,7 @@ function createSlackEventsService({
           threadTs,
           eventId,
         },
+        allowedCollectionIds,
       });
       await slackEventLogService.markEnqueued(row.id);
       return { status: 200, outcome: OUTCOME.ENQUEUED, aikbEventId };
@@ -223,6 +230,11 @@ function createSlackEventsService({
     }
 
     try {
+      // Re-fetched fresh at retry time rather than snapshotted on the
+      // slack_event_log row — a settings change becoming visible on the
+      // next retry is an acceptable trade-off for this milestone's "keep it
+      // simple" scope, and avoids a schema change to slack_event_log.
+      const allowedCollectionIds = await slackCollectionAccessService.getAllowedCollectionIds(row.client_id);
       await aikbAskClient.ask({
         clientId: row.client_id,
         question: row.question,
@@ -233,6 +245,7 @@ function createSlackEventsService({
           threadTs: row.thread_ts || row.event_ts,
           eventId: row.external_event_id,
         },
+        allowedCollectionIds,
       });
       await slackEventLogService.markEnqueued(row.id);
       await slackEventLogService.incrementAttempt(row.id);
