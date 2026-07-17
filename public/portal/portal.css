@@ -376,10 +376,22 @@ body {
 }
 
 /* ---- Overview: Integrations ---- */
+.integration-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
 .integration-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   width: 100%;
 }
@@ -418,16 +430,25 @@ body {
 /* ---- Overview: Slack collections checklist (Milestone 5) ---- */
 .slack-collections-section {
   width: 100%;
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
+}
+
+.slack-collections-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
 }
 
 .slack-collections-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 10px 0 12px;
+  gap: 10px;
+  margin: 0 0 16px;
 }
 
 .slack-collection-option {
@@ -436,6 +457,23 @@ body {
   gap: 8px;
   font-size: 0.82rem;
   color: var(--text-secondary);
+}
+
+.slack-collections-save-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slack-collections-save-row .kb-upload-status {
+  margin-bottom: 0;
+}
+
+@media (max-width: 520px) {
+  .integration-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* ---- Knowledge Assistant ---- */

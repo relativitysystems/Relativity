@@ -116,22 +116,26 @@
                 <span class="kb-history-summary-label panel-title">Integrations</span>
               </summary>
               <div class="kb-history-body panel-body panel-body--top">
-                <div class="integration-row" id="slack-integration-row">
-                  <div class="integration-info">
-                    <span class="integration-name">Slack</span>
-                    <span class="integration-status badge badge--soon" id="slack-status-badge">Loading…</span>
-                    <span class="integration-workspace" id="slack-workspace-name"></span>
+                <div class="integration-card">
+                  <div class="integration-row" id="slack-integration-row">
+                    <div class="integration-info">
+                      <span class="integration-name">Slack</span>
+                      <span class="integration-status badge badge--soon" id="slack-status-badge">Loading…</span>
+                      <span class="integration-workspace" id="slack-workspace-name"></span>
+                    </div>
+                    <div class="integration-actions">
+                      <button type="button" class="btn-kb-new-chat" id="slack-connect-btn" hidden>Connect Slack</button>
+                      <button type="button" class="btn-kb-new-chat btn-integration-disconnect" id="slack-disconnect-btn" hidden>Disconnect</button>
+                    </div>
                   </div>
-                  <div class="integration-actions">
-                    <button type="button" class="btn-kb-new-chat" id="slack-connect-btn" hidden>Connect Slack</button>
-                    <button type="button" class="btn-kb-new-chat btn-integration-disconnect" id="slack-disconnect-btn" hidden>Disconnect</button>
+                  <div id="slack-collections-section" class="slack-collections-section" hidden>
+                    <p class="slack-collections-label">Collections Slack can search</p>
+                    <div id="slack-collections-list" class="slack-collections-list"></div>
+                    <div class="slack-collections-save-row">
+                      <button type="button" class="btn-kb-new-chat" id="slack-collections-save-btn">Save</button>
+                      <span id="slack-collections-save-status" class="kb-upload-status" hidden></span>
+                    </div>
                   </div>
-                </div>
-                <div id="slack-collections-section" class="slack-collections-section" hidden>
-                  <p class="section-desc">Collections Slack can search</p>
-                  <div id="slack-collections-list" class="slack-collections-list"></div>
-                  <button type="button" class="btn-kb-new-chat" id="slack-collections-save-btn">Save</button>
-                  <span id="slack-collections-save-status" class="kb-upload-status" hidden></span>
                 </div>
               </div>
             </details>
