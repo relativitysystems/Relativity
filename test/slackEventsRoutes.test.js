@@ -25,6 +25,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const app = require('../app');
+const slackEventsService = require('../services/slackEventsService');
 
 function sign(timestamp, rawBody) {
   const sigBase = `v0:${timestamp}:${rawBody}`;
@@ -126,16 +127,47 @@ test('Slack events/deliver/sweep routes — signature and envelope gating', asyn
     assert.equal(res.status, 401);
   });
 
-  await t.test('GET /sweep without the correct CRON_SECRET is rejected before running', async () => {
+  await t.test('GET /sweep without the correct CRON_SECRET is rejected before running (401, not 503 — the secret IS configured in this process)', async () => {
+    const sweepSpy = t.mock.method(slackEventsService, 'runDeliverySweep', async () => ({ processed: 0 }));
     const res = await fetch(`${base}/api/integrations/slack/sweep`, {
       headers: { Authorization: 'Bearer wrong-secret' },
     });
     assert.equal(res.status, 401);
+    assert.equal(sweepSpy.mock.callCount(), 0, 'sweep logic must not run for an incorrect token');
   });
 
-  await t.test('GET /sweep with no Authorization header at all is rejected', async () => {
+  await t.test('GET /sweep with no Authorization header at all is rejected (401)', async () => {
+    const sweepSpy = t.mock.method(slackEventsService, 'runDeliverySweep', async () => ({ processed: 0 }));
     const res = await fetch(`${base}/api/integrations/slack/sweep`);
     assert.equal(res.status, 401);
+    assert.equal(sweepSpy.mock.callCount(), 0);
+  });
+
+  await t.test('GET /sweep with a non-Bearer scheme (Basic) is rejected (401), never compared as a token', async () => {
+    const res = await fetch(`${base}/api/integrations/slack/sweep`, {
+      headers: { Authorization: `Basic ${process.env.CRON_SECRET}` },
+    });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('GET /sweep with "Bearer" and no token at all is rejected (401)', async () => {
+    const res = await fetch(`${base}/api/integrations/slack/sweep`, {
+      headers: { Authorization: 'Bearer' },
+    });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('GET /sweep with the correct Bearer token succeeds — sweep logic runs and a safe response is returned', async () => {
+    const sweepSpy = t.mock.method(slackEventsService, 'runDeliverySweep', async () => ({ processed: 2 }));
+
+    const res = await fetch(`${base}/api/integrations/slack/sweep`, {
+      headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body, { ok: true, processed: 2 });
+    assert.equal(sweepSpy.mock.callCount(), 1, 'sweep logic must run exactly once for a correctly authenticated request');
   });
 
   await t.test('regression: Milestone 3 OAuth routes are still mounted and still require auth', async () => {

@@ -16,7 +16,7 @@ const slackIntegrationService = require('../../services/slackIntegrationService'
 const slackEventsService = require('../../services/slackEventsService');
 const slackDeliverService = require('../../services/slackDeliverService');
 const { verifySlackSignatureMiddleware } = require('../../services/slackSignatureService');
-const config = require('../../config');
+const { requireConfiguredCronSecret } = require('../../services/cronSweepAuthService');
 
 const OWNER_ADMIN = ['owner', 'admin'];
 
@@ -168,19 +168,24 @@ router.post('/deliver', requireServiceRequest, async (req, res) => {
 
 /**
  * GET /api/integrations/slack/sweep
- * Vercel Cron entry (vercel.json) — retry backstop for events stuck in
- * received/enqueued past a timeout (§4.8). Gated by CRON_SECRET: Vercel
- * sends `Authorization: Bearer <CRON_SECRET>` automatically for
- * cron-triggered requests when the project has CRON_SECRET configured.
+ * Retry backstop for events stuck in received/enqueued past a timeout
+ * (§4.8). No Vercel Cron entry currently exists for this route — the
+ * project's Vercel plan rejected the originally planned five-minute
+ * schedule, and the crons entry was removed from vercel.json rather than
+ * downgraded (see the Milestone 4 "Production deployment" note in
+ * architecture_review_report.md). Automated sweeping is therefore
+ * currently disabled; this route only runs when an operator or a future
+ * external scheduler calls it directly with a correctly configured
+ * CRON_SECRET.
+ *
+ * Secure-by-default (fail-closed): requireConfiguredCronSecret
+ * (services/cronSweepAuthService.js) returns 503 when CRON_SECRET is
+ * unset/blank — the endpoint must never run unauthenticated merely because
+ * its secret is missing — and 401 for any missing/malformed/incorrect
+ * Authorization header. Only a request that passes both checks reaches
+ * this handler's sweep call.
  */
-router.get('/sweep', async (req, res) => {
-  if (config.cron.secret) {
-    const authHeader = req.headers['authorization'];
-    if (authHeader !== `Bearer ${config.cron.secret}`) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-  }
-
+router.get('/sweep', requireConfiguredCronSecret, async (req, res) => {
   try {
     const summary = await slackEventsService.runDeliverySweep();
     logSlackEvent({ outcome: 'sweep_complete', processed: summary.processed });
