@@ -20,7 +20,11 @@ function verifyToken(token) {
     .createHmac('sha256', process.env.ADMIN_JWT_SECRET)
     .update(payload)
     .digest('base64url');
-  if (sig !== expected) return false;
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  const safeEqual = sigBuf.length === expectedBuf.length
+    && crypto.timingSafeEqual(sigBuf, expectedBuf);
+  if (!safeEqual) return false;
   try {
     const { iat } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     return Date.now() - iat < TOKEN_TTL_MS;

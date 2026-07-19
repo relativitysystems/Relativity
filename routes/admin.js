@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -40,7 +41,14 @@ const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
 router.post('/login', (req, res) => {
   const { password } = req.body;
-  if (!password || password !== process.env.ADMIN_PASSWORD) {
+  if (!password || typeof password !== 'string') {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+  const passwordBuf = Buffer.from(password, 'utf8');
+  const expectedBuf = Buffer.from(process.env.ADMIN_PASSWORD || '', 'utf8');
+  const safeEqual = passwordBuf.length === expectedBuf.length
+    && crypto.timingSafeEqual(passwordBuf, expectedBuf);
+  if (!safeEqual) {
     return res.status(401).json({ error: 'Invalid password' });
   }
   res.json({ token: adminAuth.generateToken() });
