@@ -1,11 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createSlackDeliverService, RESULT } = require('../services/slackDeliverService');
+const { createSlackDeliveryFailureService } = require('../services/slackDeliveryFailureService');
 
 const CLIENT_ID = 'client-1';
 const OTHER_CLIENT_ID = 'client-2';
 const CONNECTION_ID = 'conn-1';
 const IDEMPOTENCY_KEY = 'slack:Ev001';
+
+const NO_OP_SLEEP = async () => {};
 
 function baseRow(overrides = {}) {
   return {
@@ -33,8 +36,23 @@ function createFakeSlackEventLogService({ row } = {}) {
       }
       return null;
     },
-    markDelivered: async (id) => { if (state.row && state.row.id === id) state.row.status = 'delivered'; return state.row; },
+    markDelivered: async (id, opts) => {
+      if (state.row && state.row.id === id) {
+        state.row.status = 'delivered';
+        if (opts && typeof opts.attemptCount === 'number') state.row.attempt_count = opts.attemptCount;
+      }
+      return state.row;
+    },
     markFailed: async (id, opts) => { if (state.row && state.row.id === id) { state.row.status = 'failed'; state.row.error_code = opts.errorCode; } return state.row; },
+    markDeliveryFailed: async (id, opts) => {
+      if (state.row && state.row.id === id) {
+        state.row.status = 'delivery_failed';
+        state.row.error_code = opts.errorCode;
+        state.row.attempt_count = opts.attemptCount;
+        state.row.question = null;
+      }
+      return state.row;
+    },
   };
 }
 
@@ -45,26 +63,50 @@ function createFakeOauthConnectionsService({ connection = { id: CONNECTION_ID, s
   };
 }
 
-function createFakeSlackDeliveryService({ shouldFail = false, errorCode = 'SLACK_DELIVERY_HTTP_ERROR' } = {}) {
+function createFakeSlackDeliveryService({ failCount = 0, errorCode = 'SLACK_DELIVERY_HTTP_ERROR' } = {}) {
   const calls = [];
   return {
     calls,
     postMessage: async (params) => {
       calls.push(params);
-      if (shouldFail) throw Object.assign(new Error('failed'), { code: errorCode });
+      if (calls.length <= failCount) throw Object.assign(new Error('failed'), { code: errorCode });
       return { ts: '1.1', channel: params.channel };
     },
   };
 }
 
-test('a successful answer is formatted and delivered, then the row is marked delivered', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
+function createFakeAikbRedactClient({ shouldFail = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    redact: async (params) => {
+      calls.push(params);
+      if (shouldFail) throw Object.assign(new Error('down'), { code: 'AIKB_REDACT_HTTP_ERROR' });
+      return { redacted: true };
+    },
+  };
+}
+
+function buildService({ row, deliveryFailOptions = {}, aikbRedactOptions = {}, connectionOptions = {} } = {}) {
+  const slackEventLogService = createFakeSlackEventLogService({ row });
+  const slackDeliveryService = createFakeSlackDeliveryService(deliveryFailOptions);
+  const aikbRedactClient = createFakeAikbRedactClient(aikbRedactOptions);
+  const oauthConnectionsService = createFakeOauthConnectionsService(connectionOptions);
+  const slackDeliveryFailureService = createSlackDeliveryFailureService({ slackEventLogService, aikbRedactClient });
+
   const service = createSlackDeliverService({
     slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
+    oauthConnectionsService,
     slackDeliveryService,
+    slackDeliveryFailureService,
+    sleep: NO_OP_SLEEP,
   });
+
+  return { service, slackEventLogService, slackDeliveryService, aikbRedactClient, oauthConnectionsService };
+}
+
+test('a successful answer is formatted and delivered on the first attempt, then the row is marked delivered', async () => {
+  const { service, slackEventLogService, slackDeliveryService } = buildService({ row: baseRow() });
 
   const result = await service.handleDeliverCallback({
     clientId: CLIENT_ID,
@@ -77,16 +119,11 @@ test('a successful answer is formatted and delivered, then the row is marked del
   assert.match(slackDeliveryService.calls[0].text, /You get 15 days of PTO\./);
   assert.match(slackDeliveryService.calls[0].text, /Sources:\n• PTO\.pdf/);
   assert.equal(slackEventLogService.state.row.status, 'delivered');
+  assert.equal(slackEventLogService.state.row.attempt_count, 1);
 });
 
 test('a knowledge-gap payload delivers the approved fallback message', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService,
-  });
+  const { service, slackDeliveryService } = buildService({ row: baseRow() });
 
   await service.handleDeliverCallback({
     clientId: CLIENT_ID,
@@ -97,14 +134,8 @@ test('a knowledge-gap payload delivers the approved fallback message', async () 
   assert.equal(slackDeliveryService.calls[0].text, "I couldn't find that information in your organization's knowledge base.");
 });
 
-test('an AIKB-reported error payload delivers the temporary-failure fallback', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService,
-  });
+test('an AIKB-reported error payload delivers the temporary-failure fallback (single attempt, unchanged by ADR-007)', async () => {
+  const { service, slackDeliveryService } = buildService({ row: baseRow() });
 
   await service.handleDeliverCallback({
     clientId: CLIENT_ID,
@@ -113,27 +144,18 @@ test('an AIKB-reported error payload delivers the temporary-failure fallback', a
   });
 
   assert.equal(slackDeliveryService.calls[0].text, "I couldn't complete that request right now. Please try again shortly.");
+  assert.equal(slackDeliveryService.calls.length, 1, 'AIKB generation failures are not retried, per ADR-007');
 });
 
 test('an unknown idempotencyKey (no matching event) is safely ignored', async () => {
-  const service = createSlackDeliverService({
-    slackEventLogService: createFakeSlackEventLogService({ row: null }),
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService: createFakeSlackDeliveryService(),
-  });
+  const { service } = buildService({ row: null });
 
   const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: 'slack:unknown', payload: { answer: 'x' } });
   assert.equal(result.result, RESULT.UNKNOWN_EVENT);
 });
 
 test('a clientId that does not match the event\'s own resolved clientId is rejected (cross-tenant safety)', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService,
-  });
+  const { service, slackDeliveryService } = buildService({ row: baseRow() });
 
   const result = await service.handleDeliverCallback({ clientId: OTHER_CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x' } });
   assert.equal(result.result, RESULT.CLIENT_MISMATCH);
@@ -141,13 +163,7 @@ test('a clientId that does not match the event\'s own resolved clientId is rejec
 });
 
 test('a second /deliver callback for the same event is a safe no-op (only the first delivery attempt proceeds)', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService,
-  });
+  const { service, slackDeliveryService } = buildService({ row: baseRow() });
 
   const first = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
   const second = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
@@ -157,42 +173,93 @@ test('a second /deliver callback for the same event is a safe no-op (only the fi
   assert.equal(slackDeliveryService.calls.length, 1, 'Slack must never receive two posts for the same event');
 });
 
-test('a revoked connection is never used for delivery', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService({ connection: { id: CONNECTION_ID, status: 'revoked' } }),
-    slackDeliveryService,
+test('a revoked connection on a real-answer delivery goes straight to the terminal delivery_failed state and redacts', async () => {
+  const { service, slackDeliveryService, slackEventLogService, aikbRedactClient } = buildService({
+    row: baseRow(),
+    connectionOptions: { connection: { id: CONNECTION_ID, status: 'revoked' } },
   });
 
   const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
   assert.equal(result.result, RESULT.CONNECTION_REVOKED);
   assert.equal(slackDeliveryService.calls.length, 0);
-  assert.equal(slackEventLogService.state.row.status, 'failed');
+  assert.equal(slackEventLogService.state.row.status, 'delivery_failed');
+  assert.equal(slackEventLogService.state.row.question, null);
+  assert.equal(aikbRedactClient.calls.length, 1, 'AIKB-side content must be redacted too');
 });
 
-test('a Slack delivery failure marks the row failed with a safe error code', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const slackDeliveryService = createFakeSlackDeliveryService({ shouldFail: true, errorCode: 'SLACK_DELIVERY_NOT_OK' });
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService(),
-    slackDeliveryService,
+test('a revoked connection on an AIKB-error-notification delivery keeps the existing failed status, unchanged by ADR-007', async () => {
+  const { service, slackEventLogService, aikbRedactClient } = buildService({
+    row: baseRow(),
+    connectionOptions: { connection: { id: CONNECTION_ID, status: 'revoked' } },
+  });
+
+  const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { error: true, errorCode: 'AIKB_PROCESSING_FAILED' } });
+  assert.equal(result.result, RESULT.CONNECTION_REVOKED);
+  assert.equal(slackEventLogService.state.row.status, 'failed');
+  assert.equal(aikbRedactClient.calls.length, 0, 'the AIKB-generation-failure path never triggers redaction');
+});
+
+test('retry success: the first delivery attempt fails, the second succeeds, and the row is marked delivered', async () => {
+  const { service, slackEventLogService, slackDeliveryService } = buildService({
+    row: baseRow(),
+    deliveryFailOptions: { failCount: 1 },
+  });
+
+  const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
+
+  assert.equal(result.result, RESULT.DELIVERED);
+  assert.equal(slackDeliveryService.calls.length, 2, 'exactly one retry should have occurred');
+  assert.equal(slackEventLogService.state.row.status, 'delivered');
+  assert.equal(slackEventLogService.state.row.attempt_count, 2);
+});
+
+test('terminal failure: all 3 delivery attempts fail, the row reaches delivery_failed, and AIKB content is redacted', async () => {
+  const { service, slackEventLogService, slackDeliveryService, aikbRedactClient } = buildService({
+    row: baseRow(),
+    deliveryFailOptions: { failCount: 3, errorCode: 'SLACK_DELIVERY_NOT_OK' },
+  });
+
+  const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
+
+  assert.equal(result.result, RESULT.DELIVERY_FAILED);
+  assert.equal(slackDeliveryService.calls.length, 3, 'exactly 3 total attempts: initial + retry #1 + retry #2');
+  assert.equal(slackEventLogService.state.row.status, 'delivery_failed');
+  assert.equal(slackEventLogService.state.row.attempt_count, 3);
+  assert.equal(slackEventLogService.state.row.error_code, 'SLACK_DELIVERY_NOT_OK');
+  assert.equal(slackEventLogService.state.row.question, null, 'the stored question must be redacted on terminal failure');
+  assert.deepEqual(aikbRedactClient.calls, [{ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY }]);
+});
+
+test('a failing AIKB redact callback never changes the delivery result — redaction failure is best-effort only', async () => {
+  const { service } = buildService({
+    row: baseRow(),
+    deliveryFailOptions: { failCount: 3 },
+    aikbRedactOptions: { shouldFail: true },
   });
 
   const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
   assert.equal(result.result, RESULT.DELIVERY_FAILED);
-  assert.equal(slackEventLogService.state.row.status, 'failed');
-  assert.equal(slackEventLogService.state.row.error_code, 'SLACK_DELIVERY_NOT_OK');
+});
+
+test('a /deliver callback arriving after the row already reached delivery_failed is a safe no-op, never re-delivers', async () => {
+  const { service, slackEventLogService, slackDeliveryService } = buildService({
+    row: baseRow(),
+    deliveryFailOptions: { failCount: 3 },
+  });
+
+  const first = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
+  assert.equal(first.result, RESULT.DELIVERY_FAILED);
+  assert.equal(slackEventLogService.state.row.status, 'delivery_failed');
+
+  const resend = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });
+  assert.equal(resend.result, RESULT.ALREADY_PROCESSED);
+  assert.equal(slackDeliveryService.calls.length, 3, 'no further Slack post must ever happen once the row is terminal');
 });
 
 test('the token is never exposed anywhere in the result or thrown errors', async () => {
-  const slackEventLogService = createFakeSlackEventLogService({ row: baseRow() });
-  const service = createSlackDeliverService({
-    slackEventLogService,
-    oauthConnectionsService: createFakeOauthConnectionsService({ credential: { accessToken: 'xoxb-SUPER-SECRET' } }),
-    slackDeliveryService: createFakeSlackDeliveryService(),
+  const { service } = buildService({
+    row: baseRow(),
+    connectionOptions: { credential: { accessToken: 'xoxb-SUPER-SECRET' } },
   });
 
   const result = await service.handleDeliverCallback({ clientId: CLIENT_ID, idempotencyKey: IDEMPOTENCY_KEY, payload: { answer: 'x', sources: [] } });

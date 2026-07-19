@@ -16,15 +16,13 @@ const defaultSlackEventLogService = require('./slackEventLogService');
 const defaultSlackDeliveryService = require('./slackDeliveryService');
 const defaultAikbAskClient = require('./aikbAskClient');
 const defaultSlackCollectionAccessService = require('./slackCollectionAccessService');
+const defaultSlackDeliveryFailureService = require('./slackDeliveryFailureService');
 const { extractQuestion, EMPTY_QUESTION_REPLY } = require('./slackQuestionService');
 const { FALLBACK } = require('./slackAnswerFormatter');
+const { retryWithBackoff } = require('./retryWithBackoff');
+const config = require('../config');
 
 const PROVIDER = 'slack';
-
-// Sweep tuning (§4.8) — a stuck row is retried after this many ms with no
-// progress, capped at this many total attempts before being marked failed.
-const SWEEP_STALE_AFTER_MS = 30_000;
-const SWEEP_MAX_ATTEMPTS = 3;
 
 // Safe, structured outcome codes for §4.16 metadata-only logging — never a
 // message/answer body, never a raw error string.
@@ -49,6 +47,8 @@ function createSlackEventsService({
   slackDeliveryService = defaultSlackDeliveryService,
   aikbAskClient = defaultAikbAskClient,
   slackCollectionAccessService = defaultSlackCollectionAccessService,
+  slackDeliveryFailureService = defaultSlackDeliveryFailureService,
+  sleep,
 } = {}) {
   /**
    * Slack's url_verification handshake. Verified by the same signature
@@ -157,120 +157,41 @@ function createSlackEventsService({
     }
 
     if (!extraction.ok) {
-      await replyDirectly({ connection, channel: event.channel, threadTs, text: EMPTY_QUESTION_REPLY, row, slackEventLogService, slackDeliveryService, oauthConnectionsService });
+      await replyDirectly({
+        connection, channel: event.channel, threadTs, text: EMPTY_QUESTION_REPLY, row,
+        slackEventLogService, slackDeliveryService, oauthConnectionsService, slackDeliveryFailureService, sleep,
+      });
       return { status: 200, outcome: OUTCOME.EMPTY_QUESTION };
     }
 
+    // ADR-007: the fast accept-and-enqueue call to AIKB gets the same
+    // bounded, immediate, in-flow retry treatment as Slack delivery itself
+    // — there is no scheduled sweep left to recover a row stuck at
+    // 'received' if this call fails outright. Slack is still reachable
+    // here (the connection/credential are already resolved), so on
+    // exhaustion a best-effort "couldn't complete that request" reply is
+    // sent before the row is marked delivery_failed and redacted.
     try {
-      // Milestone 5: look up which collections this org currently allows
-      // Slack to search, fresh at request time (not a snapshot), and pass
-      // them into the signed envelope AIKB enforces retrieval against.
       const allowedCollectionIds = await slackCollectionAccessService.getAllowedCollectionIds(client.id);
-      const { eventId: aikbEventId } = await aikbAskClient.ask({
-        clientId: client.id,
-        question: extraction.question,
-        idempotencyKey,
-        originMetadata: {
-          teamId,
-          channelId: event.channel,
-          threadTs,
-          eventId,
-        },
-        allowedCollectionIds,
-      });
+      const { value, attempts } = await retryWithBackoff(
+        () => aikbAskClient.ask({
+          clientId: client.id,
+          question: extraction.question,
+          idempotencyKey,
+          originMetadata: { teamId, channelId: event.channel, threadTs, eventId },
+          allowedCollectionIds,
+        }),
+        { attempts: config.slackDelivery.maxAttempts, backoffMs: config.slackDelivery.backoffMs, sleep }
+      );
       await slackEventLogService.markEnqueued(row.id);
-      return { status: 200, outcome: OUTCOME.ENQUEUED, aikbEventId };
+      return { status: 200, outcome: OUTCOME.ENQUEUED, aikbEventId: value.eventId, attempts };
     } catch (err) {
-      // The fast accept-and-enqueue call failed (AIKB down/slow/timeout).
-      // Leave the row at 'received' — the sweep will retry it. Slack still
-      // gets a prompt 200; nothing about a downstream outage is Slack's to
-      // retry, since redelivery would just hit the same dedup row anyway.
-      return { status: 200, outcome: OUTCOME.ASK_FAILED, errorCode: err.code || 'ASK_FAILED' };
-    }
-  }
-
-  /**
-   * Retry backstop (§4.8): finds slack_event_log rows stuck in
-   * received/enqueued past a timeout and retries them, bounded by
-   * SWEEP_MAX_ATTEMPTS. A row that reaches the cap is marked 'failed' and
-   * gets a best-effort "temporary failure" Slack reply so the user isn't
-   * left with silence — never re-attempted after that. A 'delivered' row is
-   * never touched, and this function never calls AIKB or Slack for one.
-   */
-  async function runDeliverySweep({ staleAfterMs = SWEEP_STALE_AFTER_MS, maxAttempts = SWEEP_MAX_ATTEMPTS } = {}) {
-    const stuckRows = await slackEventLogService.listStuckForRetry({ staleAfterMs, maxAttempts });
-    const results = [];
-
-    for (const row of stuckRows) {
-      results.push(await retryStuckRow(row, maxAttempts));
-    }
-
-    return { processed: results.length, results };
-  }
-
-  async function retryStuckRow(row, maxAttempts) {
-    const nextAttempt = (row.attempt_count || 0) + 1;
-
-    if (nextAttempt >= maxAttempts) {
-      await bestEffortFailureReply(row);
-      await slackEventLogService.markFailed(row.id, { errorCode: 'RETRY_ATTEMPTS_EXHAUSTED', attemptCount: nextAttempt });
-      return { id: row.id, outcome: 'failed' };
-    }
-
-    let connection;
-    try {
-      connection = await oauthConnectionsService.getConnectionById(row.connection_id);
-    } catch (err) {
-      await slackEventLogService.incrementAttempt(row.id);
-      return { id: row.id, outcome: 'retry_lookup_failed' };
-    }
-    if (!connection || connection.status !== 'active') {
-      await slackEventLogService.markFailed(row.id, { errorCode: 'CONNECTION_REVOKED', attemptCount: nextAttempt });
-      return { id: row.id, outcome: 'connection_revoked' };
-    }
-
-    try {
-      // Re-fetched fresh at retry time rather than snapshotted on the
-      // slack_event_log row — a settings change becoming visible on the
-      // next retry is an acceptable trade-off for this milestone's "keep it
-      // simple" scope, and avoids a schema change to slack_event_log.
-      const allowedCollectionIds = await slackCollectionAccessService.getAllowedCollectionIds(row.client_id);
-      await aikbAskClient.ask({
-        clientId: row.client_id,
-        question: row.question,
-        idempotencyKey: row.idempotency_key,
-        originMetadata: {
-          teamId: connection.external_account_id,
-          channelId: row.channel_id,
-          threadTs: row.thread_ts || row.event_ts,
-          eventId: row.external_event_id,
-        },
-        allowedCollectionIds,
+      const errorCode = err.code || 'ASK_FAILED';
+      await bestEffortTemporaryFailureReply({ connection, row, slackDeliveryService, oauthConnectionsService });
+      await slackDeliveryFailureService.finalizeDeliveryFailure({
+        row, errorCode, attemptCount: err.attempts || config.slackDelivery.maxAttempts,
       });
-      await slackEventLogService.markEnqueued(row.id);
-      await slackEventLogService.incrementAttempt(row.id);
-      return { id: row.id, outcome: 'reenqueued' };
-    } catch (err) {
-      await slackEventLogService.incrementAttempt(row.id);
-      return { id: row.id, outcome: 'ask_retry_failed' };
-    }
-  }
-
-  async function bestEffortFailureReply(row) {
-    try {
-      const connection = await oauthConnectionsService.getConnectionById(row.connection_id);
-      if (!connection || connection.status !== 'active') return;
-      const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
-      if (!credential) return;
-      await slackDeliveryService.postMessage({
-        botToken: credential.accessToken,
-        channel: row.channel_id,
-        threadTs: row.thread_ts || row.event_ts,
-        text: FALLBACK.TEMPORARY_FAILURE,
-      });
-    } catch (err) {
-      // Best-effort only — the row is marked 'failed' by the caller
-      // regardless of whether this reply succeeded.
+      return { status: 200, outcome: OUTCOME.ASK_FAILED, errorCode };
     }
   }
 
@@ -278,25 +199,62 @@ function createSlackEventsService({
     handleUrlVerification,
     resolveWorkspace,
     processEventCallback,
-    runDeliverySweep,
     OUTCOME,
   };
 }
 
 /**
  * Shared helper: posts a direct, static reply (used only for the empty-
- * question fallback, which needs no AIKB round trip) and records the
- * outcome on the slack_event_log row. Failures here are logged but never
- * thrown — Slack has already been (or is about to be) ack'd regardless.
+ * question fallback, which needs no AIKB round trip), with the same
+ * bounded, immediate retry treatment as any other Slack delivery
+ * (ADR-007). Failures here are logged but never thrown — Slack has already
+ * been (or is about to be) ack'd regardless. No AIKB-side content could
+ * exist for this row (AIKB was never called), so exhausting retries skips
+ * the AIKB redact callback.
  */
-async function replyDirectly({ connection, channel, threadTs, text, row, slackEventLogService, slackDeliveryService, oauthConnectionsService }) {
+async function replyDirectly({ connection, channel, threadTs, text, row, slackEventLogService, slackDeliveryService, oauthConnectionsService, slackDeliveryFailureService, sleep }) {
+  let credential;
   try {
-    const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
+    credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
     if (!credential) throw new Error('no credential');
-    await slackDeliveryService.postMessage({ botToken: credential.accessToken, channel, threadTs, text });
-    await slackEventLogService.markDelivered(row.id);
   } catch (err) {
-    await slackEventLogService.markFailed(row.id, { errorCode: 'EMPTY_QUESTION_REPLY_FAILED', attemptCount: 1 }).catch(() => {});
+    await slackDeliveryFailureService.finalizeDeliveryFailure({ row, errorCode: 'EMPTY_QUESTION_REPLY_FAILED', attemptCount: 0, skipAikbRedact: true });
+    return;
+  }
+
+  try {
+    const { attempts } = await retryWithBackoff(
+      () => slackDeliveryService.postMessage({ botToken: credential.accessToken, channel, threadTs, text }),
+      { attempts: config.slackDelivery.maxAttempts, backoffMs: config.slackDelivery.backoffMs, sleep }
+    );
+    await slackEventLogService.markDelivered(row.id, { attemptCount: attempts });
+  } catch (err) {
+    await slackDeliveryFailureService.finalizeDeliveryFailure({
+      row, errorCode: 'EMPTY_QUESTION_REPLY_FAILED', attemptCount: err.attempts || config.slackDelivery.maxAttempts, skipAikbRedact: true,
+    });
+  }
+}
+
+/**
+ * Best-effort only, single attempt: Slack is reachable here (unlike a real
+ * Slack-delivery failure), so a brief "couldn't complete that request"
+ * notice is worth trying once, but its outcome never changes the row's
+ * terminal state — the caller marks delivery_failed regardless.
+ */
+async function bestEffortTemporaryFailureReply({ connection, row, slackDeliveryService, oauthConnectionsService }) {
+  try {
+    if (!connection || connection.status !== 'active') return;
+    const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
+    if (!credential) return;
+    await slackDeliveryService.postMessage({
+      botToken: credential.accessToken,
+      channel: row.channel_id,
+      threadTs: row.thread_ts || row.event_ts,
+      text: FALLBACK.TEMPORARY_FAILURE,
+    });
+  } catch (err) {
+    // Best-effort only — the row is marked delivery_failed by the caller
+    // regardless of whether this reply succeeded.
   }
 }
 

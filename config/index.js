@@ -75,14 +75,23 @@ module.exports = {
     // accept-and-enqueue call to POST /api/knowledge/ask made synchronously
     // inside the Slack /events handler, before acking Slack (services/aikbAskClient.js).
     askTimeoutMs: parseInt(process.env.AIKB_ASK_TIMEOUT_MS || '4000', 10),
+    // ADR-007 — best-effort callback to AIKB's POST /api/knowledge/chat/redact
+    // once a Slack event reaches the terminal delivery_failed state
+    // (services/aikbRedactClient.js). Deliberately short: this call happens
+    // after the delivery outcome is already decided, never blocking it.
+    redactTimeoutMs: parseInt(process.env.AIKB_REDACT_TIMEOUT_MS || '4000', 10),
   },
-  // Architecture Review Phase 4, Milestone 4 (§4.8) — Vercel Cron calls the
-  // delivery sweep with this shared secret so the sweep route cannot be
-  // triggered by an arbitrary caller. Vercel sends
-  // `Authorization: Bearer <CRON_SECRET>` automatically for cron-triggered
-  // requests when CRON_SECRET is configured on the project.
-  cron: {
-    secret: process.env.CRON_SECRET,
+  // ADR-007 — bounded, immediate Slack delivery retries, replacing the
+  // removed scheduled sweep (services/retryWithBackoff.js). Every retry
+  // happens synchronously within the request/flow that triggered it; no
+  // background job or scheduler ever revisits a Slack event. See
+  // roadmap/FEATURE_BACKLOG.md item H5.
+  slackDelivery: {
+    maxAttempts: parseInt(process.env.SLACK_DELIVERY_MAX_ATTEMPTS || '3', 10),
+    backoffMs: (process.env.SLACK_DELIVERY_BACKOFF_MS || '2000,5000')
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n >= 0),
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,

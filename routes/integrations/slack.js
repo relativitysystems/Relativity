@@ -17,7 +17,6 @@ const slackEventsService = require('../../services/slackEventsService');
 const slackDeliverService = require('../../services/slackDeliverService');
 const slackCollectionAccessService = require('../../services/slackCollectionAccessService');
 const { verifySlackSignatureMiddleware } = require('../../services/slackSignatureService');
-const { requireConfiguredCronSecret } = require('../../services/cronSweepAuthService');
 
 const OWNER_ADMIN = ['owner', 'admin'];
 
@@ -203,34 +202,11 @@ router.post('/deliver', requireServiceRequest, async (req, res) => {
   }
 });
 
-/**
- * GET /api/integrations/slack/sweep
- * Retry backstop for events stuck in received/enqueued past a timeout
- * (§4.8). No Vercel Cron entry currently exists for this route — the
- * project's Vercel plan rejected the originally planned five-minute
- * schedule, and the crons entry was removed from vercel.json rather than
- * downgraded (see the Milestone 4 "Production deployment" note in
- * architecture_review_report.md). Automated sweeping is therefore
- * currently disabled; this route only runs when an operator or a future
- * external scheduler calls it directly with a correctly configured
- * CRON_SECRET.
- *
- * Secure-by-default (fail-closed): requireConfiguredCronSecret
- * (services/cronSweepAuthService.js) returns 503 when CRON_SECRET is
- * unset/blank — the endpoint must never run unauthenticated merely because
- * its secret is missing — and 401 for any missing/malformed/incorrect
- * Authorization header. Only a request that passes both checks reaches
- * this handler's sweep call.
- */
-router.get('/sweep', requireConfiguredCronSecret, async (req, res) => {
-  try {
-    const summary = await slackEventsService.runDeliverySweep();
-    logSlackEvent({ outcome: 'sweep_complete', processed: summary.processed });
-    return res.json({ ok: true, processed: summary.processed });
-  } catch (err) {
-    console.error('[slack sweep] error:', err.code || 'unknown');
-    return res.status(500).json({ error: 'Sweep failed.' });
-  }
-});
+// GET /api/integrations/slack/sweep has been removed (ADR-007). Slack
+// delivery no longer relies on a scheduled recovery sweep: bounded,
+// immediate, in-flow retries plus a terminal `delivery_failed` status
+// (services/slackEventsService.js, services/slackDeliverService.js) replace
+// it entirely. See decisions/ADR-007-SLACK-BOUNDED-DELIVERY-RETRY.md and
+// roadmap/FEATURE_BACKLOG.md item H5 in the Architecture repository.
 
 module.exports = router;

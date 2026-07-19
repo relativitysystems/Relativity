@@ -199,25 +199,35 @@ test('getByIdempotencyKey finds the row created for that key', async () => {
   assert.equal(found.idempotency_key, 'slack:Ev001');
 });
 
-test('listStuckForRetry only returns received/enqueued rows past the stale threshold, under the attempt cap', async () => {
+test('markDeliveryFailed sets the terminal status, redacts the question, and retains dedup/audit metadata (ADR-007)', async () => {
   const { client } = createFakeSlackEventLogTable();
   const service = createSlackEventLogService(client);
+  const { row } = await service.insertReceived(BASE_ROW);
 
-  const stale = new Date(Date.now() - 60_000).toISOString();
-  const fresh = new Date().toISOString();
+  const failed = await service.markDeliveryFailed(row.id, { errorCode: 'SLACK_DELIVERY_NOT_OK', attemptCount: 3 });
 
-  const { row: staleReceived } = await service.insertReceived({ ...BASE_ROW, externalEventId: 'Ev-stale', idempotencyKey: 'slack:Ev-stale' });
-  staleReceived.received_at = stale;
-  const { row: freshReceived } = await service.insertReceived({ ...BASE_ROW, externalEventId: 'Ev-fresh', idempotencyKey: 'slack:Ev-fresh' });
-  freshReceived.received_at = fresh;
-  const { row: staleDelivered } = await service.insertReceived({ ...BASE_ROW, externalEventId: 'Ev-delivered', idempotencyKey: 'slack:Ev-delivered' });
-  staleDelivered.received_at = stale;
-  staleDelivered.status = STATUS.DELIVERED;
+  assert.equal(failed.status, STATUS.DELIVERY_FAILED);
+  assert.equal(failed.error_code, 'SLACK_DELIVERY_NOT_OK');
+  assert.equal(failed.attempt_count, 3);
+  assert.equal(failed.question, null, 'customer content must be redacted on reaching the terminal state');
+  assert.ok(failed.failed_at);
 
-  const stuck = await service.listStuckForRetry({ staleAfterMs: 30_000, maxAttempts: 3 });
-  const ids = stuck.map((r) => r.external_event_id);
+  // Technical/dedup metadata survives redaction (ADR-007).
+  assert.equal(failed.external_event_id, 'Ev001');
+  assert.equal(failed.client_id, 'client-1');
+  assert.equal(failed.idempotency_key, 'slack:Ev001');
+});
 
-  assert.ok(ids.includes('Ev-stale'));
-  assert.ok(!ids.includes('Ev-fresh'), 'fresh rows should not be retried yet');
-  assert.ok(!ids.includes('Ev-delivered'), 'a delivered row must never be reprocessed by the sweep');
+test('markDeliveryFailed is distinct from the generic markFailed status', async () => {
+  const { client } = createFakeSlackEventLogTable();
+  const service = createSlackEventLogService(client);
+  const { row: row1 } = await service.insertReceived(BASE_ROW);
+  const { row: row2 } = await service.insertReceived({ ...BASE_ROW, externalEventId: 'Ev002', idempotencyKey: 'slack:Ev002' });
+
+  const generic = await service.markFailed(row1.id, { errorCode: 'CONNECTION_REVOKED' });
+  const terminal = await service.markDeliveryFailed(row2.id, { errorCode: 'SLACK_DELIVERY_NOT_OK', attemptCount: 3 });
+
+  assert.equal(generic.status, STATUS.FAILED);
+  assert.notEqual(generic.status, terminal.status);
+  assert.equal(terminal.status, 'delivery_failed');
 });

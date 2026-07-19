@@ -7,6 +7,19 @@
 // Factory pattern + DI'd Supabase client, matching this repo's existing
 // convention (services/oauthConnectionsService.js) so every function here is
 // unit-testable without a real database.
+//
+// TODO(ADR-007 metadata retention): once a row reaches a terminal status
+// (delivered/failed/delivery_failed), only technical/dedup metadata remains
+// (customer content is already redacted on delivery_failed — see
+// markDeliveryFailed below). ADR-007 recommends retaining that metadata for
+// roughly 30 days, then allowing cleanup — but this is explicitly NOT a
+// scheduled Slack delivery retry (which ADR-007 forbids), just routine data
+// hygiene, and no such mechanism (cron, Inngest cron trigger, Supabase
+// pg_cron, etc.) currently exists in either repository. Do not build one
+// speculatively as part of unrelated work — implement it as its own
+// reviewed change, consistent with whatever general retention/cleanup
+// approach the platform adopts, rather than inventing a Slack-specific one
+// here.
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
@@ -19,6 +32,12 @@ const STATUS = Object.freeze({
   ANSWERED: 'answered',
   DELIVERED: 'delivered',
   FAILED: 'failed',
+  // ADR-007 — terminal state for a Slack delivery that exhausted its bounded
+  // in-flow retries (or could never be attempted, e.g. a revoked
+  // connection). Distinct from FAILED, which remains the AIKB-generation-
+  // failure-notification path's status (unchanged by ADR-007 — see
+  // slackDeliverService.js). Never revisited by any scheduled process.
+  DELIVERY_FAILED: 'delivery_failed',
 });
 
 // Postgres unique_violation.
@@ -130,14 +149,17 @@ function createSlackEventLogService(client) {
     return data || null;
   }
 
-  async function markDelivered(id, { responseMetadata = null } = {}) {
+  async function markDelivered(id, { responseMetadata = null, attemptCount } = {}) {
+    const update = {
+      status: STATUS.DELIVERED,
+      completed_at: new Date().toISOString(),
+      response_metadata: responseMetadata,
+    };
+    if (typeof attemptCount === 'number') update.attempt_count = attemptCount;
+
     const { data, error } = await client
       .from('slack_event_log')
-      .update({
-        status: STATUS.DELIVERED,
-        completed_at: new Date().toISOString(),
-        response_metadata: responseMetadata,
-      })
+      .update(update)
       .eq('id', id)
       .select()
       .maybeSingle();
@@ -163,42 +185,33 @@ function createSlackEventLogService(client) {
     return data || null;
   }
 
-  async function incrementAttempt(id) {
-    const { data: current, error: readError } = await client
-      .from('slack_event_log')
-      .select('attempt_count')
-      .eq('id', id)
-      .maybeSingle();
-    if (readError) throw new Error(`incrementAttempt read failed: ${readError.message}`);
-    if (!current) return null;
+  /**
+   * Terminal state (ADR-007): every bounded Slack-delivery retry attempt
+   * failed, or delivery was never possible (e.g. a revoked connection).
+   * Redacts the row's own customer content — the Slack user's question — in
+   * the same UPDATE that transitions status, so a row is never observably
+   * 'delivery_failed' with `question` still attached. Technical/dedup
+   * metadata (external_event_id, client_id, attempt_count, error_code,
+   * failed_at) is retained, per ADR-007. Corresponding AIKB-side chat
+   * content is redacted separately — see services/slackDeliveryFailureService.js.
+   */
+  async function markDeliveryFailed(id, { errorCode, attemptCount } = {}) {
+    const update = {
+      status: STATUS.DELIVERY_FAILED,
+      failed_at: new Date().toISOString(),
+      error_code: errorCode || 'UNKNOWN_ERROR',
+      question: null,
+    };
+    if (typeof attemptCount === 'number') update.attempt_count = attemptCount;
 
     const { data, error } = await client
       .from('slack_event_log')
-      .update({ attempt_count: (current.attempt_count || 0) + 1 })
+      .update(update)
       .eq('id', id)
       .select()
       .maybeSingle();
-    if (error) throw new Error(`incrementAttempt failed: ${error.message}`);
+    if (error) throw new Error(`markDeliveryFailed failed: ${error.message}`);
     return data || null;
-  }
-
-  /**
-   * Rows the sweep should retry: stuck in received/enqueued past
-   * `staleAfterMs`, under the attempt cap. Never returns a delivered or
-   * failed row.
-   */
-  async function listStuckForRetry({ staleAfterMs, maxAttempts, limit = 25 }) {
-    const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
-    const { data, error } = await client
-      .from('slack_event_log')
-      .select('*')
-      .in('status', [STATUS.RECEIVED, STATUS.ENQUEUED])
-      .lt('received_at', cutoff)
-      .lt('attempt_count', maxAttempts)
-      .order('received_at', { ascending: true })
-      .limit(limit);
-    if (error) throw new Error(`listStuckForRetry failed: ${error.message}`);
-    return data || [];
   }
 
   return {
@@ -209,8 +222,7 @@ function createSlackEventLogService(client) {
     claimForDelivery,
     markDelivered,
     markFailed,
-    incrementAttempt,
-    listStuckForRetry,
+    markDeliveryFailed,
   };
 }
 

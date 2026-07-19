@@ -1,11 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createSlackEventsService, OUTCOME } = require('../services/slackEventsService');
+const { createSlackDeliveryFailureService } = require('../services/slackDeliveryFailureService');
 
 const CLIENT_ID = 'client-1';
 const CONNECTION_ID = 'conn-1';
 const TEAM_ID = 'T12345';
 const BOT_USER_ID = 'U0BOT';
+const NO_OP_SLEEP = async () => {};
 
 function activeConnection(overrides = {}) {
   return {
@@ -50,13 +52,18 @@ function createFakeSlackEventLog(initial = {}) {
       const key = `slack:${params.externalEventId}`;
       const existing = [...rows.values()].find((r) => r.external_event_id === params.externalEventId);
       if (existing) return { inserted: false, row: existing };
-      const row = { id: String(nextId++), status: 'received', channel_id: params.channelId, thread_ts: params.threadTs, event_ts: params.eventTs, external_event_id: params.externalEventId, client_id: params.clientId, connection_id: params.connectionId, ...initial };
+      const row = { id: String(nextId++), status: 'received', channel_id: params.channelId, thread_ts: params.threadTs, event_ts: params.eventTs, external_event_id: params.externalEventId, client_id: params.clientId, connection_id: params.connectionId, idempotency_key: params.idempotencyKey, ...initial };
       rows.set(row.id, row);
       return { inserted: true, row };
     },
     markEnqueued: async (id) => { const r = rows.get(id); if (r) r.status = 'enqueued'; return r; },
-    markDelivered: async (id) => { const r = rows.get(id); if (r) r.status = 'delivered'; return r; },
+    markDelivered: async (id, opts) => { const r = rows.get(id); if (r) { r.status = 'delivered'; if (opts && typeof opts.attemptCount === 'number') r.attempt_count = opts.attemptCount; } return r; },
     markFailed: async (id, opts) => { const r = rows.get(id); if (r) { r.status = 'failed'; r.error_code = opts.errorCode; } return r; },
+    markDeliveryFailed: async (id, opts) => {
+      const r = rows.get(id);
+      if (r) { r.status = 'delivery_failed'; r.error_code = opts.errorCode; r.attempt_count = opts.attemptCount; r.question = null; }
+      return r;
+    },
     _rows: rows,
   };
 }
@@ -72,21 +79,38 @@ function createFakeSupabaseService({ client = activeClient() } = {}) {
   return { getClientById: async () => client };
 }
 
-function createFakeAikbAskClient({ shouldFail = false } = {}) {
+function createFakeAikbAskClient({ failCount = 0, shouldFail = false } = {}) {
   const calls = [];
+  const totalFailures = shouldFail ? Infinity : failCount;
   return {
     calls,
     ask: async (params) => {
       calls.push(params);
-      if (shouldFail) throw Object.assign(new Error('down'), { code: 'AIKB_ASK_HTTP_ERROR' });
+      if (calls.length <= totalFailures) throw Object.assign(new Error('down'), { code: 'AIKB_ASK_HTTP_ERROR' });
       return { accepted: true, eventId: 'aikb-evt-1' };
     },
   };
 }
 
-function createFakeSlackDeliveryService() {
+function createFakeSlackDeliveryService({ failCount = 0 } = {}) {
   const calls = [];
-  return { calls, postMessage: async (params) => { calls.push(params); return { ts: '1.0', channel: params.channel }; } };
+  return {
+    calls,
+    postMessage: async (params) => {
+      calls.push(params);
+      if (calls.length <= failCount) throw Object.assign(new Error('failed'), { code: 'SLACK_DELIVERY_HTTP_ERROR' });
+      return { ts: '1.0', channel: params.channel };
+    },
+  };
+}
+
+function createFakeAikbRedactClient() {
+  const calls = [];
+  return { calls, redact: async (params) => { calls.push(params); return { redacted: true }; } };
+}
+
+function buildDeliveryFailureService({ slackEventLogService, aikbRedactClient = createFakeAikbRedactClient() }) {
+  return createSlackDeliveryFailureService({ slackEventLogService, aikbRedactClient });
 }
 
 // Milestone 5: processEventCallback/retryStuckRow look up the org's
@@ -106,7 +130,7 @@ test('a valid app_mention with a real question resolves the workspace, dedupes, 
   const supabaseService = createFakeSupabaseService();
   const slackDeliveryService = createFakeSlackDeliveryService();
 
-  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService, slackCollectionAccessService: createFakeSlackCollectionAccessService(['col-general']) });
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP, slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService, slackCollectionAccessService: createFakeSlackCollectionAccessService(['col-general']) });
   const result = await service.processEventCallback(baseEventCallback());
 
   assert.equal(result.outcome, OUTCOME.ENQUEUED);
@@ -122,7 +146,7 @@ test('never trusts a client/organization id from the Slack payload — only from
   const aikbAskClient = createFakeAikbAskClient();
   const oauthConnectionsService = createFakeOauthConnectionsService();
   const supabaseService = createFakeSupabaseService();
-  const service = createSlackEventsService({ slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService: createFakeSlackDeliveryService(), slackCollectionAccessService: createFakeSlackCollectionAccessService() });
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP, slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService: createFakeSlackDeliveryService(), slackCollectionAccessService: createFakeSlackCollectionAccessService() });
 
   const spoofed = baseEventCallback({ client_id: 'attacker-supplied-client-id', organization_id: 'attacker-org' });
   await service.processEventCallback(spoofed);
@@ -133,7 +157,7 @@ test('never trusts a client/organization id from the Slack payload — only from
 test('a duplicate event_id is deduped and never calls AIKB twice', async () => {
   const slackEventLogService = createFakeSlackEventLog();
   const aikbAskClient = createFakeAikbAskClient();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService, aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
@@ -151,7 +175,7 @@ test('a duplicate event_id is deduped and never calls AIKB twice', async () => {
 
 test('an unknown workspace (no active connection) is safely rejected, no AIKB call', async () => {
   const aikbAskClient = createFakeAikbAskClient();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient,
     oauthConnectionsService: { getActiveConnectionByExternalAccount: async () => null },
@@ -166,7 +190,7 @@ test('an unknown workspace (no active connection) is safely rejected, no AIKB ca
 });
 
 test('an ambiguous mapping (lookup throws) is rejected the same as unknown, never leaks the error', async () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: { getActiveConnectionByExternalAccount: async () => { throw new Error('PGRST116: more than one row returned'); } },
@@ -181,7 +205,7 @@ test('an ambiguous mapping (lookup throws) is rejected the same as unknown, neve
 
 test('an inactive organization is rejected, no AIKB call', async () => {
   const aikbAskClient = createFakeAikbAskClient();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -197,7 +221,7 @@ test('an inactive organization is rejected, no AIKB call', async () => {
 
 test('a bot-generated event is ignored', async () => {
   const aikbAskClient = createFakeAikbAskClient();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -213,7 +237,7 @@ test('a bot-generated event is ignored', async () => {
 
 test('a self-generated event (from RelativityBot itself) is ignored', async () => {
   const aikbAskClient = createFakeAikbAskClient();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -228,7 +252,7 @@ test('a self-generated event (from RelativityBot itself) is ignored', async () =
 });
 
 test('an unsupported event type is ignored', async () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -242,7 +266,7 @@ test('an unsupported event type is ignored', async () => {
 });
 
 test('an edited-message subtype is ignored', async () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -256,7 +280,7 @@ test('an edited-message subtype is ignored', async () => {
 });
 
 test('a malformed payload (missing team_id) is safely ignored', async () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -270,7 +294,7 @@ test('a malformed payload (missing team_id) is safely ignored', async () => {
 });
 
 test('a malformed payload (missing event) is safely ignored', async () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -283,10 +307,32 @@ test('a malformed payload (missing event) is safely ignored', async () => {
   assert.equal(result.outcome, OUTCOME.MALFORMED);
 });
 
+test('a Slack resend after the original event already reached delivery_failed is still deduped, never reprocessed', async () => {
+  const slackEventLogService = createFakeSlackEventLog();
+  const aikbAskClient = createFakeAikbAskClient({ shouldFail: true });
+  const service = createSlackEventsService({
+    sleep: NO_OP_SLEEP,
+    slackEventLogService, aikbAskClient,
+    oauthConnectionsService: createFakeOauthConnectionsService(),
+    supabaseService: createFakeSupabaseService(),
+    slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
+    slackDeliveryFailureService: buildDeliveryFailureService({ slackEventLogService }),
+  });
+
+  const first = await service.processEventCallback(baseEventCallback());
+  assert.equal(first.outcome, OUTCOME.ASK_FAILED);
+  assert.equal([...slackEventLogService._rows.values()][0].status, 'delivery_failed');
+
+  const resend = await service.processEventCallback(baseEventCallback());
+  assert.equal(resend.outcome, OUTCOME.DUPLICATE);
+  assert.equal(aikbAskClient.calls.length, 3, 'the resend must never call AIKB again — only the original 3 bounded attempts happened');
+});
+
 test('an empty mention (no question) never calls AIKB and replies directly with the safe fallback', async () => {
   const aikbAskClient = createFakeAikbAskClient();
   const slackDeliveryService = createFakeSlackDeliveryService();
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -303,7 +349,7 @@ test('an empty mention (no question) never calls AIKB and replies directly with 
 });
 
 test('url_verification returns the exact challenge value', () => {
-  const service = createSlackEventsService({
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
     slackEventLogService: createFakeSlackEventLog(),
     aikbAskClient: createFakeAikbAskClient(),
     oauthConnectionsService: createFakeOauthConnectionsService(),
@@ -316,10 +362,11 @@ test('url_verification returns the exact challenge value', () => {
   assert.deepEqual(result, { challenge: 'abc123' });
 });
 
-test('an AIKB /ask failure never throws — the row stays retryable and Slack still gets ack\'d', async () => {
+test('AIKB /ask retry success: the first accept-and-enqueue attempt fails, the second succeeds', async () => {
   const slackEventLogService = createFakeSlackEventLog();
-  const aikbAskClient = createFakeAikbAskClient({ shouldFail: true });
+  const aikbAskClient = createFakeAikbAskClient({ failCount: 1 });
   const service = createSlackEventsService({
+    sleep: NO_OP_SLEEP,
     slackEventLogService, aikbAskClient,
     oauthConnectionsService: createFakeOauthConnectionsService(),
     supabaseService: createFakeSupabaseService(),
@@ -328,6 +375,82 @@ test('an AIKB /ask failure never throws — the row stays retryable and Slack st
   });
 
   const result = await service.processEventCallback(baseEventCallback());
+  assert.equal(result.outcome, OUTCOME.ENQUEUED);
+  assert.equal(aikbAskClient.calls.length, 2, 'exactly one retry should have occurred');
+  assert.equal([...slackEventLogService._rows.values()][0].status, 'enqueued');
+});
+
+test('AIKB /ask terminal failure: all 3 attempts fail — best-effort Slack notice, delivery_failed, redaction, AIKB never processed', async () => {
+  const slackEventLogService = createFakeSlackEventLog();
+  const aikbAskClient = createFakeAikbAskClient({ shouldFail: true });
+  const slackDeliveryService = createFakeSlackDeliveryService();
+  const aikbRedactClient = createFakeAikbRedactClient();
+  const service = createSlackEventsService({
+    sleep: NO_OP_SLEEP,
+    slackEventLogService, aikbAskClient,
+    oauthConnectionsService: createFakeOauthConnectionsService(),
+    supabaseService: createFakeSupabaseService(),
+    slackDeliveryService,
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
+    slackDeliveryFailureService: buildDeliveryFailureService({ slackEventLogService, aikbRedactClient }),
+  });
+
+  const result = await service.processEventCallback(baseEventCallback());
+
   assert.equal(result.status, 200);
   assert.equal(result.outcome, OUTCOME.ASK_FAILED);
+  assert.equal(aikbAskClient.calls.length, 3, 'exactly 3 total attempts: initial + retry #1 + retry #2');
+
+  const row = [...slackEventLogService._rows.values()][0];
+  assert.equal(row.status, 'delivery_failed');
+  assert.equal(row.attempt_count, 3);
+  assert.equal(row.question, null, 'the stored question must be redacted on terminal failure');
+
+  assert.equal(slackDeliveryService.calls.length, 1, 'a best-effort "couldn\'t complete that request" notice is sent since Slack itself is reachable');
+  assert.equal(slackDeliveryService.calls[0].text, "I couldn't complete that request right now. Please try again shortly.");
+
+  assert.deepEqual(aikbRedactClient.calls, [{ clientId: CLIENT_ID, idempotencyKey: 'slack:Ev001' }]);
+});
+
+test('an empty mention: a transient delivery failure is retried and still succeeds', async () => {
+  const slackEventLogService = createFakeSlackEventLog();
+  const slackDeliveryService = createFakeSlackDeliveryService({ failCount: 1 });
+  const service = createSlackEventsService({
+    sleep: NO_OP_SLEEP,
+    slackEventLogService,
+    aikbAskClient: createFakeAikbAskClient(),
+    oauthConnectionsService: createFakeOauthConnectionsService(),
+    supabaseService: createFakeSupabaseService(),
+    slackDeliveryService,
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
+  });
+
+  const result = await service.processEventCallback(baseEventCallback({ event: { text: `<@${BOT_USER_ID}>` } }));
+  assert.equal(result.outcome, OUTCOME.EMPTY_QUESTION);
+  assert.equal(slackDeliveryService.calls.length, 2);
+  assert.equal([...slackEventLogService._rows.values()][0].status, 'delivered');
+});
+
+test('an empty mention: all 3 reply attempts fail — the row reaches delivery_failed with no AIKB redact call (AIKB was never reached)', async () => {
+  const slackEventLogService = createFakeSlackEventLog();
+  const slackDeliveryService = createFakeSlackDeliveryService({ failCount: 3 });
+  const aikbRedactClient = createFakeAikbRedactClient();
+  const service = createSlackEventsService({
+    sleep: NO_OP_SLEEP,
+    slackEventLogService,
+    aikbAskClient: createFakeAikbAskClient(),
+    oauthConnectionsService: createFakeOauthConnectionsService(),
+    supabaseService: createFakeSupabaseService(),
+    slackDeliveryService,
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
+    slackDeliveryFailureService: buildDeliveryFailureService({ slackEventLogService, aikbRedactClient }),
+  });
+
+  const result = await service.processEventCallback(baseEventCallback({ event: { text: `<@${BOT_USER_ID}>` } }));
+  assert.equal(result.outcome, OUTCOME.EMPTY_QUESTION);
+  assert.equal(slackDeliveryService.calls.length, 3);
+
+  const row = [...slackEventLogService._rows.values()][0];
+  assert.equal(row.status, 'delivery_failed');
+  assert.equal(aikbRedactClient.calls.length, 0, 'no AIKB session could exist for an empty-question reply');
 });

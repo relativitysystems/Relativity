@@ -11,7 +11,10 @@
 const defaultOauthConnectionsService = require('./oauthConnectionsService');
 const defaultSlackEventLogService = require('./slackEventLogService');
 const defaultSlackDeliveryService = require('./slackDeliveryService');
+const defaultSlackDeliveryFailureService = require('./slackDeliveryFailureService');
 const { formatSlackMessage, FALLBACK } = require('./slackAnswerFormatter');
+const { retryWithBackoff } = require('./retryWithBackoff');
+const config = require('../config');
 
 const RESULT = Object.freeze({
   DELIVERED: 'delivered',
@@ -26,6 +29,8 @@ function createSlackDeliverService({
   oauthConnectionsService = defaultOauthConnectionsService,
   slackEventLogService = defaultSlackEventLogService,
   slackDeliveryService = defaultSlackDeliveryService,
+  slackDeliveryFailureService = defaultSlackDeliveryFailureService,
+  sleep,
 } = {}) {
   /**
    * @param {object} params
@@ -52,38 +57,91 @@ function createSlackDeliverService({
       return { result: RESULT.ALREADY_PROCESSED };
     }
 
+    // ADR-007: AIKB generation failure vs. Slack delivery failure are
+    // handled differently, and must stay distinguishable. A real generated
+    // answer gets bounded, immediate in-flow retries and lands on the
+    // terminal delivery_failed status (with redaction) if every attempt
+    // fails. An AIKB-generation-failure notification is unchanged from
+    // before this ADR: a single attempt, the existing generic 'failed'
+    // status, and no redaction (there is no answer to redact).
+    const isAnswerDelivery = !(payload && payload.error === true);
+
     const connection = await oauthConnectionsService.getConnectionById(row.connection_id);
     if (!connection || connection.status !== 'active') {
-      await slackEventLogService.markFailed(row.id, { errorCode: 'CONNECTION_REVOKED' });
+      if (isAnswerDelivery) {
+        await slackDeliveryFailureService.finalizeDeliveryFailure({ row, errorCode: 'CONNECTION_REVOKED', attemptCount: 0 });
+      } else {
+        await slackEventLogService.markFailed(row.id, { errorCode: 'CONNECTION_REVOKED' });
+      }
       return { result: RESULT.CONNECTION_REVOKED };
     }
 
-    const text = payload && payload.error === true
-      ? FALLBACK.TEMPORARY_FAILURE
-      : formatSlackMessage({
+    const text = isAnswerDelivery
+      ? formatSlackMessage({
         answer: payload && payload.answer,
         sources: payload && payload.sources,
         isKnowledgeGap: !!(payload && payload.isKnowledgeGap),
-      });
+      })
+      : FALLBACK.TEMPORARY_FAILURE;
 
+    let credential;
     try {
-      const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
+      credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
       if (!credential) throw new Error('no credential');
+    } catch (err) {
+      const errorCode = err.code || 'SLACK_DELIVERY_FAILED';
+      if (isAnswerDelivery) {
+        await slackDeliveryFailureService.finalizeDeliveryFailure({ row, errorCode, attemptCount: 0 });
+      } else {
+        await slackEventLogService.markFailed(row.id, { errorCode });
+      }
+      return { result: RESULT.DELIVERY_FAILED, errorCode };
+    }
 
-      await slackDeliveryService.postMessage({
-        botToken: credential.accessToken,
-        channel: row.channel_id,
-        threadTs: row.thread_ts || row.event_ts,
-        text,
-      });
+    if (!isAnswerDelivery) {
+      // AIKB generation failure notification (ADR-007: "Do not change the
+      // documented behavior") — single attempt, no retry, existing 'failed'
+      // status on failure, never delivery_failed.
+      try {
+        await slackDeliveryService.postMessage({
+          botToken: credential.accessToken,
+          channel: row.channel_id,
+          threadTs: row.thread_ts || row.event_ts,
+          text,
+        });
+        await slackEventLogService.markDelivered(row.id, { responseMetadata: { isKnowledgeGap: false } });
+        return { result: RESULT.DELIVERED };
+      } catch (err) {
+        await slackEventLogService.markFailed(row.id, { errorCode: err.code || 'SLACK_DELIVERY_FAILED' });
+        return { result: RESULT.DELIVERY_FAILED, errorCode: err.code || 'SLACK_DELIVERY_FAILED' };
+      }
+    }
+
+    // Real answer delivery — bounded, immediate in-flow retries (ADR-007).
+    try {
+      const { attempts } = await retryWithBackoff(
+        () => slackDeliveryService.postMessage({
+          botToken: credential.accessToken,
+          channel: row.channel_id,
+          threadTs: row.thread_ts || row.event_ts,
+          text,
+        }),
+        { attempts: config.slackDelivery.maxAttempts, backoffMs: config.slackDelivery.backoffMs, sleep }
+      );
 
       await slackEventLogService.markDelivered(row.id, {
         responseMetadata: { isKnowledgeGap: !!(payload && payload.isKnowledgeGap) },
+        attemptCount: attempts,
       });
       return { result: RESULT.DELIVERED };
     } catch (err) {
-      await slackEventLogService.markFailed(row.id, { errorCode: err.code || 'SLACK_DELIVERY_FAILED' });
-      return { result: RESULT.DELIVERY_FAILED, errorCode: err.code || 'SLACK_DELIVERY_FAILED' };
+      const errorCode = err.code || 'SLACK_DELIVERY_FAILED';
+      await slackDeliveryFailureService.finalizeDeliveryFailure({
+        row,
+        errorCode,
+        attemptCount: err.attempts || config.slackDelivery.maxAttempts,
+      });
+      return { result: RESULT.DELIVERY_FAILED, errorCode };
     }
   }
 

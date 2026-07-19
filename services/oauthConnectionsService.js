@@ -167,9 +167,9 @@ function createOauthConnectionsService(client) {
   /**
    * Metadata-only lookup by connection id (never touches oauth_credentials).
    * Added for Architecture Review Phase 4, Milestone 4 — the Slack delivery
-   * path (§4.13) and the delivery sweep (§4.8) both need to re-verify a
-   * specific connection is still active without going back through the
-   * team_id/client_id lookups.
+   * path (§4.13), and its bounded in-flow retries (ADR-007), need to
+   * re-verify a specific connection is still active without going back
+   * through the team_id/client_id lookups.
    */
   async function getConnectionById(connectionId) {
     if (!connectionId) throw new Error('getConnectionById requires connectionId');
