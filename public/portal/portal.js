@@ -492,14 +492,6 @@
     });
   }
 
-  // Chat welcome chips — fill textarea on click, no auto-submit
-  document.querySelectorAll('.chat-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      kbQueryInput.value = chip.textContent.trim();
-      adjustQueryHeight();
-      kbQueryInput.focus();
-    });
-  });
   updateChatWelcome();
 
   kbClearHistoryBtn.addEventListener('click', async () => {
@@ -1925,8 +1917,6 @@
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.text) {
-      // TEMP DEBUG — surfaces the exact backend error/status during development.
-      console.error('[voice] /api/voice/transcribe failed:', res.status, body);
       throw new Error(body.error || 'Transcription failed. Please try again.');
     }
     return body.text;

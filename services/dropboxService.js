@@ -38,24 +38,7 @@ async function refreshAccessToken(refreshToken) {
   return response.data;
 }
 
-// Legacy — used by /api/dropbox/files/:clientId (n8n route)
-async function listFiles(accessToken, path = '') {
-  const response = await axios.post(
-    'https://api.dropboxapi.com/2/files/list_folder',
-    { path, recursive: false },
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  return response.data.entries;
-}
-
 module.exports = {
   exchangeCodeForToken,
   refreshAccessToken,
-  listFiles,
 };

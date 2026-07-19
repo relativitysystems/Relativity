@@ -332,13 +332,6 @@ router.post('/voice/transcribe', clientAuth, (req, res, next) => {
     next();
   });
 }, async (req, res) => {
-  // TEMP DEBUG — confirms the browser actually sent audio and what format it's in.
-  console.log('[voice] uploaded file:', {
-    mimetype: req.file?.mimetype,
-    size: req.file?.size,
-    originalname: req.file?.originalname,
-  });
-
   if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
     return res.status(400).json({ error: 'No audio provided.' });
   }
@@ -350,16 +343,7 @@ router.post('/voice/transcribe', clientAuth, (req, res, next) => {
     }
     res.json({ text });
   } catch (err) {
-    // TEMP DEBUG — full error shape so OpenAI SDK failures are diagnosable (model access,
-    // invalid file format, quota, etc.) instead of just a generic message.
-    console.error('POST /api/voice/transcribe error:', {
-      message: err.message,
-      status: err.status,
-      code: err.code,
-      type: err.type,
-      response: err.response?.data,
-      stack: err.stack,
-    });
+    console.error('POST /api/voice/transcribe error:', err.message);
 
     if (err.code === 'OPENAI_NOT_CONFIGURED') {
       return res.status(500).json({ error: 'Voice transcription is not configured on the server.' });
