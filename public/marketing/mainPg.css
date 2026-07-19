@@ -303,17 +303,12 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   flex-wrap: wrap;
 }
 
-/* === Proof panel — used in the hero and the demonstration section === */
+/* === Proof panel — used in the hero and feature mockups === */
 .proof-panel {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   padding: 28px 28px 24px;
-}
-
-.proof-panel--wide {
-  max-width: 760px;
-  margin: 0 auto;
 }
 
 .proof-context {
@@ -368,12 +363,6 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   margin-right: 10px;
 }
 
-.proof-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 22px 0;
-}
-
 /* ============================================================
    STORY CHAPTERS (Problem / Philosophy / Solution / Demo / Growing)
    ============================================================ */
@@ -409,35 +398,304 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   color: var(--text);
 }
 
-/* Solution — three short statements, typographic only, no boxes */
-.solution-points {
-  display: flex;
-  gap: 0;
-  margin: 40px 0;
+/* Problem — lead statement, prominent but subordinate to the hero h1 */
+.problem-lead {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 500;
+  font-size: clamp(1.3rem, 2.2vw, 1.6rem);
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+/* ============================================================
+   FEATURE CHAPTER ("Built for how company knowledge actually works")
+   Large editorial rows, alternating text/visual — no card grids.
+   ============================================================ */
+.feature-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+  padding: 100px 0;
+}
+
+.feature-row:not(:first-child) {
   border-top: 1px solid var(--border);
+}
+
+.feature-row--reverse .feature-text {
+  order: 2;
+}
+
+.feature-row--reverse .feature-visual {
+  order: 1;
+}
+
+.feature-heading {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 18px;
+}
+
+.feature-text p {
+  font-size: 1.05rem;
+  line-height: 1.85;
+  color: var(--text-secondary);
+  max-width: 460px;
+}
+
+.feature-visual {
+  min-width: 0;
+}
+
+/* Feature mockups reuse .proof-panel for visual consistency with the hero */
+.mock-caption {
+  margin-top: 16px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Slack mockup */
+.mock-slack__channel {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+}
+
+.mock-slack__msg {
+  margin-bottom: 18px;
+}
+
+.mock-slack__msg:last-child {
+  margin-bottom: 0;
+}
+
+.mock-slack__author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+
+.mock-slack__app-tag {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.mock-slack__msg p {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.mock-slack__msg--user p {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mock-slack__msg--bot {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.mock-slack__msg--bot .proof-cite {
+  display: block;
+  margin-top: 10px;
+}
+
+/* Google Drive import mockup */
+.mock-import__action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 22px;
+}
+
+.mock-import__list {
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.mock-import__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.mock-import__name {
+  color: var(--text);
+}
+
+.mock-import__status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+/* Collections mockup */
+.mock-collections__list {
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.mock-collections__list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0;
   border-bottom: 1px solid var(--border);
 }
 
-.solution-point {
-  flex: 1;
-  padding: 22px 28px;
+.mock-collections__name {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: var(--text);
 }
 
-.solution-point:not(:last-child) {
+.mock-collections__count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Knowledge gap mockup */
+.mock-gap__save {
+  display: inline-block;
+  margin-top: 18px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* Onboarding mockup */
+.mock-onboarding__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mock-onboarding__list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.mock-onboarding__list li.is-done {
+  color: var(--text);
+}
+
+.mock-onboarding__list li.is-next {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mock-onboarding__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.mock-onboarding__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-hover);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   WORKFLOW ("How Relativity works today") — connected step row
+   ============================================================ */
+.workflow-steps {
+  display: flex;
+  list-style: none;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.workflow-step {
+  flex: 1;
+  padding: 28px 28px 0;
+}
+
+.workflow-step:not(:last-child) {
   border-right: 1px solid var(--border);
 }
 
-/* Demo */
-.demo-closing {
-  margin-top: 32px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.95rem;
-  font-style: italic;
+.workflow-step__num {
+  display: block;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--badge-orange);
+  margin-bottom: 14px;
+}
+
+.workflow-step h3 {
+  margin-bottom: 8px;
+}
+
+.workflow-step p {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  padding-bottom: 28px;
 }
 
 /* Growing With Your Business — editorial label/text rows, no cards */
@@ -647,18 +905,40 @@ footer {
     max-width: 100%;
   }
 
-  .solution-points {
+  .feature-row {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding: 72px 0;
+  }
+
+  .feature-row--reverse .feature-text,
+  .feature-row--reverse .feature-visual {
+    order: initial;
+  }
+
+  .feature-text p {
+    max-width: 100%;
+  }
+
+  .workflow-steps {
     flex-direction: column;
     border-bottom: none;
   }
 
-  .solution-point {
-    padding: 18px 0;
-    border-right: none !important;
+  .workflow-step {
+    padding: 24px 0 0;
+  }
+
+  .workflow-step:not(:last-child) {
+    border-right: none;
+  }
+
+  .workflow-step p {
+    padding-bottom: 24px;
     border-bottom: 1px solid var(--border);
   }
 
-  .solution-point:last-child {
+  .workflow-step:last-child p {
     border-bottom: none;
   }
 
@@ -778,9 +1058,5 @@ footer {
 
   .proof-panel {
     padding: 22px 20px 20px;
-  }
-
-  .proof-divider {
-    margin: 18px 0;
   }
 }

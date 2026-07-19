@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Relativity is knowledge infrastructure for modern businesses: a single, trusted system that turns scattered documents and conversations into cited answers your team can rely on.">
+  <meta name="description" content="Relativity is knowledge infrastructure for modern businesses: import your company's documents, organize them into searchable knowledge, and get cited answers through the portal and Slack.">
   <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="shortcut icon" href="/assets/favicon.png">
   <link rel="apple-touch-icon" href="/assets/favicon.png">
@@ -30,8 +30,8 @@
       </button>
       <ul class="nav-links">
         <li><a href="#problem">Problem</a></li>
-        <li><a href="#solution">Solution</a></li>
-        <li><a href="#demo">Product</a></li>
+        <li><a href="#built-for">Product</a></li>
+        <li><a href="#workflow">How It Works</a></li>
         <li><a href="#growing">Roadmap</a></li>
         <li><a href="#contact">Contact</a></li>
         <li><a href="/login.html">Client Portal</a></li>
@@ -45,8 +45,8 @@
     <div class="mobile-nav" id="mobileNav">
       <ul>
         <li><a href="#problem">Problem</a></li>
-        <li><a href="#solution">Solution</a></li>
-        <li><a href="#demo">Product</a></li>
+        <li><a href="#built-for">Product</a></li>
+        <li><a href="#workflow">How It Works</a></li>
         <li><a href="#growing">Roadmap</a></li>
         <li><a href="#contact">Contact</a></li>
         <li><a href="/login.html">Client Portal</a></li>
@@ -64,11 +64,11 @@
     <div class="container hero-grid">
       <div class="hero-content fade-in">
         <span class="eyebrow">Relativity Systems: Knowledge Infrastructure</span>
-        <h1>Every company builds knowledge.<br>Almost none of them keep it.</h1>
-        <p class="hero-sub">Relativity connects the documents, policies, and conversations your team already has into one trusted system, so the knowledge your business runs on doesn't depend on who happens to remember it.</p>
+        <h1>Turn scattered company knowledge into one trusted system.</h1>
+        <p class="hero-sub">Relativity brings together your company's documents, organizes them into searchable knowledge, and makes trusted answers available through the portal and Slack, with citations back to the original source.</p>
         <div class="hero-ctas">
           <a href="#contact" class="btn btn-primary">Book a Demo</a>
-          <a href="#solution" class="btn btn-ghost">See how it works &rarr;</a>
+          <a href="#built-for" class="btn btn-ghost">See how it works &rarr;</a>
         </div>
       </div>
 
@@ -92,6 +92,7 @@
         <span class="label">The Problem</span>
         <h2>Knowledge doesn't stay in one place.</h2>
       </div>
+      <p class="problem-lead fade-in">Every company builds knowledge. Almost none of them keep it.</p>
       <div class="prose fade-in">
         <p>It starts in a document, gets explained again in a meeting, and gets clarified once more in a Slack thread. Eventually it just lives in the head of whoever answered the question last.</p>
         <p>That works, until it doesn't. The person who knew the answer leaves. The thread gets buried. A newer document supersedes an older one that nobody links back. What was once known quietly becomes unknown again.</p>
@@ -107,57 +108,164 @@
     </div>
   </section>
 
-  <!-- The Solution -->
-  <section class="chapter solution" id="solution">
+  <!-- Built For How Company Knowledge Actually Works -->
+  <section class="chapter built-for" id="built-for">
     <div class="container">
       <div class="chapter-header fade-in">
-        <span class="label">The Solution</span>
-        <h2>Relativity connects your company's knowledge into one trusted system.</h2>
-      </div>
-      <div class="prose fade-in">
-        <p>Relativity turns the documents, policies, training material, and everyday conversations your team already has into a single system of record your whole business can query with confidence.</p>
-        <p>Every answer comes from something your company actually approved, never a guess. Every answer says exactly where it came from, and when the answer doesn't exist yet, Relativity says so instead of inventing one.</p>
+        <span class="label">The Product</span>
+        <h2>Built for how company knowledge actually works.</h2>
+        <p class="section-sub">Relativity isn't another place to store documents, and it isn't a chatbot bolted onto them. It's a system for organizing what your company knows, making it accessible where your team already works, and telling you honestly when it doesn't have an answer.</p>
       </div>
 
-      <div class="solution-points fade-in">
-        <div class="solution-point">Approved sources only.</div>
-        <div class="solution-point">Every answer cited.</div>
-        <div class="solution-point">Gaps surfaced, not hidden.</div>
+      <!-- Slack -->
+      <div class="feature-row fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Company knowledge, available inside Slack.</h3>
+          <p>Employees shouldn't have to leave a conversation to find an answer. Mention Relativity in any Slack channel, ask a question naturally, and get a threaded reply grounded in your company's approved knowledge, cited, and answered right where the question came up.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel mock-slack">
+            <span class="mock-slack__channel"># team-ops</span>
+            <div class="mock-slack__msg mock-slack__msg--user">
+              <span class="mock-slack__author">Priya</span>
+              <p>@Relativity what's our policy on last-minute reschedules?</p>
+            </div>
+            <div class="mock-slack__msg mock-slack__msg--bot">
+              <span class="mock-slack__author">Relativity <span class="mock-slack__app-tag">APP</span></span>
+              <p>Clients may reschedule once with at least 24 hours notice. Requests under 24 hours require manager approval.</p>
+              <span class="proof-cite">Source: Policies.pdf, p. 14</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="prose fade-in">
-        <p>This is what we mean by knowledge infrastructure: not another place to store documents, and not a chatbot bolted onto them, but a foundational layer that makes everything your company knows usable, starting today and expanding as your business does.</p>
+      <!-- Google Drive -->
+      <div class="feature-row feature-row--reverse fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Bring your existing knowledge with you.</h3>
+          <p>Import documents directly from Google Drive, or upload files manually. Relativity processes and organizes them into searchable knowledge, so teams don't have to rebuild documentation that already exists.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel mock-import">
+            <div class="mock-import__action">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+              <span>Import from Google Drive</span>
+            </div>
+            <ul class="mock-import__list">
+              <li><span class="mock-import__name">Employee_Handbook.pdf</span><span class="mock-import__status">Imported</span></li>
+              <li><span class="mock-import__name">Onboarding_Checklist.docx</span><span class="mock-import__status">Imported</span></li>
+              <li><span class="mock-import__name">Q3_Client_Policies.gdoc</span><span class="mock-import__status">Imported</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Knowledge Collections -->
+      <div class="feature-row fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Organize knowledge around how your company works.</h3>
+          <p>Group documents into named Collections, by department, workflow, or client, so large knowledge bases stay structured. Collections also help control what a connected surface like Slack can search.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel mock-collections">
+            <ul class="mock-collections__list">
+              <li><span class="mock-collections__name">HR Policies</span><span class="mock-collections__count">8 documents</span></li>
+              <li><span class="mock-collections__name">Sales Onboarding</span><span class="mock-collections__count">12 documents</span></li>
+              <li><span class="mock-collections__name">General</span><span class="mock-collections__count">24 documents</span></li>
+            </ul>
+          </div>
+          <p class="mock-caption">Collections can define which knowledge Slack is allowed to search.</p>
+        </div>
+      </div>
+
+      <!-- Knowledge Gap Detection -->
+      <div class="feature-row feature-row--reverse fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Learn what your company doesn't know.</h3>
+          <p>Relativity does more than answer questions. When it can't find enough approved information to answer confidently, it surfaces the gap instead of guessing. Save flagged gaps from the portal and build a running list of documentation your team actually needs.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel mock-gap">
+            <span class="proof-context">Asked in Slack</span>
+            <p class="proof-q">Do we offer partial refunds on group bookings?</p>
+            <p class="proof-gap"><span class="proof-gap-label">Knowledge gap</span> No approved documentation covers this yet.</p>
+            <span class="mock-gap__save">Save gap</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fast Onboarding -->
+      <div class="feature-row fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Start with what you already have.</h3>
+          <p>Upload existing files, invite your team, and start asking questions. Relativity is built to deliver value before you've connected every system, with no complex integration project required to get started.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel mock-onboarding">
+            <ul class="mock-onboarding__list">
+              <li class="is-done"><span class="mock-onboarding__check">&check;</span> Upload company documents</li>
+              <li class="is-done"><span class="mock-onboarding__check">&check;</span> Create or review Collections</li>
+              <li class="is-done"><span class="mock-onboarding__check">&check;</span> Invite your team</li>
+              <li class="is-next"><span class="mock-onboarding__arrow">&rarr;</span> Ask your first question</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trusted Answers / Citations -->
+      <div class="feature-row feature-row--reverse fade-in">
+        <div class="feature-text">
+          <h3 class="feature-heading">Answers your team can verify.</h3>
+          <p>Every response is grounded in approved company knowledge and includes a citation back to the original source, so employees can verify an answer instead of trusting an unsupported AI response.</p>
+        </div>
+        <div class="feature-visual" aria-hidden="true">
+          <div class="proof-panel">
+            <span class="proof-context">Asked in the portal</span>
+            <div class="proof-exchange">
+              <p class="proof-q">What's our process for approving a new vendor?</p>
+              <p class="proof-a">New vendors require a signed W-9 and a manager-approved intake form before an account is opened. Contracts over $10,000 also require finance sign-off.</p>
+              <span class="proof-cite">Source: Vendor_Policy.pdf, p. 3</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- Product Demonstration -->
-  <section class="chapter demo" id="demo">
+  <!-- How Relativity Works Today -->
+  <section class="chapter workflow" id="workflow">
     <div class="container">
       <div class="chapter-header fade-in">
-        <span class="label">Product Demonstration</span>
-        <h2>Here's what that looks like today.</h2>
-        <p class="section-sub">Upload the documents your team already relies on. Relativity indexes them automatically, understanding meaning rather than keywords. Ask a question in plain language, in the portal or directly in Slack, and get an answer with the exact source behind it.</p>
+        <span class="label">The Workflow</span>
+        <h2>How Relativity works today.</h2>
       </div>
-
-      <div class="proof-panel proof-panel--wide fade-in">
-        <div class="proof-exchange">
-          <span class="proof-context">Asked in the portal</span>
-          <p class="proof-q">How do we onboard a new employee?</p>
-          <p class="proof-a">New hires complete a 3-day onboarding checklist covering systems access, safety training, and a shadow shift with a senior teammate before working independently.</p>
-          <span class="proof-cite">Source: Training_Guide.pdf, p. 2</span>
-        </div>
-
-        <div class="proof-divider"></div>
-
-        <div class="proof-exchange">
-          <span class="proof-context">Asked in Slack</span>
-          <p class="proof-q">Do we offer partial refunds on group bookings?</p>
-          <p class="proof-gap"><span class="proof-gap-label">Knowledge gap</span> No approved documentation covers this yet. It's flagged instead of guessed at, so it's the next thing worth documenting.</p>
-        </div>
-      </div>
-
-      <p class="demo-closing fade-in">That's the difference between a system that sounds confident and one that's actually trustworthy.</p>
+      <ol class="workflow-steps fade-in">
+        <li class="workflow-step">
+          <span class="workflow-step__num">01</span>
+          <h3>Bring in documents</h3>
+          <p>Upload files or import from Google Drive.</p>
+        </li>
+        <li class="workflow-step">
+          <span class="workflow-step__num">02</span>
+          <h3>Organize knowledge</h3>
+          <p>Structure it into Collections.</p>
+        </li>
+        <li class="workflow-step">
+          <span class="workflow-step__num">03</span>
+          <h3>Ask from the portal or Slack</h3>
+          <p>Employees ask in plain language.</p>
+        </li>
+        <li class="workflow-step">
+          <span class="workflow-step__num">04</span>
+          <h3>Get a cited answer</h3>
+          <p>Grounded in approved knowledge, sourced.</p>
+        </li>
+        <li class="workflow-step">
+          <span class="workflow-step__num">05</span>
+          <h3>Missing knowledge gets flagged</h3>
+          <p>Gaps are surfaced and saved, not hidden.</p>
+        </li>
+      </ol>
     </div>
   </section>
 
@@ -171,12 +279,12 @@
 
       <div class="growing-block fade-in">
         <span class="growing-label">Today</span>
-        <p>Relativity already connects your documents and your team's Slack conversations into one searchable, cited knowledge system, with gaps surfaced automatically the moment they're found.</p>
+        <p>Today, Relativity turns uploaded and imported documents into searchable company knowledge, makes trusted answers available through the portal and Slack, and surfaces gaps when the available information is incomplete.</p>
       </div>
 
       <div class="growing-block fade-in">
         <span class="growing-label">What's next</span>
-        <p>We're extending that same trusted foundation to the other places knowledge already lives, so nothing important depends on a document being uploaded manually, or on someone happening to remember an answer. The goal isn't a bigger chatbot. It's institutional memory that keeps growing as your business does, becoming more valuable the longer you use it.</p>
+        <p>We're extending that foundation to more of the places company knowledge already lives. Future connected sources and knowledge surfaces will make Relativity more complete over time, without changing the principle that answers should remain grounded, scoped, and verifiable.</p>
       </div>
     </div>
   </section>
@@ -232,8 +340,8 @@
         <p class="footer-sub">Knowledge infrastructure for modern businesses.</p>
         <nav class="footer-nav">
           <a href="#problem">Problem</a>
-          <a href="#solution">Solution</a>
-          <a href="#demo">Product</a>
+          <a href="#built-for">Product</a>
+          <a href="#workflow">How It Works</a>
           <a href="#growing">Roadmap</a>
           <a href="#contact">Contact</a>
         </nav>
