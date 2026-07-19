@@ -1,63 +1,3 @@
-// === Starfield ===
-const canvas = document.getElementById('starfield');
-const ctx = canvas.getContext('2d');
-let stars = [];
-let rafId;
-
-function resize() {
-  canvas.width = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
-  initStars();
-}
-
-function initStars() {
-  stars = [];
-  const density = 6500;
-  const count = Math.floor((canvas.width * canvas.height) / density);
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.1 + 0.1,
-      o: Math.random() * 0.9 + 0.4,
-      speed: Math.random() * 0.20 + 0.03,
-    });
-  }
-}
-
-function tick() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const isDark = document.documentElement.dataset.theme === 'dark';
-  const starRgb = isDark ? '255,255,255' : '15,15,15';
-  const opacityScale = isDark ? 1 : 0.3;
-  for (const s of stars) {
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${starRgb},${s.o * opacityScale})`;
-    ctx.fill();
-    s.y -= s.speed;
-    if (s.y + s.r < 0) {
-      s.y = canvas.height + s.r;
-      s.x = Math.random() * canvas.width;
-    }
-  }
-  rafId = requestAnimationFrame(tick);
-}
-
-// Pause animation when tab is hidden to save resources
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    cancelAnimationFrame(rafId);
-  } else {
-    tick();
-  }
-});
-
-const resizeObserver = new ResizeObserver(resize);
-resizeObserver.observe(canvas.parentElement);
-resize();
-tick();
-
 // === Nav scroll state ===
 const nav = document.getElementById('nav');
 window.addEventListener('scroll', () => {
@@ -91,7 +31,7 @@ const io = new IntersectionObserver((entries) => {
       const parent = entry.target.parentElement;
       const siblings = [...parent.querySelectorAll('.fade-in')];
       const idx = siblings.indexOf(entry.target);
-      const isGrid = parent.classList.contains('services-grid') || parent.classList.contains('process-steps') || parent.classList.contains('use-cases-grid');
+      const isGrid = parent.classList.contains('solution-points');
       const delay = isGrid ? idx * 80 : 0;
       setTimeout(() => entry.target.classList.add('visible'), delay);
       io.unobserve(entry.target);
