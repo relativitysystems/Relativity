@@ -56,6 +56,15 @@ module.exports = {
     pickerApiKey: process.env.GOOGLE_PICKER_API_KEY,
   },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
+  // Backlog M6 — explicit CORS allowlist (middleware/corsPolicy.js).
+  // Comma-separated list of additional origins allowed to make
+  // browser-based cross-origin requests to this API (e.g. a staging
+  // domain). appBaseUrl is always allowed and does not need to be repeated
+  // here.
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   email: {
     resendApiKey: process.env.RESEND_API_KEY,
     smtpHost: process.env.SMTP_HOST,

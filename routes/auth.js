@@ -9,6 +9,8 @@ const dropboxService = require('../services/dropboxService');
 const googleDriveService = require('../services/googleDriveService');
 const supabaseService = require('../services/supabaseService');
 const oauthConnectionsService = require('../services/oauthConnectionsService');
+const oauthStateService = require('../services/oauthStateService');
+const { teamInviteLimiter } = require('../middleware/rateLimiters');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -89,26 +91,42 @@ router.get('/me', async (req, res) => {
  * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
  * Returns JSON { url } — portal.js redirects the browser there.
  * clientId is always resolved server-side; never accepted from the browser.
+ *
+ * Backlog M1: state is a hashed, server-stored, single-use, 10-minute-TTL
+ * value from oauthStateService (services/oauthStateService.js) — the same
+ * mechanism Slack's connect flow uses (see services/slackIntegrationService.js)
+ * — replacing the previous unsigned base64(JSON) state that trusted a
+ * client-supplied clientId with nothing binding it to this session.
  */
-router.get('/dropbox/start', clientAuth, (req, res) => {
-  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
+router.get('/dropbox/start', clientAuth, async (req, res) => {
+  try {
+    const { rawState } = await oauthStateService.generateAndStoreState({
+      clientId: req.client.id,
+      memberId: req.member.id,
+      provider: 'dropbox',
+    });
 
-  const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
-  authUrl.searchParams.set('client_id', dropboxConfig.appKey);
-  authUrl.searchParams.set('redirect_uri', dropboxConfig.redirectUri);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('token_access_type', 'offline');
-  authUrl.searchParams.set('state', state);
+    const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
+    authUrl.searchParams.set('client_id', dropboxConfig.appKey);
+    authUrl.searchParams.set('redirect_uri', dropboxConfig.redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('token_access_type', 'offline');
+    authUrl.searchParams.set('state', rawState);
 
-  res.json({ url: authUrl.toString() });
+    res.json({ url: authUrl.toString() });
+  } catch (err) {
+    console.error('Dropbox start error:', err.message);
+    res.status(500).json({ error: 'Failed to start Dropbox connection' });
+  }
 });
 
 /**
  * GET /auth/dropbox/callback
  *
  * Dropbox redirects here after the user clicks Allow.
- * clientId comes from the server-generated state — never from the browser.
- * Redirects to portal without clientId in the URL.
+ * clientId/memberId come only from the consumed oauth_states row (backlog
+ * M1) — never from the browser. consumeState is a single atomic UPDATE, so
+ * a replayed/reused state param is rejected even under a concurrent race.
  */
 router.get('/dropbox/callback', async (req, res) => {
   const { code, state, error } = req.query;
@@ -121,13 +139,22 @@ router.get('/dropbox/callback', async (req, res) => {
     return res.status(400).json({ error: 'Missing code or state param' });
   }
 
-  let clientId;
+  let consumed;
   try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-    clientId = decoded.clientId;
-  } catch {
-    return res.status(400).json({ error: 'Invalid state param' });
+    consumed = await oauthStateService.consumeState({ rawState: state, provider: 'dropbox' });
+  } catch (err) {
+    console.error('Dropbox state consume error:', err.message);
+    return res.redirect('/portal.html?error=dropbox_failed');
   }
+
+  if (consumed.status === 'expired') {
+    return res.redirect('/portal.html?error=dropbox_expired_state');
+  }
+  if (consumed.status !== 'consumed') {
+    return res.redirect('/portal.html?error=dropbox_invalid_state');
+  }
+
+  const { clientId, memberId } = consumed;
 
   try {
     const tokenData = await dropboxService.exchangeCodeForToken(code);
@@ -136,14 +163,13 @@ router.get('/dropbox/callback', async (req, res) => {
 
     // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
     // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
-    // connectedByMemberId is null here because this callback's state (unlike
-    // Slack's oauth_states row) doesn't carry a memberId — see backlog M1.
     await oauthConnectionsService.createOrReplaceConnection({
       clientId,
       provider: 'dropbox',
       accessToken: access_token,
       refreshToken: refresh_token || null,
       expiresAt,
+      connectedByMemberId: memberId,
     });
 
     res.redirect('/portal.html?connected=dropbox');
@@ -195,47 +221,75 @@ router.get('/slack/callback', (req, res) => {
  * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
  * Returns JSON { url } — portal.js redirects the browser there.
  * Requests offline access so a refresh token is always returned.
+ *
+ * Backlog M1: state is a hashed, server-stored, single-use, 10-minute-TTL
+ * value from oauthStateService (services/oauthStateService.js) — the same
+ * mechanism Slack's connect flow uses (see services/slackIntegrationService.js)
+ * — replacing the previous unsigned base64(JSON) state that trusted a
+ * client-supplied clientId with nothing binding it to this session.
  */
-router.get('/google/start', clientAuth, (req, res) => {
-  const state = Buffer.from(JSON.stringify({ clientId: req.client.id })).toString('base64');
+router.get('/google/start', clientAuth, async (req, res) => {
+  try {
+    const { rawState } = await oauthStateService.generateAndStoreState({
+      clientId: req.client.id,
+      memberId: req.member.id,
+      provider: 'google_drive',
+    });
 
-  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  authUrl.searchParams.set('client_id', googleDriveConfig.clientId);
-  authUrl.searchParams.set('redirect_uri', googleDriveConfig.redirectUri);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/drive.readonly');
-  authUrl.searchParams.set('access_type', 'offline');
-  authUrl.searchParams.set('prompt', 'consent');
-  authUrl.searchParams.set('state', state);
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', googleDriveConfig.clientId);
+    authUrl.searchParams.set('redirect_uri', googleDriveConfig.redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/drive.readonly');
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'consent');
+    authUrl.searchParams.set('state', rawState);
 
-  res.json({ url: authUrl.toString() });
+    res.json({ url: authUrl.toString() });
+  } catch (err) {
+    console.error('Google Drive start error:', err.message);
+    res.status(500).json({ error: 'Failed to start Google Drive connection' });
+  }
 });
 
 /**
  * GET /auth/google/callback
  *
  * Google redirects here after the user clicks Allow.
- * clientId comes from the server-generated state — never from the browser.
- * Redirects to portal with clientId and connected/error params preserved.
+ * clientId/memberId come only from the consumed oauth_states row (backlog
+ * M1) — never from the browser. consumeState is a single atomic UPDATE, so
+ * a replayed/reused state param is rejected even under a concurrent race.
+ * clientId is no longer echoed back in the redirect URL — portal.js never
+ * read it (it re-resolves identity from the session), so dropping it also
+ * stops leaking clientId into browser history/referrer headers.
  */
 router.get('/google/callback', async (req, res) => {
   const { code, state, error } = req.query;
 
-  let clientId;
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-    clientId = decoded.clientId;
-  } catch {
-    return res.status(400).json({ error: 'Invalid state param' });
-  }
-
   if (error) {
-    return res.redirect(`/portal.html?clientId=${clientId}&error=google_drive_denied`);
+    return res.redirect('/portal.html?error=google_drive_denied');
   }
 
   if (!code || !state) {
     return res.status(400).json({ error: 'Missing code or state param' });
   }
+
+  let consumed;
+  try {
+    consumed = await oauthStateService.consumeState({ rawState: state, provider: 'google_drive' });
+  } catch (err) {
+    console.error('Google Drive state consume error:', err.message);
+    return res.redirect('/portal.html?error=google_drive_failed');
+  }
+
+  if (consumed.status === 'expired') {
+    return res.redirect('/portal.html?error=google_drive_expired_state');
+  }
+  if (consumed.status !== 'consumed') {
+    return res.redirect('/portal.html?error=google_drive_invalid_state');
+  }
+
+  const { clientId, memberId } = consumed;
 
   try {
     const tokenData = await googleDriveService.exchangeCodeForToken(code);
@@ -244,8 +298,6 @@ router.get('/google/callback', async (req, res) => {
 
     // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
     // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
-    // connectedByMemberId is null here because this callback's state (unlike
-    // Slack's oauth_states row) doesn't carry a memberId — see backlog M1.
     await oauthConnectionsService.createOrReplaceConnection({
       clientId,
       provider: 'google_drive',
@@ -253,12 +305,13 @@ router.get('/google/callback', async (req, res) => {
       refreshToken: refresh_token || null,
       expiresAt,
       scopesGranted: scope ? scope.split(' ').filter(Boolean) : [],
+      connectedByMemberId: memberId,
     });
 
-    res.redirect(`/portal.html?clientId=${clientId}&connected=google_drive`);
+    res.redirect('/portal.html?connected=google_drive');
   } catch (err) {
     console.error('Google Drive callback error:', err.message);
-    res.redirect(`/portal.html?clientId=${clientId}&error=google_drive_failed`);
+    res.redirect('/portal.html?error=google_drive_failed');
   }
 });
 
@@ -269,7 +322,7 @@ router.get('/google/callback', async (req, res) => {
  * Reads client_id from the JWT user metadata (set server-side during invite)
  * and upserts the owner row in client_members.
  */
-router.post('/complete-invite', async (req, res) => {
+router.post('/complete-invite', teamInviteLimiter, async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.startsWith('Bearer ')
     ? authHeader.slice(7)

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { appBaseUrl, supabase: supabaseConfig } = require('../config');
 const clientAuth = require('../middleware/clientAuth');
+const { teamInviteLimiter } = require('../middleware/rateLimiters');
 const supabaseService = require('../services/supabaseService');
 const { sendTeamInviteEmail } = require('../services/emailService');
 
@@ -35,7 +36,7 @@ function inviteExpiresAt() {
  * GET /api/team/invites/verify?token=…
  * No auth required — called by invite-team.html before the user logs in.
  */
-router.get('/team/invites/verify', async (req, res) => {
+router.get('/team/invites/verify', teamInviteLimiter, async (req, res) => {
   const { token } = req.query;
   if (!token) return res.status(400).json({ error: 'token is required' });
 

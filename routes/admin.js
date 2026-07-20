@@ -5,6 +5,7 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig, appBaseUrl } = require('../config');
 const adminAuth = require('../middleware/adminAuth');
+const { adminLoginLimiter } = require('../middleware/rateLimiters');
 const supabaseService = require('../services/supabaseService');
 const aikbService = require('../services/aikbService');
 
@@ -39,7 +40,7 @@ function handleAibdrError(err, res, label) {
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
-router.post('/login', (req, res) => {
+router.post('/login', adminLoginLimiter, (req, res) => {
   const { password } = req.body;
   if (!password || typeof password !== 'string') {
     return res.status(401).json({ error: 'Invalid password' });

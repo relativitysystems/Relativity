@@ -12,17 +12,26 @@
 // support for the deprecated name is temporary and will be removed in a
 // future migration once every environment has been updated.
 //
-// Key rotation is future work. The envelope's `version` field (serialization
+// Key rotation (backlog M3). The envelope's `version` field (serialization
 // / algorithm format) and the separate `encryption_key_version` column on
 // oauth_credentials (services/oauthConnectionsService.js — which configured
 // key encrypted this row) are deliberately two different concerns and are
 // never merged into one field. Envelope version changes when the ciphertext
 // *format* changes (e.g. a future algorithm); key version changes when the
-// *key material* rotates while the format stays identical. A future
-// rotation adds a new key lookup (keyed by encryption_key_version) and
-// re-encrypts existing rows under it, without changing this envelope shape
-// or bumping ENVELOPE_VERSION.
-
+// *key material* rotates while the format stays identical.
+//
+// Rotation model: INTEGRATION_CREDENTIAL_ENCRYPTION_KEY is always the key
+// for the CURRENT version (identified by INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_VERSION,
+// an integer defaulting to 1 if unset — every environment configured before
+// this change is version 1 with no action required). To rotate: pick a new
+// version number, set INTEGRATION_CREDENTIAL_ENCRYPTION_KEY to a fresh key,
+// bump INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_VERSION to the new number, and
+// keep the OLD key available under INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_V{oldVersion}
+// (e.g. INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_V1) so rows still encrypted
+// under it keep decrypting while services/oauthConnectionsService.js#
+// reencryptCredentialForConnection re-encrypts them under the new key. Once
+// every row's encryption_key_version matches the current version, the old
+// INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_V{oldVersion} variable can be removed.
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
@@ -33,7 +42,9 @@ const AUTH_TAG_BYTES = 16;
 const KEY_ENV_VAR = 'INTEGRATION_CREDENTIAL_ENCRYPTION_KEY';
 // @deprecated — temporary fallback only, see the module comment above.
 const LEGACY_KEY_ENV_VAR = 'SLACK_TOKEN_ENCRYPTION_KEY';
+const KEY_VERSION_ENV_VAR = 'INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_VERSION';
 const HEX_64_PATTERN = /^[0-9a-fA-F]{64}$/;
+const DEFAULT_KEY_VERSION = 1;
 
 let legacyKeyFallbackWarned = false;
 
@@ -60,6 +71,37 @@ function resolveRawKeyFromEnv() {
   }
 
   return undefined;
+}
+
+/**
+ * Which key version INTEGRATION_CREDENTIAL_ENCRYPTION_KEY currently
+ * represents. Defaults to 1 so every environment configured before M3
+ * (a single, unversioned key) keeps working with zero config changes.
+ * Read lazily (not cached) for the same "catch misconfiguration at use
+ * time" reason validateEncryptionKey reads process.env directly.
+ */
+function getCurrentKeyVersion() {
+  const raw = process.env[KEY_VERSION_ENV_VAR];
+  if (raw === undefined || raw === '') return DEFAULT_KEY_VERSION;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${KEY_VERSION_ENV_VAR} must be a positive integer`);
+  }
+  return parsed;
+}
+
+/**
+ * Resolves the raw key string for a specific key version. The current
+ * version reads from the same variable(s) validateEncryptionKey always
+ * has (including the deprecated legacy fallback); any other (retired)
+ * version reads from a dedicated `${KEY_ENV_VAR}_V{version}` variable that
+ * only needs to exist while rotation-in-progress rows under that old
+ * version still need decrypting.
+ */
+function resolveRawKeyForVersion(version) {
+  if (version === getCurrentKeyVersion()) return resolveRawKeyFromEnv();
+  return process.env[`${KEY_ENV_VAR}_V${version}`];
 }
 
 /**
@@ -94,6 +136,28 @@ function validateEncryptionKey(rawKey = resolveRawKeyFromEnv()) {
   }
 
   return keyBuffer;
+}
+
+/**
+ * Validates and returns the key Buffer for a specific key version — the
+ * version-aware counterpart to validateEncryptionKey (which always resolves
+ * whatever the CURRENT key is). Used by decryptCredential so a row
+ * encrypted under a retired version is decrypted with that version's key,
+ * not whatever key happens to be current right now.
+ *
+ * @param {number} version
+ * @returns {Buffer} exactly KEY_BYTES long.
+ */
+function resolveKeyForVersion(version) {
+  const rawKey = resolveRawKeyForVersion(version);
+  if (!rawKey || typeof rawKey !== 'string') {
+    throw new Error(
+      version === getCurrentKeyVersion()
+        ? `${KEY_ENV_VAR} is not configured`
+        : `${KEY_ENV_VAR}_V${version} is not configured — required to decrypt a row still under key version ${version}`
+    );
+  }
+  return validateEncryptionKey(rawKey);
 }
 
 /**
@@ -144,9 +208,13 @@ function encryptCredential(plaintext) {
  * returning partial or unauthenticated plaintext.
  *
  * @param {{version:number, algorithm:string, iv:string, authTag:string, ciphertext:string}} envelope
+ * @param {number} [keyVersion] — which key encrypted this envelope (the
+ *   row's own `encryption_key_version` column). Defaults to the current
+ *   key version, preserving pre-M3 behavior for any caller that hasn't
+ *   been updated to pass it explicitly.
  * @returns {string} plaintext
  */
-function decryptCredential(envelope) {
+function decryptCredential(envelope, keyVersion = getCurrentKeyVersion()) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     throw new Error('decryptCredential requires an envelope object');
   }
@@ -163,7 +231,7 @@ function decryptCredential(envelope) {
     throw new Error('Credential envelope is missing required fields');
   }
 
-  const key = validateEncryptionKey();
+  const key = resolveKeyForVersion(keyVersion);
 
   let ivBuffer, authTagBuffer, ciphertextBuffer;
   try {
@@ -200,7 +268,11 @@ module.exports = {
   ENVELOPE_VERSION,
   KEY_ENV_VAR,
   LEGACY_KEY_ENV_VAR,
+  KEY_VERSION_ENV_VAR,
+  DEFAULT_KEY_VERSION,
   validateEncryptionKey,
+  resolveKeyForVersion,
+  getCurrentKeyVersion,
   encryptCredential,
   decryptCredential,
 };

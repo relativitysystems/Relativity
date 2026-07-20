@@ -7,9 +7,8 @@ const {
   toSafeConnectionStatus,
   SUPPORTED_PROVIDERS,
   STATUS,
-  CURRENT_ENCRYPTION_KEY_VERSION,
 } = require('../services/oauthConnectionsService');
-const { KEY_ENV_VAR, encryptCredential } = require('../services/integrationCredentialEncryption');
+const { KEY_ENV_VAR, KEY_VERSION_ENV_VAR, encryptCredential, decryptCredential, getCurrentKeyVersion } = require('../services/integrationCredentialEncryption');
 
 const VALID_KEY = 'c'.repeat(64);
 
@@ -56,17 +55,18 @@ function createFakeSupabaseClient({ onQuery = () => ({ data: null, error: null }
   const calls = { queries: [], rpc: [] };
 
   function makeBuilder(table) {
-    const state = { table, operation: 'select', filters: {}, updatePayload: null, selectCols: null };
+    const state = { table, operation: 'select', filters: {}, neqFilters: {}, updatePayload: null, selectCols: null };
     const builder = {
       select(cols) { state.selectCols = cols; return builder; },
       eq(col, val) { state.filters[col] = val; return builder; },
+      neq(col, val) { state.neqFilters[col] = val; return builder; },
       update(payload) { state.operation = 'update'; state.updatePayload = payload; return builder; },
       delete() { state.operation = 'delete'; return builder; },
       maybeSingle() { return builder; },
       single() { return builder; },
       then(resolve, reject) {
-        calls.queries.push({ ...state, filters: { ...state.filters } });
-        Promise.resolve(onQuery({ ...state, filters: { ...state.filters } })).then(resolve, reject);
+        calls.queries.push({ ...state, filters: { ...state.filters }, neqFilters: { ...state.neqFilters } });
+        Promise.resolve(onQuery({ ...state, filters: { ...state.filters }, neqFilters: { ...state.neqFilters } })).then(resolve, reject);
       },
     };
     return builder;
@@ -284,7 +284,7 @@ test('only getDecryptedCredentialForConnection reads oauth_credentials, and only
     const { client, calls } = createFakeSupabaseClient({
       onQuery: (state) => {
         if (state.table === 'oauth_credentials') {
-          return { data: { access_token_encrypted: envelope, refresh_token_encrypted: null, expires_at: null }, error: null };
+          return { data: { access_token_encrypted: envelope, refresh_token_encrypted: null, expires_at: null, encryption_key_version: getCurrentKeyVersion() }, error: null };
         }
         return { data: null, error: null };
       },
@@ -297,7 +297,7 @@ test('only getDecryptedCredentialForConnection reads oauth_credentials, and only
     const credQueries = calls.queries.filter(q => q.table === 'oauth_credentials');
     assert.equal(credQueries.length, 1);
     // Explicit column allowlist — never select('*') on the credentials table.
-    assert.equal(credQueries[0].selectCols, 'access_token_encrypted, refresh_token_encrypted, expires_at');
+    assert.equal(credQueries[0].selectCols, 'access_token_encrypted, refresh_token_encrypted, expires_at, encryption_key_version');
     assert.equal(credQueries[0].selectCols.includes('*'), false);
   });
 });
@@ -335,7 +335,7 @@ test('updateCredentialForConnection encrypts before writing and never sends plai
     assert.equal(typeof updateCall.updatePayload.access_token_encrypted, 'object');
     assert.notEqual(updateCall.updatePayload.access_token_encrypted, plaintext);
     assert.equal(JSON.stringify(updateCall.updatePayload).includes(plaintext), false);
-    assert.equal(updateCall.updatePayload.encryption_key_version, CURRENT_ENCRYPTION_KEY_VERSION);
+    assert.equal(updateCall.updatePayload.encryption_key_version, getCurrentKeyVersion());
   });
 });
 
@@ -414,7 +414,7 @@ test('createOrReplaceConnection encrypts before calling the database and never s
     // row, a top-level RPC argument) are two distinct fields, sent
     // independently and never merged into one:
     assert.equal(capturedArgs.p_access_token_encrypted.version, 1); // envelope format version
-    assert.equal(capturedArgs.p_encryption_key_version, CURRENT_ENCRYPTION_KEY_VERSION); // which key
+    assert.equal(capturedArgs.p_encryption_key_version, getCurrentKeyVersion()); // which key
     assert.equal(JSON.stringify(capturedArgs).includes(plaintext), false);
 
     // The returned safe status never includes the token either.
@@ -453,6 +453,110 @@ test('when the RPC fails, createOrReplaceConnection throws and never fabricates 
     assert.equal(calls.queries.length, 0);
   });
 });
+
+// ─────────────────────────────────────────────
+// Key rotation (backlog M3)
+// ─────────────────────────────────────────────
+
+test('listConnectionIdsNeedingKeyRotation queries only rows whose encryption_key_version differs from current, and selects only what it needs', async () => {
+  const { client, calls } = createFakeSupabaseClient({
+    onQuery: (state) => {
+      if (state.table === 'oauth_credentials') {
+        return { data: [{ connection_id: 'conn-old-1', encryption_key_version: 1 }], error: null };
+      }
+      return { data: null, error: null };
+    },
+  });
+  const service = createOauthConnectionsService(client);
+
+  const rows = await service.listConnectionIdsNeedingKeyRotation();
+  assert.deepEqual(rows, [{ connectionId: 'conn-old-1', encryptionKeyVersion: 1 }]);
+
+  const query = calls.queries.find(q => q.table === 'oauth_credentials');
+  assert.equal(query.neqFilters['encryption_key_version'], getCurrentKeyVersion());
+  assert.equal(query.selectCols, 'connection_id, encryption_key_version');
+});
+
+test('reencryptCredentialForConnection is a no-op when the row is already on the current key version', async () => {
+  await withKey(async () => {
+    const { client, calls } = createFakeSupabaseClient({
+      onQuery: (state) => {
+        if (state.table === 'oauth_credentials' && state.operation === 'select') {
+          return { data: { access_token_encrypted: encryptCredential('tok'), refresh_token_encrypted: null, expires_at: null, encryption_key_version: getCurrentKeyVersion() }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    });
+    const service = createOauthConnectionsService(client);
+
+    const result = await service.reencryptCredentialForConnection('conn-1');
+    assert.deepEqual(result, { rotated: false });
+    // No update should have been attempted — already current.
+    assert.equal(calls.queries.some(q => q.operation === 'update'), false);
+  });
+});
+
+test('reencryptCredentialForConnection is a no-op when the connection no longer has a credential row', async () => {
+  const { client, calls } = createFakeSupabaseClient({ onQuery: () => ({ data: null, error: null }) });
+  const service = createOauthConnectionsService(client);
+
+  const result = await service.reencryptCredentialForConnection('conn-gone');
+  assert.deepEqual(result, { rotated: false });
+  assert.equal(calls.queries.some(q => q.operation === 'update'), false);
+});
+
+test('reencryptCredentialForConnection decrypts with the OLD stored version and re-encrypts under the current one, never sending plaintext', async () => {
+  const OLD_KEY = 'e'.repeat(64);
+  const NEW_KEY = 'f'.repeat(64);
+  const PLAINTEXT = 'ya29.token-under-rotation';
+
+  const oldEnvelope = await withEnv({ [KEY_ENV_VAR]: OLD_KEY, [KEY_VERSION_ENV_VAR]: undefined }, () => encryptCredential(PLAINTEXT));
+
+  await withEnv({ [KEY_ENV_VAR]: NEW_KEY, [KEY_VERSION_ENV_VAR]: '2', [`${KEY_ENV_VAR}_V1`]: OLD_KEY }, async () => {
+    const { client, calls } = createFakeSupabaseClient({
+      onQuery: (state) => {
+        if (state.table === 'oauth_credentials' && state.operation === 'select') {
+          return { data: { access_token_encrypted: oldEnvelope, refresh_token_encrypted: null, expires_at: null, encryption_key_version: 1 }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    });
+    const service = createOauthConnectionsService(client);
+
+    const result = await service.reencryptCredentialForConnection('conn-1');
+    assert.deepEqual(result, { rotated: true, fromVersion: 1, toVersion: 2 });
+
+    const updateCall = calls.queries.find(q => q.operation === 'update');
+    assert.equal(updateCall.table, 'oauth_credentials');
+    assert.equal(updateCall.updatePayload.encryption_key_version, 2);
+    assert.equal(JSON.stringify(updateCall.updatePayload).includes(PLAINTEXT), false);
+
+    // The rewritten envelope decrypts back to the same plaintext under the new key/version.
+    assert.equal(decryptCredential(updateCall.updatePayload.access_token_encrypted, 2), PLAINTEXT);
+  });
+});
+
+// withEnv mirrors integrationCredentialEncryption.test.js's helper — kept
+// local (not shared) since these two test files intentionally have no
+// cross-file dependency on each other's test-only utilities.
+async function withEnv(overrides, fn) {
+  const originals = {};
+  for (const key of Object.keys(overrides)) {
+    originals[key] = process.env[key];
+    const value = overrides[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const key of Object.keys(originals)) {
+      const original = originals[key];
+      if (original === undefined) delete process.env[key];
+      else process.env[key] = original;
+    }
+  }
+}
 
 // ─────────────────────────────────────────────
 // Migration <-> service consistency
@@ -509,7 +613,7 @@ test('oauth_credentials cascades from oauth_connections deletion', () => {
 
 test('encryption_key_version is declared as an integer column, matching the integer value the service sends', () => {
   assert.match(MIGRATION_SQL, /encryption_key_version\s+integer\s+NOT NULL/);
-  assert.equal(Number.isInteger(CURRENT_ENCRYPTION_KEY_VERSION), true);
+  assert.equal(Number.isInteger(getCurrentKeyVersion()), true);
 });
 
 test('the RPC call sends exactly the parameter names the migration function declares', async () => {

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
 const aikbService = require('./aikbService');
@@ -526,6 +527,14 @@ async function getActiveMemberCount(clientId) {
 // Team invites
 // ─────────────────────────────────────────────
 
+// Backlog M2 — team_invites stores only this hash, never the raw token,
+// mirroring oauthStateService.js#hashState (same algorithm/encoding). The
+// raw token (routes/team.js#generateToken) is still what gets emailed to
+// the invitee; only its at-rest storage is hash-only.
+function hashInviteToken(token) {
+  return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
 async function createTeamInvite({ clientId, email, role, token, expiresAt, invitedBy }) {
   const { data, error } = await supabase
     .from('team_invites')
@@ -533,7 +542,7 @@ async function createTeamInvite({ clientId, email, role, token, expiresAt, invit
       client_id: clientId,
       email,
       role,
-      token,
+      token_hash: hashInviteToken(token),
       expires_at: expiresAt,
       invited_by: invitedBy || null,
     })
@@ -548,7 +557,7 @@ async function getTeamInviteByToken(token) {
   const { data, error } = await supabase
     .from('team_invites')
     .select('*, clients(name)')
-    .eq('token', token)
+    .eq('token_hash', hashInviteToken(token))
     .single();
 
   if (error && error.code === 'PGRST116') return null;
@@ -612,7 +621,7 @@ async function acceptTeamInvite(token, authUserId, clientId, email) {
   const { data: invite, error: inviteError } = await supabase
     .from('team_invites')
     .update({ accepted_at: now })
-    .eq('token', token)
+    .eq('token_hash', hashInviteToken(token))
     .is('accepted_at', null)
     .select('client_id, email, role')
     .maybeSingle();
@@ -673,7 +682,7 @@ async function regenerateTeamInvite(memberId, clientId, newToken, newExpiresAt) 
       client_id: clientId,
       email: member.email,
       role: 'member',
-      token: newToken,
+      token_hash: hashInviteToken(newToken),
       expires_at: newExpiresAt,
     })
     .select()

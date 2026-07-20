@@ -19,17 +19,25 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
-const { encryptCredential, decryptCredential } = require('./integrationCredentialEncryption');
+const { encryptCredential, decryptCredential, getCurrentKeyVersion } = require('./integrationCredentialEncryption');
 
 // encryption_key_version identifies WHICH configured encryption key
 // produced a row's ciphertext — a Postgres `integer` column. This is a
 // distinct concern from the envelope's own `version` field (produced by
 // integrationCredentialEncryption.js), which identifies the ciphertext
 // *serialization/algorithm format* instead. Neither is derived from the
-// other; a future key rotation bumps this value without touching envelope
+// other; a key rotation bumps this value without touching envelope
 // version, and a future envelope format change bumps envelope version
 // without implying a key rotation happened.
-const CURRENT_ENCRYPTION_KEY_VERSION = 1;
+//
+// Backlog M3 — this used to be a hardcoded `1`, which meant a row's stored
+// encryption_key_version was written but never actually read back at
+// decrypt time (getDecryptedCredentialForConnection always decrypted with
+// whatever key was "current" at read time, not the key that encrypted that
+// specific row). It's now delegated to integrationCredentialEncryption.js's
+// getCurrentKeyVersion(), the single source of truth for "which version is
+// current," and every read path passes the row's own stored version back
+// into decryptCredential — see getDecryptedCredentialForConnection below.
 
 // Keep in sync with supabase/migrations/20260714_oauth_connections.sql's
 // `provider` CHECK constraint on oauth_connections — enforced here too so a
@@ -125,7 +133,7 @@ function createOauthConnectionsService(client) {
       p_access_token_encrypted: accessTokenEncrypted,
       p_refresh_token_encrypted: refreshTokenEncrypted,
       p_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-      p_encryption_key_version: CURRENT_ENCRYPTION_KEY_VERSION,
+      p_encryption_key_version: getCurrentKeyVersion(),
     });
 
     if (error) throw new Error(`createOrReplaceConnection failed: ${error.message}`);
@@ -199,16 +207,23 @@ function createOauthConnectionsService(client) {
 
     const { data, error } = await client
       .from('oauth_credentials')
-      .select('access_token_encrypted, refresh_token_encrypted, expires_at')
+      .select('access_token_encrypted, refresh_token_encrypted, expires_at, encryption_key_version')
       .eq('connection_id', connectionId)
       .maybeSingle();
 
     if (error) throw new Error(`getDecryptedCredentialForConnection failed: ${error.message}`);
     if (!data) return null;
 
+    // Backlog M3 — decrypt with the key that actually encrypted this row,
+    // not whichever key happens to be "current" right now. Before this fix
+    // a row left behind by an in-progress or historical rotation would fail
+    // to decrypt (or worse, silently decrypt as garbage) as soon as the
+    // current key diverged from the one that produced its ciphertext.
     return {
-      accessToken: decryptCredential(data.access_token_encrypted),
-      refreshToken: data.refresh_token_encrypted ? decryptCredential(data.refresh_token_encrypted) : null,
+      accessToken: decryptCredential(data.access_token_encrypted, data.encryption_key_version),
+      refreshToken: data.refresh_token_encrypted
+        ? decryptCredential(data.refresh_token_encrypted, data.encryption_key_version)
+        : null,
       expiresAt: data.expires_at,
     };
   }
@@ -243,7 +258,7 @@ function createOauthConnectionsService(client) {
         access_token_encrypted: accessTokenEncrypted,
         refresh_token_encrypted: refreshTokenEncrypted,
         expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-        encryption_key_version: CURRENT_ENCRYPTION_KEY_VERSION,
+        encryption_key_version: getCurrentKeyVersion(),
         updated_at: new Date().toISOString(),
       })
       .eq('connection_id', connectionId);
@@ -282,6 +297,66 @@ function createOauthConnectionsService(client) {
     return { revoked: true };
   }
 
+  /**
+   * Backlog M3 — lists connection_ids whose stored encryption_key_version
+   * doesn't match the currently configured key, i.e. rows a rotation still
+   * needs to re-encrypt. Read-only; does not touch any credential.
+   */
+  async function listConnectionIdsNeedingKeyRotation() {
+    const currentVersion = getCurrentKeyVersion();
+    const { data, error } = await client
+      .from('oauth_credentials')
+      .select('connection_id, encryption_key_version')
+      .neq('encryption_key_version', currentVersion);
+
+    if (error) throw new Error(`listConnectionIdsNeedingKeyRotation failed: ${error.message}`);
+    return (data || []).map((row) => ({ connectionId: row.connection_id, encryptionKeyVersion: row.encryption_key_version }));
+  }
+
+  /**
+   * Backlog M3 — decrypts a single credential row with the OLD key version
+   * that actually encrypted it, then re-encrypts and rewrites it under the
+   * current key/version. This is the actual "rotate" step: an operator sets
+   * a new INTEGRATION_CREDENTIAL_ENCRYPTION_KEY + bumps
+   * INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_VERSION, keeps the old key
+   * available as INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_V{oldVersion}, then
+   * calls this for every id from listConnectionIdsNeedingKeyRotation()
+   * until none remain — at which point the old key variable can be removed.
+   * A no-op (returns { rotated: false }) if the row is already current or
+   * gone, so it's safe to re-run/retry against the same connectionId.
+   */
+  async function reencryptCredentialForConnection(connectionId) {
+    if (!connectionId) throw new Error('reencryptCredentialForConnection requires connectionId');
+
+    const { data, error } = await client
+      .from('oauth_credentials')
+      .select('access_token_encrypted, refresh_token_encrypted, expires_at, encryption_key_version')
+      .eq('connection_id', connectionId)
+      .maybeSingle();
+
+    if (error) throw new Error(`reencryptCredentialForConnection (read) failed: ${error.message}`);
+    if (!data) return { rotated: false };
+
+    const currentVersion = getCurrentKeyVersion();
+    if (data.encryption_key_version === currentVersion) return { rotated: false };
+
+    const accessToken = decryptCredential(data.access_token_encrypted, data.encryption_key_version);
+    const refreshToken = data.refresh_token_encrypted
+      ? decryptCredential(data.refresh_token_encrypted, data.encryption_key_version)
+      : null;
+
+    // Reuses updateCredentialForConnection so the write path (re-encrypt,
+    // stamp the current version, bump updated_at) stays a single
+    // implementation shared with a normal background token refresh.
+    await updateCredentialForConnection(connectionId, {
+      accessToken,
+      refreshToken,
+      expiresAt: data.expires_at,
+    });
+
+    return { rotated: true, fromVersion: data.encryption_key_version, toVersion: currentVersion };
+  }
+
   /** Hard-deletes the connection row; oauth_credentials cascades via FK. */
   async function deleteConnection(clientId, provider) {
     if (!clientId) throw new Error('deleteConnection requires clientId');
@@ -306,6 +381,8 @@ function createOauthConnectionsService(client) {
     updateCredentialForConnection,
     markConnectionRevoked,
     deleteConnection,
+    listConnectionIdsNeedingKeyRotation,
+    reencryptCredentialForConnection,
   };
 }
 
@@ -318,5 +395,4 @@ module.exports = {
   toSafeConnectionStatus,
   SUPPORTED_PROVIDERS,
   STATUS,
-  CURRENT_ENCRYPTION_KEY_VERSION,
 };

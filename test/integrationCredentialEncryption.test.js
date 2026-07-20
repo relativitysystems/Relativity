@@ -4,9 +4,11 @@ const {
   validateEncryptionKey,
   encryptCredential,
   decryptCredential,
+  getCurrentKeyVersion,
   ENVELOPE_VERSION,
   KEY_ENV_VAR,
   LEGACY_KEY_ENV_VAR,
+  KEY_VERSION_ENV_VAR,
 } = require('../services/integrationCredentialEncryption');
 
 const VALID_KEY = 'a'.repeat(64); // 64 hex chars = 32 bytes
@@ -282,6 +284,81 @@ test('the plaintext token never appears in the serialized envelope', () => {
     const envelope = encryptCredential(PLAINTEXT);
     const serialized = JSON.stringify(envelope);
     assert.ok(!serialized.includes(PLAINTEXT));
+  });
+});
+
+// ─────────────────────────────────────────────
+// Key rotation (backlog M3)
+// ─────────────────────────────────────────────
+
+test('getCurrentKeyVersion defaults to 1 when the version env var is unset', () => {
+  withEnv({ [KEY_VERSION_ENV_VAR]: undefined }, () => {
+    assert.equal(getCurrentKeyVersion(), 1);
+  });
+});
+
+test('getCurrentKeyVersion reads the configured version', () => {
+  withEnv({ [KEY_VERSION_ENV_VAR]: '2' }, () => {
+    assert.equal(getCurrentKeyVersion(), 2);
+  });
+});
+
+test('getCurrentKeyVersion rejects a non-positive-integer version', () => {
+  withEnv({ [KEY_VERSION_ENV_VAR]: '0' }, () => {
+    assert.throws(() => getCurrentKeyVersion(), /positive integer/);
+  });
+  withEnv({ [KEY_VERSION_ENV_VAR]: 'not-a-number' }, () => {
+    assert.throws(() => getCurrentKeyVersion(), /positive integer/);
+  });
+  withEnv({ [KEY_VERSION_ENV_VAR]: '1.5' }, () => {
+    assert.throws(() => getCurrentKeyVersion(), /positive integer/);
+  });
+});
+
+test('decryptCredential defaults to the current key version when none is passed — pre-M3 callers keep working unchanged', () => {
+  withEnv({ [KEY_ENV_VAR]: VALID_KEY, [LEGACY_KEY_ENV_VAR]: undefined, [KEY_VERSION_ENV_VAR]: undefined }, () => {
+    const envelope = encryptCredential(PLAINTEXT);
+    assert.equal(decryptCredential(envelope), PLAINTEXT);
+  });
+});
+
+test('a full rotation round trip: a row encrypted under the old version still decrypts once the old key is kept as a versioned variable, while new encryption uses the new key', () => {
+  const OLD_KEY = 'c'.repeat(64);
+  const NEW_KEY = 'd'.repeat(64);
+
+  // Row encrypted while version 1 was current.
+  let oldEnvelope;
+  withEnv({ [KEY_ENV_VAR]: OLD_KEY, [KEY_VERSION_ENV_VAR]: undefined, [LEGACY_KEY_ENV_VAR]: undefined }, () => {
+    assert.equal(getCurrentKeyVersion(), 1);
+    oldEnvelope = encryptCredential(PLAINTEXT);
+  });
+
+  // Rotate: version 2 is now current (NEW_KEY), but the old key is kept
+  // available under the versioned variable so old rows keep decrypting.
+  withEnv({
+    [KEY_ENV_VAR]: NEW_KEY,
+    [KEY_VERSION_ENV_VAR]: '2',
+    [`${KEY_ENV_VAR}_V1`]: OLD_KEY,
+    [LEGACY_KEY_ENV_VAR]: undefined,
+  }, () => {
+    // Old row, decrypted with its own stored version (1) — succeeds.
+    assert.equal(decryptCredential(oldEnvelope, 1), PLAINTEXT);
+
+    // Newly encrypted data uses the new current key/version.
+    const newEnvelope = encryptCredential(PLAINTEXT);
+    assert.equal(decryptCredential(newEnvelope, 2), PLAINTEXT);
+    assert.equal(decryptCredential(newEnvelope), PLAINTEXT); // default = current = 2
+
+    // The old envelope must NOT decrypt under the new key (proves version
+    // routing actually picked a different key, not just got lucky).
+    assert.throws(() => decryptCredential(oldEnvelope, 2), /Credential decryption failed/);
+  });
+});
+
+test('decrypting a row under a retired version whose key variable was already removed fails with a clear, version-specific error', () => {
+  withEnv({ [KEY_ENV_VAR]: VALID_KEY, [KEY_VERSION_ENV_VAR]: '2', [`${KEY_ENV_VAR}_V1`]: undefined, [LEGACY_KEY_ENV_VAR]: undefined }, () => {
+    const fakeOldEnvelope = { version: ENVELOPE_VERSION, algorithm: 'aes-256-gcm', iv: 'AAAA', authTag: 'AAAA', ciphertext: 'AAAA' };
+    assert.throws(() => decryptCredential(fakeOldEnvelope, 1), /INTEGRATION_CREDENTIAL_ENCRYPTION_KEY_V1 is not configured/);
   });
 });
 
