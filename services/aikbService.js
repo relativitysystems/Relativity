@@ -300,6 +300,23 @@ async function getClientAnalytics(clientId) {
   }
 }
 
+// Superset of getClientSummary + getClientAnalytics + listIngestionJobs in one
+// round trip (backlog L5) — use this instead of calling all three when a
+// caller needs data from more than one of them for the same client (e.g. the
+// admin dashboard's per-client health check).
+async function getClientKnowledgeStats(clientId) {
+  try {
+    const res = await axios.get(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/stats/${clientId}`,
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    if (err.response?.status === 404) return {};
+    throw new Error(`AIKB getClientKnowledgeStats failed: ${extractAxiosError(err)}`);
+  }
+}
+
 async function deleteClientData(clientId) {
   try {
     const res = await axios.delete(
@@ -341,6 +358,7 @@ module.exports = {
   listIngestionJobs,
   getClientSummary,
   getClientAnalytics,
+  getClientKnowledgeStats,
   getClientDocumentStats,
   deleteClientData,
   listCollections,

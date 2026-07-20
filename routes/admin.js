@@ -70,30 +70,24 @@ router.get('/clients', adminAuth, async (req, res) => {
 
     const healthResults = await Promise.allSettled(
       clients.map(async (c) => {
-        const [summaryR, analyticsR, jobsR, issueR] = await Promise.allSettled([
-          aikbService.getClientSummary(c.id),
-          aikbService.getClientAnalytics(c.id),
-          aikbService.listIngestionJobs(c.id),
+        const [statsR, issueR] = await Promise.allSettled([
+          aikbService.getClientKnowledgeStats(c.id),
           supabaseService.getClientIssueCount(c.id),
         ]);
 
-        const summary   = summaryR.status   === 'fulfilled' ? (summaryR.value   || {}) : {};
-        const analytics = analyticsR.status === 'fulfilled' ? (analyticsR.value || {}) : {};
-        const jobs      = jobsR.status      === 'fulfilled'
-          ? (jobsR.value.jobs || (Array.isArray(jobsR.value) ? jobsR.value : []))
-          : [];
-        const latestJob = jobs[0] || null;
+        const stats     = statsR.status === 'fulfilled' ? (statsR.value || {}) : {};
+        const latestJob = stats.ingestionJobs?.[0] || stats.latestIngestionJob || null;
 
         return {
-          totalDocuments:     summary.totalDocuments     ?? summary.documentCount   ?? null,
-          indexedDocuments:   summary.indexedDocuments   ?? summary.indexedCount    ?? null,
-          failedDocuments:    summary.failedDocuments    ?? summary.failedCount     ?? null,
-          indexingDocuments:  summary.indexingDocuments  ?? null,
-          totalQuestions:     analytics.totalQuestions   ?? null,
-          totalKnowledgeGaps: analytics.totalKnowledgeGaps ?? analytics.knowledgeGaps ?? null,
+          totalDocuments:     stats.totalDocuments     ?? stats.documentCount   ?? null,
+          indexedDocuments:   stats.indexedDocuments   ?? stats.indexedCount    ?? null,
+          failedDocuments:    stats.failedDocuments    ?? stats.failedCount     ?? null,
+          indexingDocuments:  stats.indexingDocuments  ?? null,
+          totalQuestions:     stats.totalQuestions     ?? null,
+          totalKnowledgeGaps: stats.totalKnowledgeGaps ?? stats.knowledgeGaps ?? null,
           latestIngestionJob: latestJob ? { status: latestJob.status, created_at: latestJob.created_at } : null,
-          lastQuestionAt:     analytics.lastQuestionAt   ?? null,
-          lastIndexedAt:      summary.lastIndexedAt      ?? null,
+          lastQuestionAt:     stats.lastQuestionAt      ?? null,
+          lastIndexedAt:      stats.lastIndexedAt       ?? null,
           issueCount:         issueR.status === 'fulfilled' ? issueR.value : null,
         };
       })
@@ -158,30 +152,24 @@ router.delete('/clients/:clientId', adminAuth, async (req, res) => {
 
 router.get('/clients/:clientId/aikb-health', adminAuth, async (req, res) => {
   const { clientId } = req.params;
-  const [summaryR, analyticsR, jobsR, issueR] = await Promise.allSettled([
-    aikbService.getClientSummary(clientId),
-    aikbService.getClientAnalytics(clientId),
-    aikbService.listIngestionJobs(clientId),
+  const [statsR, issueR] = await Promise.allSettled([
+    aikbService.getClientKnowledgeStats(clientId),
     supabaseService.getClientIssueCount(clientId),
   ]);
 
-  const summary   = summaryR.status   === 'fulfilled' ? (summaryR.value   || {}) : {};
-  const analytics = analyticsR.status === 'fulfilled' ? (analyticsR.value || {}) : {};
-  const jobs      = jobsR.status      === 'fulfilled'
-    ? (jobsR.value.jobs || (Array.isArray(jobsR.value) ? jobsR.value : []))
-    : [];
-  const latestJob = jobs[0] || null;
+  const stats     = statsR.status === 'fulfilled' ? (statsR.value || {}) : {};
+  const latestJob = stats.ingestionJobs?.[0] || stats.latestIngestionJob || null;
 
   res.json({
-    totalDocuments:     summary.totalDocuments     ?? summary.documentCount   ?? null,
-    indexedDocuments:   summary.indexedDocuments   ?? summary.indexedCount    ?? null,
-    failedDocuments:    summary.failedDocuments     ?? summary.failedCount     ?? null,
-    indexingDocuments:  summary.indexingDocuments   ?? null,
-    totalQuestions:     analytics.totalQuestions    ?? null,
-    totalKnowledgeGaps: analytics.totalKnowledgeGaps ?? analytics.knowledgeGaps ?? null,
+    totalDocuments:     stats.totalDocuments     ?? stats.documentCount   ?? null,
+    indexedDocuments:   stats.indexedDocuments   ?? stats.indexedCount    ?? null,
+    failedDocuments:    stats.failedDocuments    ?? stats.failedCount     ?? null,
+    indexingDocuments:  stats.indexingDocuments  ?? null,
+    totalQuestions:     stats.totalQuestions     ?? null,
+    totalKnowledgeGaps: stats.totalKnowledgeGaps ?? stats.knowledgeGaps ?? null,
     latestIngestionJob: latestJob ? { status: latestJob.status, created_at: latestJob.created_at } : null,
-    lastQuestionAt:     analytics.lastQuestionAt   ?? null,
-    lastIndexedAt:      summary.lastIndexedAt      ?? null,
+    lastQuestionAt:     stats.lastQuestionAt      ?? null,
+    lastIndexedAt:      stats.lastIndexedAt       ?? null,
     issueCount:         issueR.status === 'fulfilled' ? issueR.value : null,
   });
 });
