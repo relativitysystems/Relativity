@@ -139,6 +139,45 @@ test('a valid app_mention with a real question resolves the workspace, dedupes, 
   assert.equal(aikbAskClient.calls[0].question, 'What is our PTO policy?');
   assert.equal(aikbAskClient.calls[0].idempotencyKey, 'slack:Ev001');
   assert.deepEqual(aikbAskClient.calls[0].allowedCollectionIds, ['col-general'], 'the org\'s currently-allowed collections must be looked up and passed through');
+  assert.equal(aikbAskClient.calls[0].origin, 'slack', 'a channel @mention must tag its AIKB session as \'slack\', not \'slack_dm\'');
+});
+
+test('backlog M13: a 1:1 DM (message/im) is processed exactly like an app_mention, tagged origin: slack_dm', async () => {
+  const slackEventLogService = createFakeSlackEventLog();
+  const aikbAskClient = createFakeAikbAskClient();
+  const oauthConnectionsService = createFakeOauthConnectionsService();
+  const supabaseService = createFakeSupabaseService();
+  const slackDeliveryService = createFakeSlackDeliveryService();
+
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP, slackEventLogService, aikbAskClient, oauthConnectionsService, supabaseService, slackDeliveryService, slackCollectionAccessService: createFakeSlackCollectionAccessService(['col-general']) });
+  const result = await service.processEventCallback(baseEventCallback({
+    event: { type: 'message', channel_type: 'im', text: 'What is our PTO policy?', channel: 'D1' },
+  }));
+
+  assert.equal(result.outcome, OUTCOME.ENQUEUED);
+  assert.equal(aikbAskClient.calls.length, 1);
+  assert.equal(aikbAskClient.calls[0].question, 'What is our PTO policy?', 'no mention prefix to strip in a DM — the raw text is the question');
+  assert.equal(aikbAskClient.calls[0].origin, 'slack_dm');
+  assert.deepEqual(aikbAskClient.calls[0].allowedCollectionIds, ['col-general'], 'DMs reuse the same client-wide allow-list as channel mentions — no per-member scoping');
+});
+
+test('backlog M13: a group DM (message/mpim) is explicitly unsupported, no AIKB call', async () => {
+  const aikbAskClient = createFakeAikbAskClient();
+  const service = createSlackEventsService({ sleep: NO_OP_SLEEP,
+    slackEventLogService: createFakeSlackEventLog(),
+    aikbAskClient,
+    oauthConnectionsService: createFakeOauthConnectionsService(),
+    supabaseService: createFakeSupabaseService(),
+    slackDeliveryService: createFakeSlackDeliveryService(),
+    slackCollectionAccessService: createFakeSlackCollectionAccessService(),
+  });
+
+  const result = await service.processEventCallback(baseEventCallback({
+    event: { type: 'message', channel_type: 'mpim', text: 'hey bot', channel: 'G1' },
+  }));
+
+  assert.equal(result.outcome, OUTCOME.MPIM_UNSUPPORTED);
+  assert.equal(aikbAskClient.calls.length, 0);
 });
 
 test('never trusts a client/organization id from the Slack payload — only from the DB lookup', async () => {

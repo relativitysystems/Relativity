@@ -29,6 +29,7 @@ const PROVIDER = 'slack';
 const OUTCOME = Object.freeze({
   DUPLICATE: 'duplicate',
   UNSUPPORTED_EVENT_TYPE: 'unsupported_event_type',
+  MPIM_UNSUPPORTED: 'mpim_unsupported',
   BOT_EVENT: 'bot_event',
   SELF_EVENT: 'self_event',
   EDITED_OR_DELETED: 'edited_or_deleted',
@@ -110,7 +111,14 @@ function createSlackEventsService({
     if (event.bot_id) {
       return { status: 200, outcome: OUTCOME.BOT_EVENT };
     }
-    if (event.type !== 'app_mention') {
+    if (event.type === 'message' && event.channel_type === 'mpim') {
+      // Group DMs are explicitly out of scope (backlog M13, rescoped) —
+      // safely dropped, same as any other unsupported event, but tagged
+      // distinctly for observability.
+      return { status: 200, outcome: OUTCOME.MPIM_UNSUPPORTED };
+    }
+    const isDirectMessage = event.type === 'message' && event.channel_type === 'im';
+    if (event.type !== 'app_mention' && !isDirectMessage) {
       return { status: 200, outcome: OUTCOME.UNSUPPORTED_EVENT_TYPE };
     }
     if (event.subtype) {
@@ -180,6 +188,7 @@ function createSlackEventsService({
           idempotencyKey,
           originMetadata: { teamId, channelId: event.channel, threadTs, eventId },
           allowedCollectionIds,
+          origin: isDirectMessage ? 'slack_dm' : 'slack',
         }),
         { attempts: config.slackDelivery.maxAttempts, backoffMs: config.slackDelivery.backoffMs, sleep }
       );

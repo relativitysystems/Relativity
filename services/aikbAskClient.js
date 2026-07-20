@@ -39,9 +39,10 @@ function createAikbAskClient({ httpClient = axios } = {}) {
    * @param {string} params.idempotencyKey - derived from Slack event_id.
    * @param {{ teamId: string, channelId: string, threadTs: string, eventId: string }} params.originMetadata
    * @param {string[]} params.allowedCollectionIds - Milestone 5: AIKB knowledge_collections ids Slack may search for this client. Always an explicit array (possibly empty — empty means "search nothing", not "search everything"), never omitted, so a caller can never accidentally fall back to an unrestricted search.
+   * @param {string} [params.origin] - 'slack' (channel @mention, default) or 'slack_dm' (backlog M13) — tags the resulting AIKB session so DM conversations can be excluded from portal-facing chat history.
    * @returns {Promise<{ accepted: boolean, eventId: string|null }>}
    */
-  async function ask({ clientId, question, idempotencyKey, originMetadata, allowedCollectionIds }) {
+  async function ask({ clientId, question, idempotencyKey, originMetadata, allowedCollectionIds, origin = 'slack' }) {
     const baseUrl = config.aikb.apiBaseUrl;
     const apiKey = config.aikb.apiKey;
     const signingSecret = config.serviceRequest.signingSecret;
@@ -52,7 +53,7 @@ function createAikbAskClient({ httpClient = axios } = {}) {
 
     const payload = {
       question,
-      origin: 'slack',
+      origin,
       originMetadata,
       // Covered by the envelope's signature (hashPayload hashes the whole
       // payload object) — tampering with this in transit invalidates the
