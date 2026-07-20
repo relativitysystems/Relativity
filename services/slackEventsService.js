@@ -156,7 +156,6 @@ function createSlackEventsService({
       channelId: event.channel,
       eventTs: event.ts,
       threadTs: event.thread_ts || null,
-      question: extraction.ok ? extraction.question : null,
       idempotencyKey,
     });
 

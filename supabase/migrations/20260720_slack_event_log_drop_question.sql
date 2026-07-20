@@ -1,0 +1,32 @@
+-- Migration: 20260720_slack_event_log_drop_question
+-- Architecture repo backlog M13 (revised): Slack-originated conversations
+-- must never be persisted in Supabase, in any table. slack_event_log's
+-- `question` column (added by 20260716_slack_event_log.sql) was the one
+-- place on the Relativity side that stored the raw extracted question text
+-- (nulled out again on terminal delivery_failed, per ADR-007 redaction —
+-- see services/slackEventLogService.js#markDeliveryFailed prior to this
+-- migration). It was written on every insertReceived call but never read
+-- back by any code path (confirmed: no SELECT of slack_event_log.question
+-- feeds any downstream logic — the actual retry path always re-derives the
+-- question from event.text via services/slackQuestionService.js), so
+-- dropping it is safe.
+--
+-- After this migration, slack_event_log stores ONLY the minimal
+-- operational/dedup metadata it was always meant to (external_event_id,
+-- client_id, connection_id, event_type, channel_id, event_ts, thread_ts,
+-- idempotency_key, status, attempt_count, error_code, response_metadata,
+-- timestamps) — never the question, answer, citations, or any Slack
+-- payload/thread text.
+--
+-- Must be applied together with (or after) deploying
+-- services/slackEventLogService.js's corresponding code change
+-- (insertReceived no longer accepts/writes `question`; markDeliveryFailed
+-- no longer nulls it out, since the column is gone).
+--
+-- Destructive but narrow: drops one column on one table. Any existing
+-- question values are removed as part of this migration — see the
+-- Architecture repo's M13 (revised) backlog entry for the historical-data
+-- purge this accompanies.
+
+ALTER TABLE slack_event_log
+  DROP COLUMN IF EXISTS question;

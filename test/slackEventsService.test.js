@@ -61,7 +61,7 @@ function createFakeSlackEventLog(initial = {}) {
     markFailed: async (id, opts) => { const r = rows.get(id); if (r) { r.status = 'failed'; r.error_code = opts.errorCode; } return r; },
     markDeliveryFailed: async (id, opts) => {
       const r = rows.get(id);
-      if (r) { r.status = 'delivery_failed'; r.error_code = opts.errorCode; r.attempt_count = opts.attemptCount; r.question = null; }
+      if (r) { r.status = 'delivery_failed'; r.error_code = opts.errorCode; r.attempt_count = opts.attemptCount; }
       return r;
     },
     _rows: rows,
@@ -443,7 +443,7 @@ test('AIKB /ask terminal failure: all 3 attempts fail — best-effort Slack noti
   const row = [...slackEventLogService._rows.values()][0];
   assert.equal(row.status, 'delivery_failed');
   assert.equal(row.attempt_count, 3);
-  assert.equal(row.question, null, 'the stored question must be redacted on terminal failure');
+  assert.equal(row.question, undefined, 'Backlog M13 (revised): slack_event_log never stores a question at all, not even transiently');
 
   assert.equal(slackDeliveryService.calls.length, 1, 'a best-effort "couldn\'t complete that request" notice is sent since Slack itself is reachable');
   assert.equal(slackDeliveryService.calls[0].text, "I couldn't complete that request right now. Please try again shortly.");

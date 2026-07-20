@@ -93,7 +93,6 @@ const BASE_ROW = {
   channelId: 'C1',
   eventTs: '1700000000.000000',
   threadTs: null,
-  question: 'What is our PTO policy?',
   idempotencyKey: 'slack:Ev001',
 };
 
@@ -199,7 +198,7 @@ test('getByIdempotencyKey finds the row created for that key', async () => {
   assert.equal(found.idempotency_key, 'slack:Ev001');
 });
 
-test('markDeliveryFailed sets the terminal status, redacts the question, and retains dedup/audit metadata (ADR-007)', async () => {
+test('markDeliveryFailed sets the terminal status and retains dedup/audit metadata (ADR-007)', async () => {
   const { client } = createFakeSlackEventLogTable();
   const service = createSlackEventLogService(client);
   const { row } = await service.insertReceived(BASE_ROW);
@@ -209,13 +208,26 @@ test('markDeliveryFailed sets the terminal status, redacts the question, and ret
   assert.equal(failed.status, STATUS.DELIVERY_FAILED);
   assert.equal(failed.error_code, 'SLACK_DELIVERY_NOT_OK');
   assert.equal(failed.attempt_count, 3);
-  assert.equal(failed.question, null, 'customer content must be redacted on reaching the terminal state');
   assert.ok(failed.failed_at);
 
-  // Technical/dedup metadata survives redaction (ADR-007).
+  // Technical/dedup metadata survives (ADR-007).
   assert.equal(failed.external_event_id, 'Ev001');
   assert.equal(failed.client_id, 'client-1');
   assert.equal(failed.idempotency_key, 'slack:Ev001');
+});
+
+// Backlog M13 (revised): slack_event_log no longer has a `question` column
+// at all (supabase/migrations/20260720_slack_event_log_drop_question.sql).
+// insertReceived's destructuring means an accidental `question` field on
+// the caller's params object is silently dropped, never written — this
+// guards against a future regression re-introducing it.
+test('insertReceived never persists a question field, even if a caller mistakenly passes one', async () => {
+  const { client } = createFakeSlackEventLogTable();
+  const service = createSlackEventLogService(client);
+
+  const { row } = await service.insertReceived({ ...BASE_ROW, question: 'What is our PTO policy?' });
+
+  assert.equal(row.question, undefined, 'no question value should ever reach the stored row');
 });
 
 test('markDeliveryFailed is distinct from the generic markFailed status', async () => {

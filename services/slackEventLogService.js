@@ -50,10 +50,15 @@ function createSlackEventLogService(client) {
    * (provider, external_event_id) constraint and returns { inserted: false,
    * row: <existing row> } instead of throwing, so the caller can always ack
    * Slack 200 without reprocessing.
+   *
+   * Backlog M13 (revised): no longer accepts/writes a `question` field —
+   * slack_event_log stores only operational/dedup metadata now (see
+   * supabase/migrations/<date>_slack_event_log_drop_question.sql). The
+   * extracted question text is never persisted to Supabase at all.
    */
   async function insertReceived({
     externalEventId, clientId, connectionId, eventType,
-    channelId, eventTs, threadTs, question, idempotencyKey,
+    channelId, eventTs, threadTs, idempotencyKey,
   }) {
     if (!externalEventId) throw new Error('insertReceived requires externalEventId');
     if (!clientId) throw new Error('insertReceived requires clientId');
@@ -71,7 +76,6 @@ function createSlackEventLogService(client) {
         channel_id: channelId,
         event_ts: eventTs,
         thread_ts: threadTs || null,
-        question: question || null,
         idempotency_key: idempotencyKey,
         status: STATUS.RECEIVED,
       })
@@ -188,19 +192,20 @@ function createSlackEventLogService(client) {
   /**
    * Terminal state (ADR-007): every bounded Slack-delivery retry attempt
    * failed, or delivery was never possible (e.g. a revoked connection).
-   * Redacts the row's own customer content — the Slack user's question — in
-   * the same UPDATE that transitions status, so a row is never observably
-   * 'delivery_failed' with `question` still attached. Technical/dedup
-   * metadata (external_event_id, client_id, attempt_count, error_code,
-   * failed_at) is retained, per ADR-007. Corresponding AIKB-side chat
-   * content is redacted separately — see services/slackDeliveryFailureService.js.
+   * Technical/dedup metadata (external_event_id, client_id, attempt_count,
+   * error_code, failed_at) is retained, per ADR-007. There is no customer
+   * content on this row to redact any more (Backlog M13, revised —
+   * slack_event_log never stores the question at all; see insertReceived
+   * above). Corresponding AIKB-side chat content redaction
+   * (services/slackDeliveryFailureService.js) is likewise now a no-op for
+   * new events, since no AIKB session ever exists to redact — kept in
+   * place for defense in depth / pre-existing rows.
    */
   async function markDeliveryFailed(id, { errorCode, attemptCount } = {}) {
     const update = {
       status: STATUS.DELIVERY_FAILED,
       failed_at: new Date().toISOString(),
       error_code: errorCode || 'UNKNOWN_ERROR',
-      question: null,
     };
     if (typeof attemptCount === 'number') update.attempt_count = attemptCount;
 
