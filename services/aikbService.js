@@ -1,6 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
-const { aikb: aikbConfig } = require('../config');
+const crypto = require('crypto');
+const config = require('../config');
+const { aikb: aikbConfig } = config;
+const { signServiceRequest } = require('./serviceRequestAuth');
 
 let _client = null;
 function getAikbSupabase() {
@@ -23,6 +26,30 @@ function extractAxiosError(err) {
   return err.response?.data?.error || err.response?.data?.message || err.message;
 }
 
+// Backlog H4 — signs the additive HMAC service-request envelope (the same
+// one aikbAskClient.js already uses for POST /ask) for AIKB's other
+// clientId-scoped x-api-key-only routes: ingest, document delete, client
+// delete, and the documents/collections listing and mutation routes. The
+// envelope cryptographically binds clientId to the request, so a leaked
+// shared x-api-key alone can no longer be used to act on an arbitrary
+// client through these routes. idempotencyKey has no dedup meaning for
+// these routes (unlike /ask's Slack-question flow) — it's generated fresh
+// per call purely to satisfy the envelope schema, which requires one.
+// Sent alongside the unchanged AIKB_API_KEY (defense in depth, not a
+// replacement — see aikbHeaders()).
+function signedEnvelope(clientId, payload) {
+  const signingSecret = config.serviceRequest.signingSecret;
+  if (!signingSecret) {
+    throw new Error('SERVICE_REQUEST_SIGNING_SECRET is not configured on this server.');
+  }
+  return signServiceRequest({
+    clientId,
+    idempotencyKey: crypto.randomUUID(),
+    payload,
+    secret: signingSecret,
+  });
+}
+
 async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType) {
   const storagePath = `uploads/${clientId}/${sourceFileId}`;
   const { error } = await getAikbSupabase().storage
@@ -35,11 +62,13 @@ async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType) {
 
 async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fileBuffer }) {
   const storagePath = await uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType);
+  const payload = { sourceProvider: 'portal_upload', sourceFileId, fileName, mimeType, storagePath };
+  const envelope = signedEnvelope(clientId, payload);
 
   try {
     await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/ingest`,
-      { clientId, sourceProvider: 'portal_upload', sourceFileId, fileName, mimeType, storagePath },
+      { ...envelope, payload },
       { headers: aikbHeaders() }
     );
   } catch (err) {
@@ -48,9 +77,11 @@ async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fil
 }
 
 async function listDocuments(clientId) {
+  const envelope = signedEnvelope(clientId, {});
   try {
     const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/documents/${clientId}`, {
       headers: aikbHeaders(),
+      data: { ...envelope, payload: {} },
     });
     return res.data;
   } catch (err) {
@@ -146,10 +177,12 @@ async function updateChatSessionTitle(clientId, sessionId, title, authHeader) {
 }
 
 async function deleteDocument(clientId, sourceFileId) {
+  const payload = { sourceFileId, sourceProvider: 'portal_upload' };
+  const envelope = signedEnvelope(clientId, payload);
   try {
     await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/document/by-source`, {
       headers: aikbHeaders(),
-      data: { clientId, sourceFileId, sourceProvider: 'portal_upload' },
+      data: { ...envelope, payload },
     });
   } catch (err) {
     throw new Error(`AIKB deleteDocument failed: ${extractAxiosError(err)}`);
@@ -161,9 +194,11 @@ async function deleteDocument(clientId, sourceFileId) {
 // ---------------------------------------------------------------------------
 
 async function listCollections(clientId) {
+  const envelope = signedEnvelope(clientId, {});
   try {
     const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/collections/${clientId}`, {
       headers: aikbHeaders(),
+      data: { ...envelope, payload: {} },
     });
     return res.data;
   } catch (err) {
@@ -172,10 +207,12 @@ async function listCollections(clientId) {
 }
 
 async function createCollection(clientId, name) {
+  const payload = { name };
+  const envelope = signedEnvelope(clientId, payload);
   try {
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/collections`,
-      { clientId, name },
+      { ...envelope, payload },
       { headers: aikbHeaders() }
     );
     return res.data;
@@ -188,10 +225,12 @@ async function createCollection(clientId, name) {
 }
 
 async function renameCollection(clientId, collectionId, name) {
+  const payload = { name };
+  const envelope = signedEnvelope(clientId, payload);
   try {
     const res = await axios.patch(
       `${aikbConfig.apiBaseUrl}/api/knowledge/collections/${collectionId}`,
-      { clientId, name },
+      { ...envelope, payload },
       { headers: aikbHeaders() }
     );
     return res.data;
@@ -204,10 +243,11 @@ async function renameCollection(clientId, collectionId, name) {
 }
 
 async function deleteCollection(clientId, collectionId) {
+  const envelope = signedEnvelope(clientId, {});
   try {
     const res = await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/collections/${collectionId}`, {
       headers: aikbHeaders(),
-      data: { clientId },
+      data: { ...envelope, payload: {} },
     });
     return res.data;
   } catch (err) {
@@ -219,10 +259,12 @@ async function deleteCollection(clientId, collectionId) {
 }
 
 async function moveDocumentCollection(clientId, sourceFileId, collectionId) {
+  const payload = { sourceFileId, sourceProvider: 'portal_upload', collectionId };
+  const envelope = signedEnvelope(clientId, payload);
   try {
     const res = await axios.patch(
       `${aikbConfig.apiBaseUrl}/api/knowledge/document/by-source/collection`,
-      { clientId, sourceFileId, sourceProvider: 'portal_upload', collectionId },
+      { ...envelope, payload },
       { headers: aikbHeaders() }
     );
     return res.data;
@@ -318,10 +360,11 @@ async function getClientKnowledgeStats(clientId) {
 }
 
 async function deleteClientData(clientId) {
+  const envelope = signedEnvelope(clientId, {});
   try {
     const res = await axios.delete(
       `${aikbConfig.apiBaseUrl}/api/knowledge/client/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(), data: { ...envelope, payload: {} } }
     );
     return res.data;
   } catch (err) {

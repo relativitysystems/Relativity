@@ -1,0 +1,21 @@
+-- Migration: 20260719_gdrive_dropbox_oauth_connections
+-- Backlog H2 — Google Drive and Dropbox now write/read through the
+-- encrypted oauth_connections/oauth_credentials model
+-- (supabase/migrations/20260714_oauth_connections.sql), the same one Slack
+-- moved onto in Milestone 3. No schema change is needed here: oauth_connections'
+-- `provider` CHECK constraint already allows 'google_drive' and 'dropbox'
+-- (added in 20260714), and services/oauthConnectionsService.js's
+-- SUPPORTED_PROVIDERS already listed both. This migration only cleans up
+-- the now-fully-superseded legacy plaintext rows in oauth_tokens.
+--
+-- Unlike the Slack cleanup in 20260714 (§4), this is NOT a judgment call
+-- about discarding live credentials: a direct query of this database ahead
+-- of this migration confirmed oauth_tokens has ZERO rows for any provider,
+-- including google_drive and dropbox — there is nothing live to lose. The
+-- DELETE below is included for symmetry with the Slack migration and as a
+-- defensive no-op if that ever changes before this runs, not because any
+-- data is known to exist.
+--
+-- Safe to run multiple times — the DELETE is idempotent by nature.
+
+DELETE FROM oauth_tokens WHERE provider IN ('google_drive', 'dropbox');

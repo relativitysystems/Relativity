@@ -8,6 +8,7 @@ const apiKey = require('../middleware/apiKey');
 const dropboxService = require('../services/dropboxService');
 const googleDriveService = require('../services/googleDriveService');
 const supabaseService = require('../services/supabaseService');
+const oauthConnectionsService = require('../services/oauthConnectionsService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
@@ -133,7 +134,17 @@ router.get('/dropbox/callback', async (req, res) => {
     const { access_token, refresh_token, expires_in } = tokenData;
     const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
 
-    await supabaseService.upsertToken(clientId, 'dropbox', access_token, refresh_token || null, expiresAt);
+    // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
+    // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
+    // connectedByMemberId is null here because this callback's state (unlike
+    // Slack's oauth_states row) doesn't carry a memberId — see backlog M1.
+    await oauthConnectionsService.createOrReplaceConnection({
+      clientId,
+      provider: 'dropbox',
+      accessToken: access_token,
+      refreshToken: refresh_token || null,
+      expiresAt,
+    });
 
     res.redirect('/portal.html?connected=dropbox');
   } catch (err) {
@@ -231,7 +242,18 @@ router.get('/google/callback', async (req, res) => {
     const { access_token, refresh_token, expires_in, scope } = tokenData;
     const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
 
-    await supabaseService.upsertToken(clientId, 'google_drive', access_token, refresh_token || null, expiresAt, scope || null);
+    // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
+    // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
+    // connectedByMemberId is null here because this callback's state (unlike
+    // Slack's oauth_states row) doesn't carry a memberId — see backlog M1.
+    await oauthConnectionsService.createOrReplaceConnection({
+      clientId,
+      provider: 'google_drive',
+      accessToken: access_token,
+      refreshToken: refresh_token || null,
+      expiresAt,
+      scopesGranted: scope ? scope.split(' ').filter(Boolean) : [],
+    });
 
     res.redirect(`/portal.html?clientId=${clientId}&connected=google_drive`);
   } catch (err) {

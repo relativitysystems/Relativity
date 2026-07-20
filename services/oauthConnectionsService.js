@@ -6,9 +6,9 @@
 // this file uses "organization" terminology per the Phase 3 domain model
 // (client == organization, Phase 3 §1).
 //
-// This is the safe replacement for supabaseService.upsertToken/getToken
-// for NEW providers (starting with Slack). Google Drive and Dropbox are not
-// migrated in this milestone — see the deprecation note on upsertToken in
+// This is the safe replacement for supabaseService.upsertToken/getToken.
+// Slack migrated first (Milestone 3); Google Drive and Dropbox migrated
+// separately (backlog H2) — see the deprecation note on upsertToken in
 // supabaseService.js.
 //
 // Exported as a ready-to-use singleton (matching this repo's existing
@@ -214,6 +214,44 @@ function createOauthConnectionsService(client) {
   }
 
   /**
+   * In-place credential refresh for an existing connection — updates only
+   * oauth_credentials, never touches oauth_connections. Distinct from
+   * createOrReplaceConnection on purpose: that function always revokes the
+   * prior connection row and inserts a brand-new one (a new id, a new
+   * connected_at), which is correct for a user re-authorizing but wrong for
+   * a silent background token refresh — using createOrReplaceConnection for
+   * every refresh would churn the connection's identity/history on every
+   * expiring-token API call. This function is the refresh-only counterpart:
+   * same connection id, same connected_at, only the credential row (and its
+   * updated_at) changes.
+   *
+   * Server-only, same plaintext-never-touches-the-database guarantee as
+   * createOrReplaceConnection — encryption happens before any DB call.
+   */
+  async function updateCredentialForConnection(connectionId, { accessToken, refreshToken = null, expiresAt = null } = {}) {
+    if (!connectionId) throw new Error('updateCredentialForConnection requires connectionId');
+    if (typeof accessToken !== 'string' || accessToken.length === 0) {
+      throw new Error('updateCredentialForConnection requires a non-empty accessToken');
+    }
+
+    const accessTokenEncrypted = encryptCredential(accessToken);
+    const refreshTokenEncrypted = refreshToken ? encryptCredential(refreshToken) : null;
+
+    const { error } = await client
+      .from('oauth_credentials')
+      .update({
+        access_token_encrypted: accessTokenEncrypted,
+        refresh_token_encrypted: refreshTokenEncrypted,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        encryption_key_version: CURRENT_ENCRYPTION_KEY_VERSION,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('connection_id', connectionId);
+
+    if (error) throw new Error(`updateCredentialForConnection failed: ${error.message}`);
+  }
+
+  /**
    * Soft-revokes the active connection and deletes its credential row
    * immediately (ciphertext is not retained past revocation), matching the
    * disconnect behavior documented in the architecture report.
@@ -265,6 +303,7 @@ function createOauthConnectionsService(client) {
     getConnectionById,
     getSafeConnectionStatus,
     getDecryptedCredentialForConnection,
+    updateCredentialForConnection,
     markConnectionRevoked,
     deleteConnection,
   };

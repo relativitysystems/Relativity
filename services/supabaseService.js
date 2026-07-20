@@ -6,14 +6,14 @@ const oauthConnectionsService = require('./oauthConnectionsService');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
-// @deprecated for new providers — stores tokens in PLAINTEXT. Architecture
-// Review Phase 4, Milestone 2 introduces services/oauthConnectionsService.js
-// (backed by the encrypted oauth_connections/oauth_credentials tables) as
-// the replacement. Slack's new implementation (Milestone 3) must use that
-// service instead — do not call upsertToken/getToken for provider='slack'
-// in any new code. Google Drive and Dropbox continue to use this path
-// unchanged until a later, separate migration moves them over; existing
-// rows for those providers are untouched by this milestone.
+// @deprecated — stores tokens in PLAINTEXT. Replaced by
+// services/oauthConnectionsService.js (backed by the encrypted
+// oauth_connections/oauth_credentials tables) for every provider this repo
+// writes: Slack (Milestone 3), then Google Drive and Dropbox (backlog H2).
+// Do not call upsertToken/getToken for any of these providers in new code.
+// Kept only because oauth_tokens itself is not dropped — the confirmed-empty
+// legacy rows (see supabase/migrations/ for the H2 cleanup statement) mean
+// nothing currently depends on it, but the table isn't torn down.
 async function upsertToken(clientId, provider, accessToken, refreshToken, expiresAt, scope = null) {
   const record = {
     client_id: clientId,
@@ -69,25 +69,20 @@ async function getClientByAuthUserId(authUserId) {
   return getClientById(clientUser.client_id);
 }
 
-// Dropbox and Google Drive are unchanged from Milestone 2 — still read from
-// oauth_tokens via getToken, exactly as before. Slack (Milestone 3) now
-// reads from oauth_connections/oauth_credentials via
-// services/oauthConnectionsService.js#getSafeConnectionStatus instead: the
-// oauth_tokens table no longer receives new Slack rows as of
-// supabase/migrations/20260714_oauth_connections.sql §4, so continuing to
-// read oauth_tokens for Slack here would silently report every workspace as
-// never-connected once the new OAuth flow (routes/integrations/slack.js) is
-// live.
+// All three providers now read from oauth_connections/oauth_credentials via
+// services/oauthConnectionsService.js#getSafeConnectionStatus — Slack since
+// Milestone 3, Dropbox and Google Drive since backlog H2. Continuing to read
+// oauth_tokens here would silently report every connection as never-made,
+// since new connections for any of these three providers no longer write
+// there — see the deprecation note on upsertToken/getToken above.
 async function getClientConnectionStatus(clientId) {
-  const legacyProviders = ['dropbox', 'google_drive'];
-  const [legacyResults, slackStatus] = await Promise.all([
-    Promise.all(legacyProviders.map(p => getToken(clientId, p))),
-    oauthConnectionsService.getSafeConnectionStatus(clientId, 'slack'),
-  ]);
+  const providers = ['dropbox', 'google_drive', 'slack'];
+  const results = await Promise.all(
+    providers.map(p => oauthConnectionsService.getSafeConnectionStatus(clientId, p))
+  );
 
   const status = {};
-  legacyProviders.forEach((p, i) => { status[p] = legacyResults[i] !== null; });
-  status.slack = slackStatus.connected;
+  providers.forEach((p, i) => { status[p] = results[i].connected; });
   return status;
 }
 
@@ -233,23 +228,22 @@ async function getAllClientsWithStatus() {
 
   const clientIds = clients.map(c => c.id);
 
-  // Slack status now comes from oauth_connections (Milestone 3) instead of
+  // All three providers now come from oauth_connections (Slack since
+  // Milestone 3, Dropbox/Google Drive since backlog H2) instead of
   // oauth_tokens — see the note on getClientConnectionStatus above. Only
-  // client_id is read here (an oauth_connections column, never
+  // client_id/provider are read here (oauth_connections columns, never
   // oauth_credentials), so no credential material is touched.
-  const [{ data: activeMembers }, { data: tokens }, { data: slackConnections }] = await Promise.all([
+  const [{ data: activeMembers }, { data: connections }] = await Promise.all([
     supabase.from('client_members').select('client_id').not('auth_user_id', 'is', null).in('client_id', clientIds),
-    supabase.from('oauth_tokens').select('client_id, provider').in('client_id', clientIds),
-    supabase.from('oauth_connections').select('client_id').eq('provider', 'slack').eq('status', 'active').in('client_id', clientIds),
+    supabase.from('oauth_connections').select('client_id, provider').eq('status', 'active').in('client_id', clientIds),
   ]);
 
   const acceptedSet = new Set((activeMembers || []).map(m => m.client_id));
-  const tokenMap = {};
-  (tokens || []).forEach(t => {
-    if (!tokenMap[t.client_id]) tokenMap[t.client_id] = {};
-    tokenMap[t.client_id][t.provider] = true;
+  const connectionMap = {};
+  (connections || []).forEach(c => {
+    if (!connectionMap[c.client_id]) connectionMap[c.client_id] = {};
+    connectionMap[c.client_id][c.provider] = true;
   });
-  const slackConnectedSet = new Set((slackConnections || []).map(c => c.client_id));
 
   return clients.map(client => ({
     id: client.id,
@@ -258,9 +252,9 @@ async function getAllClientsWithStatus() {
     is_active: client.is_active,
     created_at: client.created_at,
     invite_accepted: acceptedSet.has(client.id),
-    dropbox: !!(tokenMap[client.id] && tokenMap[client.id]['dropbox']),
-    slack: slackConnectedSet.has(client.id),
-    google_drive: !!(tokenMap[client.id] && tokenMap[client.id]['google_drive']),
+    dropbox: !!(connectionMap[client.id] && connectionMap[client.id]['dropbox']),
+    slack: !!(connectionMap[client.id] && connectionMap[client.id]['slack']),
+    google_drive: !!(connectionMap[client.id] && connectionMap[client.id]['google_drive']),
   }));
 }
 

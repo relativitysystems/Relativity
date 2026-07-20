@@ -303,6 +303,71 @@ test('only getDecryptedCredentialForConnection reads oauth_credentials, and only
 });
 
 // ─────────────────────────────────────────────
+// updateCredentialForConnection — in-place refresh, no connection churn
+// (backlog H2). Distinct from createOrReplaceConnection: only touches
+// oauth_credentials, never oauth_connections.
+// ─────────────────────────────────────────────
+
+test('updateCredentialForConnection requires connectionId and a non-empty accessToken before touching the database', async () => {
+  const { client, calls } = createFakeSupabaseClient();
+  const service = createOauthConnectionsService(client);
+
+  await assert.rejects(() => service.updateCredentialForConnection(undefined, { accessToken: 'x' }), /requires connectionId/);
+  await assert.rejects(() => service.updateCredentialForConnection('conn-1', { accessToken: '' }), /requires a non-empty accessToken/);
+  await assert.rejects(() => service.updateCredentialForConnection('conn-1', {}), /requires a non-empty accessToken/);
+
+  assert.equal(calls.queries.length, 0);
+});
+
+test('updateCredentialForConnection encrypts before writing and never sends plaintext', async () => {
+  await withKey(async () => {
+    const { client, calls } = createFakeSupabaseClient({
+      onQuery: () => ({ data: null, error: null }),
+    });
+    const service = createOauthConnectionsService(client);
+
+    const plaintext = 'ya29.new-access-token';
+    await service.updateCredentialForConnection('conn-1', { accessToken: plaintext, refreshToken: 'refresh-abc' });
+
+    const updateCall = calls.queries.find(q => q.operation === 'update');
+    assert.equal(updateCall.table, 'oauth_credentials');
+    assert.equal(updateCall.filters.connection_id, 'conn-1');
+    assert.equal(typeof updateCall.updatePayload.access_token_encrypted, 'object');
+    assert.notEqual(updateCall.updatePayload.access_token_encrypted, plaintext);
+    assert.equal(JSON.stringify(updateCall.updatePayload).includes(plaintext), false);
+    assert.equal(updateCall.updatePayload.encryption_key_version, CURRENT_ENCRYPTION_KEY_VERSION);
+  });
+});
+
+test('updateCredentialForConnection never touches oauth_connections — only the credential row', async () => {
+  await withKey(async () => {
+    const { client, calls } = createFakeSupabaseClient({ onQuery: () => ({ data: null, error: null }) });
+    const service = createOauthConnectionsService(client);
+
+    await service.updateCredentialForConnection('conn-1', { accessToken: 'new-token' });
+
+    assert.ok(calls.queries.length > 0, 'sanity check: a query was actually made');
+    assert.ok(calls.queries.every(q => q.table === 'oauth_credentials'), 'refresh must never write to oauth_connections');
+  });
+});
+
+test('updateCredentialForConnection writes refresh_token_encrypted: null when no refreshToken is passed, rather than omitting the field', async () => {
+  await withKey(async () => {
+    const { client, calls } = createFakeSupabaseClient({ onQuery: () => ({ data: null, error: null }) });
+    const service = createOauthConnectionsService(client);
+
+    // Documents the contract callers must follow: if the provider's refresh
+    // response didn't return a new refresh token, the CALLER must pass the
+    // previous one through explicitly — this function has no memory of it
+    // and will null it out otherwise (see googleDriveService.js#getValidAccessToken).
+    await service.updateCredentialForConnection('conn-1', { accessToken: 'new-token' });
+
+    const updateCall = calls.queries.find(q => q.operation === 'update');
+    assert.equal(updateCall.updatePayload.refresh_token_encrypted, null);
+  });
+});
+
+// ─────────────────────────────────────────────
 // Atomicity / replacement semantics — failure delegated entirely to the
 // RPC, no partial state, old connection never considered "replaced" on
 // failure.

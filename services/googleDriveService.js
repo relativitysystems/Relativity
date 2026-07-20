@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { googleDrive } = require('../config');
-const supabaseService = require('./supabaseService');
+const oauthConnectionsService = require('./oauthConnectionsService');
 
 async function exchangeCodeForToken(code) {
   const params = new URLSearchParams({
@@ -37,17 +37,30 @@ async function refreshAccessToken(refreshToken) {
   return response.data;
 }
 
-// Returns a valid access token, refreshing in Supabase if within 60s of expiry.
+// Returns a valid access token, refreshing via oauthConnectionsService
+// (backlog H2) if within 60s of expiry. Refresh updates only the credential
+// row in place (updateCredentialForConnection) — it never touches the
+// connection row's id/connected_at, unlike createOrReplaceConnection.
 async function getValidAccessToken(clientId) {
-  const tokenRow = await supabaseService.getToken(clientId, 'google_drive');
-  if (!tokenRow) throw new Error(`No Google Drive token found for client ${clientId}`);
+  const connection = await oauthConnectionsService.getActiveConnectionForClient(clientId, 'google_drive');
+  if (!connection) throw new Error(`No Google Drive token found for client ${clientId}`);
 
-  const nearExpiry = tokenRow.expires_at && new Date(tokenRow.expires_at) <= new Date(Date.now() + 60_000);
-  if (!nearExpiry) return tokenRow.access_token;
+  const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connection.id);
+  if (!credential) throw new Error(`No Google Drive token found for client ${clientId}`);
 
-  const refreshed = await refreshAccessToken(tokenRow.refresh_token);
+  const nearExpiry = credential.expiresAt && new Date(credential.expiresAt) <= new Date(Date.now() + 60_000);
+  if (!nearExpiry) return credential.accessToken;
+
+  const refreshed = await refreshAccessToken(credential.refreshToken);
   const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
-  await supabaseService.upsertToken(clientId, 'google_drive', refreshed.access_token, tokenRow.refresh_token, expiresAt, tokenRow.scope);
+  // Google's refresh grant response often omits refresh_token (it stays
+  // valid and unchanged) — fall back to the existing one so it's never
+  // overwritten with null.
+  await oauthConnectionsService.updateCredentialForConnection(connection.id, {
+    accessToken: refreshed.access_token,
+    refreshToken: refreshed.refresh_token || credential.refreshToken,
+    expiresAt,
+  });
   return refreshed.access_token;
 }
 
