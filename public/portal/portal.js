@@ -27,7 +27,7 @@
     return;
   }
 
-  const { clientId, clientName, email, memberId, memberRole } = me;
+  const { clientId, clientName, email, memberId, memberRole, googleDriveConnected, dropboxConnected } = me;
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
@@ -311,6 +311,53 @@
 
   loadSlackStatus();
 
+  // 4c. Google Drive / Dropbox connection status (Backlog M8) — GET
+  // /auth/me already returns these two flags (routes/auth.js), unlike
+  // Slack there's no separate status endpoint or disconnect flow, so this
+  // just renders the flags already on `me` and, if not connected, an
+  // owner/admin-only Connect button hitting the existing /auth/*/start
+  // routes (same pattern as Slack's connect button above).
+  function renderProviderStatus({ badgeEl, connectBtnEl, connected, startPath }) {
+    if (!badgeEl) return;
+    badgeEl.textContent = connected ? 'Connected' : 'Not connected';
+    badgeEl.className = `integration-status badge ${connected ? 'badge--indexed' : 'badge--soon'}`;
+    if (connectBtnEl) {
+      connectBtnEl.hidden = !isOwnerAdmin || connected;
+      if (!connectBtnEl._bound) {
+        connectBtnEl._bound = true;
+        connectBtnEl.addEventListener('click', async () => {
+          connectBtnEl.disabled = true;
+          try {
+            const res = await fetch(startPath, { headers: { Authorization: `Bearer ${accessToken}` } });
+            const body = await res.json().catch(() => ({}));
+            if (res.ok && body.url) {
+              window.location.href = body.url;
+              return;
+            }
+            showBanner('error', body.error || 'Could not start connection.');
+          } catch {
+            showBanner('error', 'Network error. Please try again.');
+          } finally {
+            connectBtnEl.disabled = false;
+          }
+        });
+      }
+    }
+  }
+
+  renderProviderStatus({
+    badgeEl: document.getElementById('gdrive-status-badge'),
+    connectBtnEl: document.getElementById('gdrive-connect-btn'),
+    connected: !!googleDriveConnected,
+    startPath: '/auth/google/start',
+  });
+  renderProviderStatus({
+    badgeEl: document.getElementById('dropbox-status-badge'),
+    connectBtnEl: document.getElementById('dropbox-connect-btn'),
+    connected: !!dropboxConnected,
+    startPath: '/auth/dropbox/start',
+  });
+
   // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');
   const kbUploadBtn       = document.getElementById('kb-upload-btn');
@@ -333,6 +380,9 @@
   const kbMicBtn          = document.getElementById('kb-mic-btn');
   const kbMicTimer        = document.getElementById('kb-mic-timer');
   const kbMicError        = document.getElementById('kb-mic-error');
+  const kbCollectionsFilterDetails = document.getElementById('kb-collections-filter');
+  const kbCollectionsFilterList    = document.getElementById('kb-collections-filter-list');
+  const kbCollectionsFilterLabel   = document.getElementById('kb-collections-filter-label');
 
   let _pickerConfig       = null;
   let _gapiPickerLoaded   = false;
@@ -341,6 +391,24 @@
 
   let currentSessionId = null;
   let chatSessions     = [];
+
+  // Backlog M10: which collections the portal's own chat may search — the
+  // same allowedCollectionIds concept Slack already uses (loadSlackAllowedCollections
+  // above), scoped to this member's browser rather than client-wide, since
+  // portal chat is per-user, not a shared workspace-level setting like
+  // Slack's. null = unrestricted (search every collection, the pre-existing
+  // default behavior); an array (possibly empty) restricts retrieval.
+  const KB_COLLECTIONS_FILTER_KEY = `kbAllowedCollections:${clientId}`;
+  let kbAllowedCollectionIds = (() => {
+    try {
+      const raw = localStorage.getItem(KB_COLLECTIONS_FILTER_KEY);
+      if (raw === null) return null;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  })();
   const pendingDeletes = new Set();
   const pendingUploads = new Map();
 
@@ -602,6 +670,34 @@
   }
 
   kbSessionsList.addEventListener('click', async (e) => {
+    const renameBtn = e.target.closest('.btn-kb-session-rename');
+    if (renameBtn) {
+      const sessionId = renameBtn.dataset.sessionId;
+      const currentTitle = renameBtn.dataset.title || '';
+      const newTitle = prompt('Rename chat session', currentTitle);
+      if (newTitle === null) return;
+      const trimmed = newTitle.trim();
+      if (!trimmed || trimmed === currentTitle) return;
+      try {
+        const res = await fetch(`/api/knowledge/chat/sessions/${encodeURIComponent(sessionId)}/title`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ title: trimmed }),
+        });
+        if (res.ok) {
+          const session = chatSessions.find(s => (s.id || s.session_id) === sessionId);
+          if (session) session.title = trimmed;
+          renderSessions(chatSessions);
+        } else {
+          const body = await res.json().catch(() => ({}));
+          showBanner('error', body.error || 'Failed to rename session.');
+        }
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      }
+      return;
+    }
+
     const deleteBtn = e.target.closest('.btn-kb-session-delete');
     if (deleteBtn) {
       const sessionId = deleteBtn.dataset.sessionId;
@@ -1045,6 +1141,7 @@
         <div class="kb-session-item${isActive}" data-session-id="${escHtml(id)}">
           <span class="kb-session-title" title="${escHtml(title)}">${escHtml(title)}</span>
           ${dateStr ? `<span class="kb-session-date">${escHtml(dateStr)}</span>` : ''}
+          <button class="btn-kb-session-rename" data-session-id="${escHtml(id)}" data-title="${escHtml(title)}" title="Rename session">&#9998;</button>
           <button class="btn-kb-session-delete" data-session-id="${escHtml(id)}" title="Delete session">&times;</button>
         </div>
       `;
@@ -1961,6 +2058,56 @@
     kbQueryInput.focus();
   }
 
+  async function loadKbCollectionsFilter() {
+    if (!kbCollectionsFilterList) return;
+    try {
+      const res = await fetch('/api/collections', { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) throw new Error('failed to load');
+      const { collections } = await res.json();
+
+      // Nothing meaningful to filter by (no collections, or just the
+      // single default one) — keep the control hidden, chat stays
+      // unrestricted exactly as before this feature existed.
+      if (!collections || collections.length <= 1) {
+        if (kbCollectionsFilterDetails) kbCollectionsFilterDetails.hidden = true;
+        return;
+      }
+
+      if (kbCollectionsFilterDetails) kbCollectionsFilterDetails.hidden = false;
+      const allowedSet = kbAllowedCollectionIds ? new Set(kbAllowedCollectionIds) : null;
+      kbCollectionsFilterList.innerHTML = collections.map((c) => `
+        <label class="slack-collection-option">
+          <input type="checkbox" value="${escHtml(c.id)}" ${!allowedSet || allowedSet.has(c.id) ? 'checked' : ''} />
+          ${escHtml(c.name)}
+        </label>
+      `).join('');
+      updateKbCollectionsFilterLabel(collections.length);
+
+      kbCollectionsFilterList.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const checked = Array.from(kbCollectionsFilterList.querySelectorAll('input[type="checkbox"]:checked')).map((el) => el.value);
+          kbAllowedCollectionIds = checked.length === collections.length ? null : checked;
+          try {
+            if (kbAllowedCollectionIds === null) localStorage.removeItem(KB_COLLECTIONS_FILTER_KEY);
+            else localStorage.setItem(KB_COLLECTIONS_FILTER_KEY, JSON.stringify(kbAllowedCollectionIds));
+          } catch { /* storage unavailable — selection just won't persist across reloads */ }
+          updateKbCollectionsFilterLabel(collections.length);
+        });
+      });
+    } catch {
+      kbCollectionsFilterList.innerHTML = '<span class="kb-doc-meta">Could not load collections.</span>';
+    }
+  }
+
+  function updateKbCollectionsFilterLabel(totalCount) {
+    if (!kbCollectionsFilterLabel) return;
+    kbCollectionsFilterLabel.textContent = kbAllowedCollectionIds
+      ? `${kbAllowedCollectionIds.length} of ${totalCount}`
+      : 'All collections';
+  }
+
+  loadKbCollectionsFilter();
+
   async function askQuestion() {
     const query = kbQueryInput.value.trim();
     if (!query) return;
@@ -1982,7 +2129,11 @@
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, sessionId: currentSessionId }),
+        body: JSON.stringify({
+          query,
+          sessionId: currentSessionId,
+          ...(kbAllowedCollectionIds ? { collectionIds: kbAllowedCollectionIds } : {}),
+        }),
       });
 
       const body = await res.json().catch(() => ({}));

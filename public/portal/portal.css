@@ -1007,6 +1007,25 @@ body {
 .kb-session-item:hover .btn-kb-session-delete { opacity: 1; }
 .btn-kb-session-delete:hover { color: var(--error); }
 
+.btn-kb-session-rename {
+  position: absolute;
+  top: 50%;
+  right: 28px;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+.kb-session-item:hover .btn-kb-session-rename { opacity: 1; }
+.btn-kb-session-rename:hover { color: var(--text-primary); }
+
 .kb-history-footer {
   padding: 10px 14px;
   border-top: 1px solid var(--border);

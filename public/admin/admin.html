@@ -68,6 +68,7 @@
         <button class="admin-tab admin-tab--active" data-tab="clients">Clients</button>
         <button class="admin-tab" data-tab="leads">Website Leads</button>
         <button class="admin-tab" data-tab="issues">Issues</button>
+        <button class="admin-tab" data-tab="gaps">Knowledge Gaps</button>
         <button class="admin-tab" data-tab="crm">CRM</button>
       </div>
 
@@ -126,6 +127,24 @@
           <p id="issuesEmpty" class="section-desc" hidden>No issues submitted yet.</p>
           <p id="issuesError" class="section-desc" style="color: var(--error);" hidden></p>
           <div id="issuesTable" hidden></div>
+        </section>
+      </div>
+
+      <!-- ── Knowledge Gaps tab ──────────────────────────────────────────── -->
+      <div id="tab-gaps" class="tab-panel" hidden>
+        <section class="portal-section" id="gapsSection">
+          <div class="section-label">Knowledge Gaps</div>
+          <select id="gapsStatusFilter" class="form-input" style="max-width:200px;margin-bottom:12px;">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="resolved">Resolved</option>
+            <option value="ignored">Ignored</option>
+          </select>
+          <p id="gapsLoading" class="section-desc">Loading…</p>
+          <p id="gapsEmpty" class="section-desc" hidden>No knowledge gaps recorded yet.</p>
+          <p id="gapsError" class="section-desc" style="color: var(--error);" hidden></p>
+          <div id="gapsTable" hidden></div>
         </section>
       </div>
 

@@ -90,10 +90,14 @@ async function listDocuments(clientId) {
   }
 }
 
-async function queryKnowledge(clientId, query, sessionId, authHeader) {
+async function queryKnowledge(clientId, query, sessionId, authHeader, allowedCollectionIds = null) {
   try {
     const body = { clientId, question: query };
     if (sessionId) body.sessionId = sessionId;
+    // Backlog M10: forwarded as-is to aikb's /api/knowledge/query, which
+    // already supports allowedCollectionIds (null = unrestricted, an array
+    // restricts retrieval) — aikb needed no changes for this.
+    if (Array.isArray(allowedCollectionIds)) body.allowedCollectionIds = allowedCollectionIds;
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/query`,
       body,
@@ -395,6 +399,43 @@ async function getClientDocumentStats(clientId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge gap admin review (Backlog M5) — same signed-envelope pattern as
+// the collections functions above.
+// ---------------------------------------------------------------------------
+
+async function listKnowledgeGaps(clientId, { status } = {}) {
+  const payload = status ? { status } : {};
+  const envelope = signedEnvelope(clientId, payload);
+  try {
+    const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/gaps/${clientId}`, {
+      headers: aikbHeaders(),
+      data: { ...envelope, payload },
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`AIKB listKnowledgeGaps failed: ${extractAxiosError(err)}`);
+  }
+}
+
+async function updateKnowledgeGapStatus(clientId, gapId, status) {
+  const payload = { status };
+  const envelope = signedEnvelope(clientId, payload);
+  try {
+    const res = await axios.patch(
+      `${aikbConfig.apiBaseUrl}/api/knowledge/gaps/${gapId}`,
+      { ...envelope, payload },
+      { headers: aikbHeaders() }
+    );
+    return res.data;
+  } catch (err) {
+    const error = new Error(`AIKB updateKnowledgeGapStatus failed: ${extractAxiosError(err)}`);
+    error.status = err.response?.status;
+    error.responseBody = err.response?.data;
+    throw error;
+  }
+}
+
 module.exports = {
   uploadAndIngest,
   listDocuments,
@@ -417,4 +458,6 @@ module.exports = {
   renameCollection,
   deleteCollection,
   moveDocumentCollection,
+  listKnowledgeGaps,
+  updateKnowledgeGapStatus,
 };

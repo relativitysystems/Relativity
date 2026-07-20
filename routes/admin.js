@@ -182,22 +182,37 @@ router.get('/analytics', adminAuth, async (req, res) => {
       supabaseService.getPortalIssueSummary(),
     ]);
 
-    const aikbStats = await Promise.allSettled(
-      clients.map(c => aikbService.getClientDocumentStats(c.id))
-    );
+    const [aikbDocStats, aikbSummaries] = await Promise.all([
+      Promise.allSettled(clients.map(c => aikbService.getClientDocumentStats(c.id))),
+      Promise.allSettled(clients.map(c => aikbService.getClientSummary(c.id))),
+    ]);
 
     let totalDocuments = 0;
     let totalIndexed = 0;
     let totalFailed = 0;
     let aikbDataAvailable = true;
 
-    aikbStats.forEach(result => {
+    aikbDocStats.forEach(result => {
       if (result.status === 'fulfilled' && result.value.documentCount !== null) {
         totalDocuments += result.value.documentCount;
         totalIndexed += result.value.indexedCount;
         totalFailed += result.value.failedCount;
       } else {
         aikbDataAvailable = false;
+      }
+    });
+
+    // Backlog M7: totalQuestions rolled up from AIKB's per-client summary
+    // endpoint (already used elsewhere, e.g. /clients/:clientId/aikb-health)
+    // — same Promise.allSettled-and-accumulate pattern as totalDocuments
+    // above, just summed from a different per-client call.
+    let totalQuestions = 0;
+    let questionsDataAvailable = true;
+    aikbSummaries.forEach(result => {
+      if (result.status === 'fulfilled' && typeof result.value.totalQuestions === 'number') {
+        totalQuestions += result.value.totalQuestions;
+      } else {
+        questionsDataAvailable = false;
       }
     });
 
@@ -208,8 +223,7 @@ router.get('/analytics', adminAuth, async (req, res) => {
       totalDocuments: aikbDataAvailable ? totalDocuments : null,
       totalIndexed: aikbDataAvailable ? totalIndexed : null,
       totalFailed: aikbDataAvailable ? totalFailed : null,
-      // TODO: totalQuestions — needs a dedicated AIKB analytics endpoint
-      totalQuestions: null,
+      totalQuestions: questionsDataAvailable ? totalQuestions : null,
     });
   } catch (err) {
     console.error('admin/analytics error:', err.message);
@@ -280,6 +294,48 @@ router.patch('/issues/:issueId', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('admin/issues PATCH error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Knowledge gap admin review (Backlog M5) ─────────────────────────────────
+// Fans out to every client the same way /analytics and aikb-health do,
+// since AIKB's gaps list is per-client (requireServiceRequest is signed
+// per-client — see aikb/routes/knowledge.js's GET/PATCH /gaps routes).
+
+router.get('/gaps', adminAuth, async (req, res) => {
+  try {
+    const clients = await supabaseService.getAllClientsWithStatus();
+    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    const results = await Promise.allSettled(
+      clients.map(async (c) => {
+        const data = await aikbService.listKnowledgeGaps(c.id, { status });
+        const gaps = data.gaps || [];
+        return gaps.map((g) => ({ ...g, client_name: c.name || c.id }));
+      })
+    );
+    const gaps = results
+      .filter((r) => r.status === 'fulfilled')
+      .flatMap((r) => r.value)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    res.json(gaps);
+  } catch (err) {
+    console.error('admin/gaps GET error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/gaps/:clientId/:gapId', adminAuth, async (req, res) => {
+  const { status } = req.body;
+  const validStatuses = ['open', 'reviewed', 'resolved', 'ignored'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+  }
+  try {
+    await aikbService.updateKnowledgeGapStatus(req.params.clientId, req.params.gapId, status);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('admin/gaps PATCH error:', err.message);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

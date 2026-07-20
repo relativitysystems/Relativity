@@ -472,12 +472,16 @@ router.get('/knowledge/usage', clientAuth, async (req, res) => {
 });
 
 router.post('/knowledge/query', clientAuth, async (req, res) => {
-  const { query, sessionId } = req.body;
+  const { query, sessionId, collectionIds } = req.body;
   if (!query || typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'query is required' });
   }
   try {
-    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null, req.headers.authorization);
+    // Backlog M10: optional, mirrors Slack's existing allowedCollectionIds
+    // scoping (services/slackCollectionAccessService.js) — omitted/not an
+    // array means unrestricted, unchanged from before this existed.
+    const allowedCollectionIds = Array.isArray(collectionIds) ? collectionIds : null;
+    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null, req.headers.authorization, allowedCollectionIds);
     // Record which member owns this session in the local mapping table
     const returnedSessionId = data.sessionId || data.session_id;
     if (returnedSessionId && req.member?.id) {

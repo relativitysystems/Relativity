@@ -664,11 +664,132 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ── Knowledge Gaps (Backlog M5) ──────────────────────────────────────────
+  // Fans out across every client (see routes/admin.js's GET /admin/gaps),
+  // so — like CRM — it's lazy-loaded on first tab visit rather than eagerly
+  // in showDashboard(), unlike Issues which is a single Relativity-DB query.
+
+  const gapsLoading = document.getElementById('gapsLoading');
+  const gapsEmpty   = document.getElementById('gapsEmpty');
+  const gapsError   = document.getElementById('gapsError');
+  const gapsTable   = document.getElementById('gapsTable');
+  const gapsStatusFilter = document.getElementById('gapsStatusFilter');
+
+  async function loadGaps() {
+    gapsLoading.hidden = false;
+    gapsEmpty.hidden   = true;
+    gapsError.hidden   = true;
+    gapsTable.hidden   = true;
+
+    let res;
+    try {
+      const qs = gapsStatusFilter.value ? `?status=${encodeURIComponent(gapsStatusFilter.value)}` : '';
+      res = await adminFetch(`/admin/gaps${qs}`);
+    } catch {
+      return;
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      gapsError.textContent = body.error || 'Failed to load knowledge gaps.';
+      gapsError.hidden = false;
+      gapsLoading.hidden = true;
+      return;
+    }
+
+    const gaps = await res.json();
+    gapsLoading.hidden = true;
+
+    if (!Array.isArray(gaps) || gaps.length === 0) {
+      gapsEmpty.hidden = false;
+      return;
+    }
+
+    gapsTable.innerHTML = renderGapsTable(gaps);
+    gapsTable.hidden = false;
+  }
+
+  function renderGapsTable(gaps) {
+    const rows = gaps.map(renderGapRow).join('');
+    return `
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Question</th>
+            <th>Reason</th>
+            <th>Origin</th>
+            <th>Reported By</th>
+            <th>Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderGapRow(gap) {
+    const qPreview = gap.question.length > 80 ? gap.question.slice(0, 80) + '…' : gap.question;
+    const date = new Date(gap.created_at).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+
+    const statusSelect = `
+      <select class="gap-status-select" data-gap-id="${esc(gap.id)}" data-client-id="${esc(gap.client_id)}">
+        <option value="open"     ${gap.status === 'open'     ? 'selected' : ''}>Open</option>
+        <option value="reviewed" ${gap.status === 'reviewed' ? 'selected' : ''}>Reviewed</option>
+        <option value="resolved" ${gap.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+        <option value="ignored"  ${gap.status === 'ignored'  ? 'selected' : ''}>Ignored</option>
+      </select>
+    `;
+
+    return `
+      <tr>
+        <td><div class="client-name">${esc(gap.client_name || gap.client_id)}</div></td>
+        <td><div class="lead-message" title="${esc(gap.question)}">${esc(qPreview)}</div></td>
+        <td><div class="client-email">${esc(gap.reason || '—')}</div></td>
+        <td><div class="client-email">${esc(gap.origin || 'legacy')}</div></td>
+        <td><div class="client-email">${esc(gap.reported_by || '—')}</div></td>
+        <td class="client-date">${date}</td>
+        <td>${statusSelect}</td>
+      </tr>
+    `;
+  }
+
+  gapsTable.addEventListener('change', async (e) => {
+    const select = e.target.closest('.gap-status-select');
+    if (!select) return;
+
+    const { gapId, clientId } = select.dataset;
+    const status = select.value;
+    select.disabled = true;
+
+    try {
+      const res = await adminFetch(`/admin/gaps/${clientId}/${gapId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Failed to update status.');
+        loadGaps();
+      }
+    } catch {
+      loadGaps();
+    } finally {
+      select.disabled = false;
+    }
+  });
+
+  gapsStatusFilter.addEventListener('change', () => { if (gapsLoaded) loadGaps(); });
+
   // ── Tab switching ─────────────────────────────────────────────────────────
 
   const tabBtns = document.querySelectorAll('.admin-tab');
-  const TAB_NAMES = ['clients', 'leads', 'issues', 'crm'];
+  const TAB_NAMES = ['clients', 'leads', 'issues', 'gaps', 'crm'];
   let crmProspectsLoaded = false;
+  let gapsLoaded = false;
 
   function switchTab(name) {
     tabBtns.forEach(b => b.classList.toggle('admin-tab--active', b.dataset.tab === name));
@@ -679,6 +800,10 @@
     if (name === 'crm' && !crmProspectsLoaded) {
       crmProspectsLoaded = true;
       loadCrmProspects();
+    }
+    if (name === 'gaps' && !gapsLoaded) {
+      gapsLoaded = true;
+      loadGaps();
     }
   }
 
