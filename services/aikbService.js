@@ -29,14 +29,15 @@ function extractAxiosError(err) {
 // Backlog H4 — signs the additive HMAC service-request envelope (the same
 // one aikbAskClient.js already uses for POST /ask) for AIKB's other
 // clientId-scoped x-api-key-only routes: ingest, document delete, client
-// delete, and the documents/collections listing and mutation routes. The
-// envelope cryptographically binds clientId to the request, so a leaked
-// shared x-api-key alone can no longer be used to act on an arbitrary
-// client through these routes. idempotencyKey has no dedup meaning for
-// these routes (unlike /ask's Slack-question flow) — it's generated fresh
-// per call purely to satisfy the envelope schema, which requires one.
-// Sent alongside the unchanged AIKB_API_KEY (defense in depth, not a
-// replacement — see aikbHeaders()).
+// delete, the documents/collections listing and mutation routes, and (H4's
+// previously-residual scope) the jobs/summary/analytics/stats reporting
+// routes. The envelope cryptographically binds clientId to the request, so
+// a leaked shared x-api-key alone can no longer be used to act on an
+// arbitrary client through these routes. idempotencyKey has no dedup
+// meaning for these routes (unlike /ask's Slack-question flow) — it's
+// generated fresh per call purely to satisfy the envelope schema, which
+// requires one. Sent alongside the unchanged AIKB_API_KEY (defense in
+// depth, not a replacement — see aikbHeaders()).
 function signedEnvelope(clientId, payload) {
   const signingSecret = config.serviceRequest.signingSecret;
   if (!signingSecret) {
@@ -278,8 +279,12 @@ async function moveDocumentCollection(clientId, sourceFileId, collectionId) {
 
 async function listIngestionJobs(clientId) {
   try {
+    const envelope = signedEnvelope(clientId, {});
     const [jobsRes, documentsData] = await Promise.all([
-      axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/jobs/${clientId}`, { headers: aikbHeaders() }),
+      axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/jobs/${clientId}`, {
+        headers: aikbHeaders(),
+        data: { ...envelope, payload: {} },
+      }),
       listDocuments(clientId).catch(() => null),
     ]);
 
@@ -318,9 +323,10 @@ async function listIngestionJobs(clientId) {
 
 async function getClientSummary(clientId) {
   try {
+    const envelope = signedEnvelope(clientId, {});
     const res = await axios.get(
       `${aikbConfig.apiBaseUrl}/api/knowledge/summary/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(), data: { ...envelope, payload: {} } }
     );
     return res.data;
   } catch (err) {
@@ -331,9 +337,10 @@ async function getClientSummary(clientId) {
 
 async function getClientAnalytics(clientId) {
   try {
+    const envelope = signedEnvelope(clientId, {});
     const res = await axios.get(
       `${aikbConfig.apiBaseUrl}/api/knowledge/analytics/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(), data: { ...envelope, payload: {} } }
     );
     return res.data;
   } catch (err) {
@@ -348,9 +355,10 @@ async function getClientAnalytics(clientId) {
 // admin dashboard's per-client health check).
 async function getClientKnowledgeStats(clientId) {
   try {
+    const envelope = signedEnvelope(clientId, {});
     const res = await axios.get(
       `${aikbConfig.apiBaseUrl}/api/knowledge/stats/${clientId}`,
-      { headers: aikbHeaders() }
+      { headers: aikbHeaders(), data: { ...envelope, payload: {} } }
     );
     return res.data;
   } catch (err) {
