@@ -27,7 +27,7 @@
     return;
   }
 
-  const { clientId, clientName, email, memberId, memberRole, googleDriveConnected, dropboxConnected } = me;
+  const { clientId, clientName, email, memberId, memberRole } = me;
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
@@ -121,9 +121,10 @@
 
   setActiveTab(window.location.hash.replace('#', '') || DEFAULT_TAB, { updateHash: false });
 
-  // 4. Handle post-OAuth redirect params
+  // 4. Handle post-OAuth redirect params (Slack is the only remaining
+  // connect flow — backlog M15 removed Google Drive/Dropbox's, which used
+  // to hit the bare connected=/error= params handled here previously).
   const params = new URLSearchParams(window.location.search);
-  const connected = params.get('connected');
   const error = params.get('error');
   const integrationParam = params.get('integration');
   const statusParam = params.get('status');
@@ -142,16 +143,6 @@
       showBanner('error', SLACK_ERROR_MESSAGES[error] || 'Slack connection failed. Please try again.');
     }
     window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
-  } else {
-    if (connected) {
-      showBanner('success', 'Connection updated successfully.');
-      window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
-    }
-
-    if (error) {
-      showBanner('error', 'Connection failed. Please try again or contact support.');
-      window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
-    }
   }
 
   // 4b. Slack Integration
@@ -310,53 +301,6 @@
   }
 
   loadSlackStatus();
-
-  // 4c. Google Drive / Dropbox connection status (Backlog M8) — GET
-  // /auth/me already returns these two flags (routes/auth.js), unlike
-  // Slack there's no separate status endpoint or disconnect flow, so this
-  // just renders the flags already on `me` and, if not connected, an
-  // owner/admin-only Connect button hitting the existing /auth/*/start
-  // routes (same pattern as Slack's connect button above).
-  function renderProviderStatus({ badgeEl, connectBtnEl, connected, startPath }) {
-    if (!badgeEl) return;
-    badgeEl.textContent = connected ? 'Connected' : 'Not connected';
-    badgeEl.className = `integration-status badge ${connected ? 'badge--indexed' : 'badge--soon'}`;
-    if (connectBtnEl) {
-      connectBtnEl.hidden = !isOwnerAdmin || connected;
-      if (!connectBtnEl._bound) {
-        connectBtnEl._bound = true;
-        connectBtnEl.addEventListener('click', async () => {
-          connectBtnEl.disabled = true;
-          try {
-            const res = await fetch(startPath, { headers: { Authorization: `Bearer ${accessToken}` } });
-            const body = await res.json().catch(() => ({}));
-            if (res.ok && body.url) {
-              window.location.href = body.url;
-              return;
-            }
-            showBanner('error', body.error || 'Could not start connection.');
-          } catch {
-            showBanner('error', 'Network error. Please try again.');
-          } finally {
-            connectBtnEl.disabled = false;
-          }
-        });
-      }
-    }
-  }
-
-  renderProviderStatus({
-    badgeEl: document.getElementById('gdrive-status-badge'),
-    connectBtnEl: document.getElementById('gdrive-connect-btn'),
-    connected: !!googleDriveConnected,
-    startPath: '/auth/google/start',
-  });
-  renderProviderStatus({
-    badgeEl: document.getElementById('dropbox-status-badge'),
-    connectBtnEl: document.getElementById('dropbox-connect-btn'),
-    connected: !!dropboxConnected,
-    startPath: '/auth/dropbox/start',
-  });
 
   // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');

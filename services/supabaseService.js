@@ -70,21 +70,18 @@ async function getClientByAuthUserId(authUserId) {
   return getClientById(clientUser.client_id);
 }
 
-// All three providers now read from oauth_connections/oauth_credentials via
+// Reads from oauth_connections/oauth_credentials via
 // services/oauthConnectionsService.js#getSafeConnectionStatus — Slack since
-// Milestone 3, Dropbox and Google Drive since backlog H2. Continuing to read
-// oauth_tokens here would silently report every connection as never-made,
-// since new connections for any of these three providers no longer write
-// there — see the deprecation note on upsertToken/getToken above.
+// Milestone 3. Google Drive and Dropbox read from here too until backlog
+// M15 removed their persistent-connection flow entirely (Google Drive's
+// one-shot Picker import is separate and unaffected — see
+// services/googleDriveImportService.js). Continuing to read oauth_tokens
+// here would silently report the connection as never-made, since new
+// connections no longer write there — see the deprecation note on
+// upsertToken/getToken above.
 async function getClientConnectionStatus(clientId) {
-  const providers = ['dropbox', 'google_drive', 'slack'];
-  const results = await Promise.all(
-    providers.map(p => oauthConnectionsService.getSafeConnectionStatus(clientId, p))
-  );
-
-  const status = {};
-  providers.forEach((p, i) => { status[p] = results[i].connected; });
-  return status;
+  const { connected } = await oauthConnectionsService.getSafeConnectionStatus(clientId, 'slack');
+  return { slack: connected };
 }
 
 async function updateClientSlackChannel(clientId, channelId) {
@@ -229,22 +226,19 @@ async function getAllClientsWithStatus() {
 
   const clientIds = clients.map(c => c.id);
 
-  // All three providers now come from oauth_connections (Slack since
-  // Milestone 3, Dropbox/Google Drive since backlog H2) instead of
+  // Slack comes from oauth_connections (since Milestone 3) instead of
   // oauth_tokens — see the note on getClientConnectionStatus above. Only
   // client_id/provider are read here (oauth_connections columns, never
-  // oauth_credentials), so no credential material is touched.
+  // oauth_credentials), so no credential material is touched. Google
+  // Drive/Dropbox were read the same way until backlog M15 removed their
+  // persistent-connection flow entirely.
   const [{ data: activeMembers }, { data: connections }] = await Promise.all([
     supabase.from('client_members').select('client_id').not('auth_user_id', 'is', null).in('client_id', clientIds),
-    supabase.from('oauth_connections').select('client_id, provider').eq('status', 'active').in('client_id', clientIds),
+    supabase.from('oauth_connections').select('client_id, provider').eq('status', 'active').eq('provider', 'slack').in('client_id', clientIds),
   ]);
 
   const acceptedSet = new Set((activeMembers || []).map(m => m.client_id));
-  const connectionMap = {};
-  (connections || []).forEach(c => {
-    if (!connectionMap[c.client_id]) connectionMap[c.client_id] = {};
-    connectionMap[c.client_id][c.provider] = true;
-  });
+  const slackConnectedSet = new Set((connections || []).map(c => c.client_id));
 
   return clients.map(client => ({
     id: client.id,
@@ -253,9 +247,7 @@ async function getAllClientsWithStatus() {
     is_active: client.is_active,
     created_at: client.created_at,
     invite_accepted: acceptedSet.has(client.id),
-    dropbox: !!(connectionMap[client.id] && connectionMap[client.id]['dropbox']),
-    slack: !!(connectionMap[client.id] && connectionMap[client.id]['slack']),
-    google_drive: !!(connectionMap[client.id] && connectionMap[client.id]['google_drive']),
+    slack: slackConnectedSet.has(client.id),
   }));
 }
 

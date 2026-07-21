@@ -1,15 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, dropbox: dropboxConfig, googleDrive: googleDriveConfig, appBaseUrl } = require('../config');
+const { supabase: supabaseConfig, appBaseUrl } = require('../config');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const clientAuth = require('../middleware/clientAuth');
 const apiKey = require('../middleware/apiKey');
-const dropboxService = require('../services/dropboxService');
-const googleDriveService = require('../services/googleDriveService');
 const supabaseService = require('../services/supabaseService');
-const oauthConnectionsService = require('../services/oauthConnectionsService');
-const oauthStateService = require('../services/oauthStateService');
 const { teamInviteLimiter } = require('../middleware/rateLimiters');
 
 const supabase = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
@@ -34,7 +30,7 @@ router.get('/config', (req, res) => {
  * { authenticated: false, reason } when token is missing or invalid, or the
  * session has no usable client membership. reason is one of:
  * missing_token | invalid_token | membership_not_found | membership_disabled | client_inactive
- * { authenticated: true, clientId, clientName, email, dropboxConnected } when valid.
+ * { authenticated: true, clientId, clientName, email, slackConnected } when valid.
  */
 router.get('/me', async (req, res) => {
   const authHeader = req.headers['authorization'];
@@ -79,104 +75,8 @@ router.get('/me', async (req, res) => {
     email: member.email,
     memberId: member.id,
     memberRole: member.role,
-    dropboxConnected: connectionStatus.dropbox,
     slackConnected: connectionStatus.slack,
-    googleDriveConnected: connectionStatus.google_drive,
   });
-});
-
-/**
- * GET /auth/dropbox/start
- *
- * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
- * Returns JSON { url } — portal.js redirects the browser there.
- * clientId is always resolved server-side; never accepted from the browser.
- *
- * Backlog M1: state is a hashed, server-stored, single-use, 10-minute-TTL
- * value from oauthStateService (services/oauthStateService.js) — the same
- * mechanism Slack's connect flow uses (see services/slackIntegrationService.js)
- * — replacing the previous unsigned base64(JSON) state that trusted a
- * client-supplied clientId with nothing binding it to this session.
- */
-router.get('/dropbox/start', clientAuth, async (req, res) => {
-  try {
-    const { rawState } = await oauthStateService.generateAndStoreState({
-      clientId: req.client.id,
-      memberId: req.member.id,
-      provider: 'dropbox',
-    });
-
-    const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
-    authUrl.searchParams.set('client_id', dropboxConfig.appKey);
-    authUrl.searchParams.set('redirect_uri', dropboxConfig.redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('token_access_type', 'offline');
-    authUrl.searchParams.set('state', rawState);
-
-    res.json({ url: authUrl.toString() });
-  } catch (err) {
-    console.error('Dropbox start error:', err.message);
-    res.status(500).json({ error: 'Failed to start Dropbox connection' });
-  }
-});
-
-/**
- * GET /auth/dropbox/callback
- *
- * Dropbox redirects here after the user clicks Allow.
- * clientId/memberId come only from the consumed oauth_states row (backlog
- * M1) — never from the browser. consumeState is a single atomic UPDATE, so
- * a replayed/reused state param is rejected even under a concurrent race.
- */
-router.get('/dropbox/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    return res.redirect('/portal.html?error=dropbox_denied');
-  }
-
-  if (!code || !state) {
-    return res.status(400).json({ error: 'Missing code or state param' });
-  }
-
-  let consumed;
-  try {
-    consumed = await oauthStateService.consumeState({ rawState: state, provider: 'dropbox' });
-  } catch (err) {
-    console.error('Dropbox state consume error:', err.message);
-    return res.redirect('/portal.html?error=dropbox_failed');
-  }
-
-  if (consumed.status === 'expired') {
-    return res.redirect('/portal.html?error=dropbox_expired_state');
-  }
-  if (consumed.status !== 'consumed') {
-    return res.redirect('/portal.html?error=dropbox_invalid_state');
-  }
-
-  const { clientId, memberId } = consumed;
-
-  try {
-    const tokenData = await dropboxService.exchangeCodeForToken(code);
-    const { access_token, refresh_token, expires_in } = tokenData;
-    const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
-
-    // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
-    // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
-    await oauthConnectionsService.createOrReplaceConnection({
-      clientId,
-      provider: 'dropbox',
-      accessToken: access_token,
-      refreshToken: refresh_token || null,
-      expiresAt,
-      connectedByMemberId: memberId,
-    });
-
-    res.redirect('/portal.html?connected=dropbox');
-  } catch (err) {
-    console.error('Dropbox callback error:', err.message);
-    res.redirect('/portal.html?error=dropbox_failed');
-  }
 });
 
 /**
@@ -213,106 +113,6 @@ router.get('/slack/start', (req, res) => {
 
 router.get('/slack/callback', (req, res) => {
   res.status(410).json({ error: 'This Slack integration endpoint has been retired. Use /api/integrations/slack/callback instead.' });
-});
-
-/**
- * GET /auth/google/start
- *
- * Requires a valid Supabase Bearer token (enforced by clientAuth middleware).
- * Returns JSON { url } — portal.js redirects the browser there.
- * Requests offline access so a refresh token is always returned.
- *
- * Backlog M1: state is a hashed, server-stored, single-use, 10-minute-TTL
- * value from oauthStateService (services/oauthStateService.js) — the same
- * mechanism Slack's connect flow uses (see services/slackIntegrationService.js)
- * — replacing the previous unsigned base64(JSON) state that trusted a
- * client-supplied clientId with nothing binding it to this session.
- */
-router.get('/google/start', clientAuth, async (req, res) => {
-  try {
-    const { rawState } = await oauthStateService.generateAndStoreState({
-      clientId: req.client.id,
-      memberId: req.member.id,
-      provider: 'google_drive',
-    });
-
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', googleDriveConfig.clientId);
-    authUrl.searchParams.set('redirect_uri', googleDriveConfig.redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/drive.readonly');
-    authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'consent');
-    authUrl.searchParams.set('state', rawState);
-
-    res.json({ url: authUrl.toString() });
-  } catch (err) {
-    console.error('Google Drive start error:', err.message);
-    res.status(500).json({ error: 'Failed to start Google Drive connection' });
-  }
-});
-
-/**
- * GET /auth/google/callback
- *
- * Google redirects here after the user clicks Allow.
- * clientId/memberId come only from the consumed oauth_states row (backlog
- * M1) — never from the browser. consumeState is a single atomic UPDATE, so
- * a replayed/reused state param is rejected even under a concurrent race.
- * clientId is no longer echoed back in the redirect URL — portal.js never
- * read it (it re-resolves identity from the session), so dropping it also
- * stops leaking clientId into browser history/referrer headers.
- */
-router.get('/google/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    return res.redirect('/portal.html?error=google_drive_denied');
-  }
-
-  if (!code || !state) {
-    return res.status(400).json({ error: 'Missing code or state param' });
-  }
-
-  let consumed;
-  try {
-    consumed = await oauthStateService.consumeState({ rawState: state, provider: 'google_drive' });
-  } catch (err) {
-    console.error('Google Drive state consume error:', err.message);
-    return res.redirect('/portal.html?error=google_drive_failed');
-  }
-
-  if (consumed.status === 'expired') {
-    return res.redirect('/portal.html?error=google_drive_expired_state');
-  }
-  if (consumed.status !== 'consumed') {
-    return res.redirect('/portal.html?error=google_drive_invalid_state');
-  }
-
-  const { clientId, memberId } = consumed;
-
-  try {
-    const tokenData = await googleDriveService.exchangeCodeForToken(code);
-    const { access_token, refresh_token, expires_in, scope } = tokenData;
-    const expiresAt = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
-
-    // Backlog H2: encrypted oauth_connections/oauth_credentials, mirroring
-    // Slack's Milestone 3 migration — see services/oauthConnectionsService.js.
-    await oauthConnectionsService.createOrReplaceConnection({
-      clientId,
-      provider: 'google_drive',
-      accessToken: access_token,
-      refreshToken: refresh_token || null,
-      expiresAt,
-      scopesGranted: scope ? scope.split(' ').filter(Boolean) : [],
-      connectedByMemberId: memberId,
-    });
-
-    res.redirect('/portal.html?connected=google_drive');
-  } catch (err) {
-    console.error('Google Drive callback error:', err.message);
-    res.redirect('/portal.html?error=google_drive_failed');
-  }
 });
 
 /**
@@ -486,15 +286,14 @@ router.post('/password-reset/request', async (req, res) => {
 /**
  * GET /auth/status/:clientId
  *
- * Returns OAuth connection status for all providers.
+ * Returns Slack OAuth connection status (the only remaining provider with a
+ * connect flow — see backlog M15 for the removal of Google Drive/Dropbox).
  * Protected by API key — intended for n8n/Inngest consumption.
  */
 router.get('/status/:clientId', apiKey, async (req, res) => {
   try {
     const status = await supabaseService.getClientConnectionStatus(req.params.clientId);
     res.json({
-      dropbox: status.dropbox,
-      google_drive: status.google_drive,
       slack: status.slack,
     });
   } catch (err) {

@@ -356,10 +356,10 @@ test('updateCredentialForConnection writes refresh_token_encrypted: null when no
     const { client, calls } = createFakeSupabaseClient({ onQuery: () => ({ data: null, error: null }) });
     const service = createOauthConnectionsService(client);
 
-    // Documents the contract callers must follow: if the provider's refresh
+    // Documents the contract callers must follow: if a provider's refresh
     // response didn't return a new refresh token, the CALLER must pass the
     // previous one through explicitly — this function has no memory of it
-    // and will null it out otherwise (see googleDriveService.js#getValidAccessToken).
+    // and will null it out otherwise.
     await service.updateCredentialForConnection('conn-1', { accessToken: 'new-token' });
 
     const updateCall = calls.queries.find(q => q.operation === 'update');

@@ -209,13 +209,9 @@
         ? `<span class="badge badge--pending">Invite Sent</span>`
         : `<span class="badge badge--closed_lost">Inactive</span>`;
 
-    const integrations = [
-      { key: 'dropbox',      label: 'Dropbox' },
-      { key: 'slack',        label: 'Slack'   },
-      { key: 'google_drive', label: 'Drive'   },
-    ].map(({ key, label }) =>
-      `<span class="integration-tag ${c[key] ? 'integration-tag--on' : ''}">${label}</span>`
-    ).join('');
+    // Backlog M15 removed Dropbox/Google Drive's persistent-connection flow
+    // entirely, leaving Slack as the only provider with a connect status.
+    const integrations = `<span class="integration-tag ${c.slack ? 'integration-tag--on' : ''}">Slack</span>`;
 
     const lastActiveTimestamp = [
       h.lastQuestionAt,

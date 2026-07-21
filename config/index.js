@@ -7,12 +7,6 @@ module.exports = {
     serviceKey: process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || process.env.GLOBAL_SUPABASE_SERVICE_KEY,
     anonKey: process.env.GLOBAL_SUPABASE_ANON_KEY,
   },
-  dropbox: {
-    appKey: process.env.DROPBOX_APP_KEY,
-    appSecret: process.env.DROPBOX_APP_SECRET,
-    redirectUri: process.env.DROPBOX_REDIRECT_URI,
-    basePath: process.env.DROPBOX_BASE_PATH || '',
-  },
   // Slack OAuth v2 (Architecture Review Phase 4, Milestone 3). appId/appSecret
   // (the old SLACK_APP_ID/SLACK_APP_SECRET vars) are gone along with the
   // retired /auth/slack/{start,callback} flow — see routes/auth.js.
@@ -49,10 +43,13 @@ module.exports = {
   integrationCredentials: {
     encryptionKey: process.env.INTEGRATION_CREDENTIAL_ENCRYPTION_KEY,
   },
+  // Google Drive Picker only (browser-side, one-shot copy import — see
+  // routes/api.js's /google-drive/picker-config and /google-drive/import).
+  // Backlog M15 removed the separate persistent-OAuth-connection flow that
+  // used to also live here (clientSecret/redirectUri for a server-side
+  // token exchange) — the Picker needs neither.
   googleDrive: {
     clientId: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    redirectUri: process.env.GOOGLE_REDIRECT_URI,
     pickerApiKey: process.env.GOOGLE_PICKER_API_KEY,
   },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
