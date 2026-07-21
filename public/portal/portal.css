@@ -763,12 +763,6 @@ body {
   color: var(--text-muted);
 }
 
-.kb-docs-list {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
 .kb-doc-row {
   display: flex;
   align-items: center;
@@ -1886,8 +1880,8 @@ select.form-input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 4px 16px 14px 16px;
-  background: var(--surface-tint-1);
+  padding: 10px 16px 14px 16px;
+  border-top: 1px solid var(--border);
 }
 
 .kb-job-detail-row {
