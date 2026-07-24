@@ -9,10 +9,13 @@
 // function here takes/threads memberId, and disconnect only ever revokes the
 // specific connection it was asked to, never every connection for the client.
 //
-// No organization policy, Gmail label, or sync/ingestion logic lives here —
-// those are EM3/EM5+. This file connects/lists/disconnects (EM2) and, as of
-// EM4, lets a member switch their own connection's sync_mode between
-// manual_selected/automatic (§14.1) — still no label workflow or ingestion.
+// No organization policy or sync/ingestion logic lives here — those are
+// EM3/EM6+. This file connects/lists/disconnects (EM2), lets a member
+// switch their own connection's sync_mode (EM4), and, as of EM5, creates/
+// reuses the managed "Relativity/Knowledge" Gmail label on connect and
+// keeps a connection's access token valid on demand (getValidGmailAccessToken)
+// for services/emailPreviewService.js's dry-run preview to call — still no
+// ingestion (EM6) or real sync run here.
 //
 // Disconnect is self-service ONLY in EM2 — a member may disconnect only
 // their own connection, with no owner/admin override, even though §14.1's
@@ -36,6 +39,13 @@ const defaultEmailPolicyService = require('./emailPolicyService');
 
 const SYNC_MODES = ['manual_selected', 'automatic'];
 
+// EM5 — refresh a stored Gmail access token this many ms before its known
+// expiry, not only after it has already failed. Gmail access tokens are
+// short-lived (~1 hour, §12 item 3) so any call more than a few minutes
+// after connect needs this; 5 minutes is a conservative margin against
+// clock skew and the time a preview call itself takes to run.
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
 const PROVIDER = 'gmail';
 
 // Safe portal redirects — never carry a raw error string, state, token, or
@@ -56,7 +66,7 @@ const REDIRECT = Object.freeze({
 const defaultDbClient = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
 
 const defaultEmailConnectionsRepo = {
-  async upsertConnection({ clientId, memberId, oauthConnectionId, provider, mailboxAddress, displayName }) {
+  async upsertConnection({ clientId, memberId, oauthConnectionId, provider, mailboxAddress, displayName, managedLabelId }) {
     const { data, error } = await defaultDbClient
       .from('email_connections')
       .upsert(
@@ -67,6 +77,7 @@ const defaultEmailConnectionsRepo = {
           provider,
           mailbox_address: mailboxAddress,
           display_name: displayName,
+          managed_label_id: managedLabelId || null,
         },
         { onConflict: 'oauth_connection_id' }
       )
@@ -75,6 +86,22 @@ const defaultEmailConnectionsRepo = {
 
     if (error) throw new Error(`upsertConnection failed: ${error.message}`);
     return data;
+  },
+
+  // EM5 (§10) — lazy backfill path: if label creation at connect time
+  // (handleCallback) failed, emailPreviewService.js retries via
+  // ensureManagedLabel below rather than leaving the connection permanently
+  // labelless.
+  async updateManagedLabelId(oauthConnectionId, managedLabelId) {
+    const { data, error } = await defaultDbClient
+      .from('email_connections')
+      .update({ managed_label_id: managedLabelId, updated_at: new Date().toISOString() })
+      .eq('oauth_connection_id', oauthConnectionId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`updateManagedLabelId failed: ${error.message}`);
+    return data || null;
   },
 
   async getByOauthConnectionId(oauthConnectionId) {
@@ -219,6 +246,20 @@ function createEmailConnectionService({
       return { redirectPath: REDIRECT.CONNECTION_FAILED };
     }
 
+    // EM5 (§10) — create-or-reuse the managed "Relativity/Knowledge" label
+    // using the fresh access token this exchange just returned. Best-effort:
+    // a Gmail hiccup here must not fail the whole connection (the mailbox is
+    // still validly connected either way) — emailPreviewService.js's
+    // ensureManagedLabel lazily retries this on the next preview call if
+    // managed_label_id is still null.
+    let managedLabelId = null;
+    try {
+      const label = await gmailService.getOrCreateManagedLabel(tokenData.accessToken);
+      managedLabelId = label.labelId;
+    } catch (err) {
+      console.error('[gmail oauth] managed label create-or-reuse error (non-fatal, retried lazily):', err.message);
+    }
+
     let connection;
     try {
       await oauthConnectionsService.createOrReplaceConnection({
@@ -261,6 +302,7 @@ function createEmailConnectionService({
         provider: PROVIDER,
         mailboxAddress: tokenData.mailboxAddress,
         displayName: tokenData.displayName,
+        managedLabelId,
       });
     } catch (err) {
       console.error('[gmail oauth] email_connections persist error:', err.message);
@@ -371,7 +413,95 @@ function createEmailConnectionService({
     return { syncMode: updated.sync_mode };
   }
 
-  return { startConnection, handleCallback, getConnections, disconnect, updateSyncMode };
+  /**
+   * EM5 — returns a Gmail access token guaranteed valid for at least
+   * TOKEN_REFRESH_MARGIN_MS, refreshing it via the stored refresh token
+   * first if the current one is missing/expiring/expired. Persists a
+   * successful refresh in-place (never churns the connection's identity —
+   * ADR-006's updateCredentialForConnection, §12 item 3), preserving the
+   * existing refresh token when Google's refresh response omits a new one
+   * (gmailService.refreshAccessToken already returns null in that case;
+   * this function is what actually keeps the old one rather than nulling
+   * it out — the same bug class already solved once for Google Drive).
+   * Throws AUTHORIZATION_EXPIRED if there is no credential row or no
+   * refresh token to fall back on, or if the refresh attempt itself fails
+   * (revoked/expired refresh token, §12 item 4) — callers surface this as
+   * the visible "reconnect your mailbox" portal state, never a silent retry.
+   */
+  async function getValidGmailAccessToken(connectionId) {
+    if (!connectionId) throw new Error('getValidGmailAccessToken requires connectionId');
+
+    const credential = await oauthConnectionsService.getDecryptedCredentialForConnection(connectionId);
+    if (!credential || !credential.accessToken) {
+      const err = new Error('No Gmail credential found for this connection.');
+      err.code = 'AUTHORIZATION_EXPIRED';
+      throw err;
+    }
+
+    const expiresAtMs = credential.expiresAt ? new Date(credential.expiresAt).getTime() : 0;
+    const isFreshEnough = expiresAtMs && expiresAtMs - Date.now() > TOKEN_REFRESH_MARGIN_MS;
+    if (isFreshEnough) return credential.accessToken;
+
+    if (!credential.refreshToken) {
+      const err = new Error('Gmail authorization has expired and cannot be silently refreshed.');
+      err.code = 'AUTHORIZATION_EXPIRED';
+      throw err;
+    }
+
+    let refreshed;
+    try {
+      refreshed = await gmailService.refreshAccessToken(credential.refreshToken);
+    } catch (err) {
+      console.error('[gmail] access token refresh failed:', err.code || 'unknown');
+      const authErr = new Error('Gmail authorization has expired and could not be refreshed.');
+      authErr.code = 'AUTHORIZATION_EXPIRED';
+      throw authErr;
+    }
+
+    await oauthConnectionsService.updateCredentialForConnection(connectionId, {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken || credential.refreshToken,
+      expiresAt: refreshed.expiresAt,
+    });
+
+    return refreshed.accessToken;
+  }
+
+  /**
+   * EM5 — exposes the email_connections row (sync_mode, managed_label_id)
+   * for a given oauth_connections id, so emailPreviewService.js doesn't need
+   * its own, second copy of emailConnectionsRepo just to read one row.
+   */
+  async function getEmailConnectionRecord(oauthConnectionId) {
+    if (!oauthConnectionId) throw new Error('getEmailConnectionRecord requires oauthConnectionId');
+    return emailConnectionsRepo.getByOauthConnectionId(oauthConnectionId);
+  }
+
+  /**
+   * EM5 (§10) — lazy backfill for a connection whose managed-label creation
+   * at connect time (handleCallback) failed. Idempotent like
+   * gmailService.getOrCreateManagedLabel itself; a no-op (one extra read,
+   * no write) when the label already exists.
+   */
+  async function ensureManagedLabel({ oauthConnectionId, emailConnectionRow, accessToken }) {
+    if (emailConnectionRow && emailConnectionRow.managed_label_id) {
+      return emailConnectionRow.managed_label_id;
+    }
+    const { labelId } = await gmailService.getOrCreateManagedLabel(accessToken);
+    await emailConnectionsRepo.updateManagedLabelId(oauthConnectionId, labelId);
+    return labelId;
+  }
+
+  return {
+    startConnection,
+    handleCallback,
+    getConnections,
+    disconnect,
+    updateSyncMode,
+    getValidGmailAccessToken,
+    getEmailConnectionRecord,
+    ensureManagedLabel,
+  };
 }
 
 const defaultService = createEmailConnectionService();

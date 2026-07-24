@@ -348,6 +348,17 @@
   const emailSyncModeSelect         = document.getElementById('email-sync-mode-select');
   const emailMailboxSettingsStatus  = document.getElementById('email-mailbox-settings-save-status');
 
+  // EM5 — Gmail label workflow shell (§7, §10, §17, §31): "Open Gmail"
+  // shortcut, label instructions (manual mode only), and a preview-only
+  // "Sync now" button — no real ingestion until EM6.
+  const emailSyncShellSection    = document.getElementById('email-sync-shell-section');
+  const emailManualInstructions  = document.getElementById('email-manual-instructions');
+  const emailSyncNowBtn          = document.getElementById('email-sync-now-btn');
+  const emailSyncNowStatus       = document.getElementById('email-sync-now-status');
+  const emailPreviewResult       = document.getElementById('email-preview-result');
+  let emailPreviewNextPageToken  = null;
+  let emailPreviewTotals         = { matched: 0, scanned: 0 };
+
   function renderGmailStatus({ connections, configured }) {
     if (!gmailStatusBadge) return;
     const own = (connections || [])[0] || null;
@@ -364,6 +375,7 @@
       if (gmailConnectBtn) gmailConnectBtn.hidden = true;
       if (gmailDisconnectBtn) gmailDisconnectBtn.hidden = true;
       if (emailMailboxSettingsSection) emailMailboxSettingsSection.hidden = true;
+      if (emailSyncShellSection) emailSyncShellSection.hidden = true;
       return;
     }
 
@@ -384,6 +396,12 @@
       const mode = own.syncMode || 'manual_selected';
       emailSyncModeSelect.value = mode;
       emailSyncModeSelect.dataset.priorValue = mode;
+    }
+
+    if (emailSyncShellSection) emailSyncShellSection.hidden = !isConnected;
+    if (isConnected && emailSyncNowBtn) {
+      emailSyncNowBtn.dataset.connectionId = own.connectionId;
+      if (emailManualInstructions) emailManualInstructions.hidden = own.syncMode === 'automatic';
     }
   }
 
@@ -542,6 +560,7 @@
         if (!res.ok) throw new Error(body.error || 'Could not update sync mode.');
         emailSyncModeSelect.value = body.syncMode;
         emailSyncModeSelect.dataset.priorValue = body.syncMode;
+        if (emailManualInstructions) emailManualInstructions.hidden = body.syncMode === 'automatic';
         if (emailMailboxSettingsStatus) {
           emailMailboxSettingsStatus.textContent = 'Saved.';
           emailMailboxSettingsStatus.className = 'kb-upload-status kb-upload-status--success';
@@ -558,6 +577,68 @@
         emailSyncModeSelect.disabled = false;
       }
     });
+  }
+
+  // EM5 — "Sync now" is preview-only until EM6 ships real ingestion: it
+  // calls POST /connections/:id/preview (a dry-run — never persists, never
+  // fetches message bodies, §14.1) and renders the resulting count/sample.
+  // A first click starts a fresh preview (no pageToken); "Load more" walks
+  // subsequent pages via the returned nextPageToken, accumulating totals
+  // across calls rather than replacing them, mirroring how a member would
+  // read "how much would this sync so far."
+  function renderPreviewResult(result) {
+    if (!emailPreviewResult) return;
+    emailPreviewTotals.matched += result.matchedCount;
+    emailPreviewTotals.scanned += result.scannedCount;
+    emailPreviewNextPageToken = result.nextPageToken;
+
+    const sampleHtml = result.sample.length
+      ? '<ul class="email-preview-sample-list">' + result.sample.map((s) => `
+          <li>${escHtml(s.subject || '(no subject)')} — ${escHtml(s.from || '')}</li>
+        `).join('') + '</ul>'
+      : '';
+    emailPreviewResult.innerHTML = `
+      <p>${emailPreviewTotals.matched} of ${emailPreviewTotals.scanned} scanned message${emailPreviewTotals.scanned === 1 ? '' : 's'} would be imported.</p>
+      ${sampleHtml}
+      ${emailPreviewNextPageToken ? '<button type="button" class="btn-kb-upload" id="email-preview-load-more-btn">Load more</button>' : ''}
+    `;
+    emailPreviewResult.hidden = false;
+
+    const loadMoreBtn = document.getElementById('email-preview-load-more-btn');
+    if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => runPreview({ append: true }));
+  }
+
+  async function runPreview({ append = false } = {}) {
+    const connectionId = emailSyncNowBtn && emailSyncNowBtn.dataset.connectionId;
+    if (!connectionId) return;
+    if (!append) {
+      emailPreviewTotals = { matched: 0, scanned: 0 };
+      emailPreviewNextPageToken = null;
+    }
+    emailSyncNowBtn.disabled = true;
+    if (emailSyncNowStatus) emailSyncNowStatus.hidden = true;
+    try {
+      const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ pageToken: append ? emailPreviewNextPageToken : null }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Could not generate preview.');
+      renderPreviewResult(body);
+    } catch (err) {
+      if (emailSyncNowStatus) {
+        emailSyncNowStatus.textContent = err.message || 'Could not generate preview.';
+        emailSyncNowStatus.className = 'kb-upload-status kb-upload-status--error';
+        emailSyncNowStatus.hidden = false;
+      }
+    } finally {
+      emailSyncNowBtn.disabled = false;
+    }
+  }
+
+  if (emailSyncNowBtn) {
+    emailSyncNowBtn.addEventListener('click', () => runPreview({ append: false }));
   }
 
   // 4d. Email organization policy (EM3 — Architecture/architecture/

@@ -167,6 +167,21 @@
                     <span id="email-mailbox-settings-save-status" class="kb-upload-status" hidden></span>
                   </div>
 
+                  <!-- EM5 — Gmail label workflow shell (§7, §10, §14.1, §17, §31). Preview
+                       only: no real ingestion ships until EM6. Shown only while connected. -->
+                  <div id="email-sync-shell-section" class="email-sync-shell-section" hidden>
+                    <p class="slack-collections-label">Sync (preview only — real ingestion ships in a later milestone)</p>
+                    <div id="email-manual-instructions" class="email-manual-instructions">
+                      <p class="email-policy-hint">Manual mode: apply the <strong>Relativity/Knowledge</strong> label in Gmail to any message you want considered for import. Only labeled, policy-approved messages are ever counted.</p>
+                      <a id="email-open-gmail-link" class="btn-kb-new-chat" href="https://mail.google.com/mail/u/0/#label/Relativity%2FKnowledge" target="_blank" rel="noopener noreferrer">Open Gmail</a>
+                    </div>
+                    <div class="email-sync-now-row">
+                      <button type="button" class="btn-kb-new-chat" id="email-sync-now-btn">Sync now (preview)</button>
+                      <span id="email-sync-now-status" class="kb-upload-status" hidden></span>
+                    </div>
+                    <div id="email-preview-result" class="email-preview-result" hidden></div>
+                  </div>
+
                   <!-- EM3 — organization policy summary, every active member (read-only unless owner/admin). -->
                   <div id="email-policy-summary-section" class="email-policy-summary-section" hidden>
                     <p class="slack-collections-label">Organization email policy</p>

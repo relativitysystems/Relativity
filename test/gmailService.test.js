@@ -18,7 +18,11 @@ const {
   validateTokenResponse,
   validateUserInfoResponse,
   isGmailConfigured,
+  compileSearchQuery,
+  extractEmailAddress,
+  parseMessageHeaders,
   REQUIRED_SCOPES,
+  MANAGED_LABEL_NAME,
   ERROR_CODES,
 } = require('../services/gmailService');
 
@@ -35,18 +39,24 @@ test('buildAuthorizationUrl uses GMAIL_CLIENT_ID, the exact redirect URI, respon
   assert.equal(url.searchParams.get('state'), 'raw-state-value');
 });
 
-test('buildAuthorizationUrl requests exactly gmail.readonly + openid + email + profile — nothing more, nothing less', () => {
+test('buildAuthorizationUrl requests exactly gmail.readonly + gmail.labels + openid + email + profile — nothing more, nothing less (EM5 adds gmail.labels)', () => {
   const url = new URL(buildAuthorizationUrl({ state: 's' }));
   const scopes = url.searchParams.get('scope').split(' ');
-  const expected = ['https://www.googleapis.com/auth/gmail.readonly', 'openid', 'email', 'profile'];
+  const expected = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.labels',
+    'openid',
+    'email',
+    'profile',
+  ];
   assert.deepEqual(scopes.sort(), expected.sort());
   assert.deepEqual(REQUIRED_SCOPES.sort(), expected.sort());
 });
 
-test('buildAuthorizationUrl never requests gmail.labels, gmail.modify, or gmail.compose', () => {
+test('buildAuthorizationUrl never requests gmail.modify, gmail.compose, or gmail.send (labels.create/list is the only mutation gmail.labels permits)', () => {
   const url = new URL(buildAuthorizationUrl({ state: 's' }));
   const scopeParam = url.searchParams.get('scope');
-  for (const forbidden of ['gmail.labels', 'gmail.modify', 'gmail.compose', 'gmail.send']) {
+  for (const forbidden of ['gmail.modify', 'gmail.compose', 'gmail.send']) {
     assert.equal(scopeParam.includes(forbidden), false, `scope must not include "${forbidden}"`);
   }
 });
@@ -258,4 +268,241 @@ test('revokeToken never puts the token in the request URL (Google\'s revoke endp
   await service.revokeToken('ya29.secret-token');
   assert.equal(captured.url.includes('ya29.secret-token'), false);
   assert.ok(captured.body.includes('ya29.secret-token'));
+});
+
+// ─────────────────────────────────────────────
+// refreshAccessToken (EM5 — token-refresh orchestration lives in
+// emailConnectionService.js's getValidGmailAccessToken; this is only the
+// raw token-endpoint call)
+// ─────────────────────────────────────────────
+
+test('refreshAccessToken posts refresh_token/client_id/client_secret/grant_type and returns the new access token', async () => {
+  const httpClient = {
+    post: async () => ({ status: 200, data: { access_token: 'ya29.new-token', expires_in: 3600 } }),
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.refreshAccessToken('1//old-refresh-token');
+  assert.equal(result.accessToken, 'ya29.new-token');
+  assert.ok(result.expiresAt);
+});
+
+test('refreshAccessToken returns refreshToken: null when Google omits a new one (caller must preserve the prior one, not null it out)', async () => {
+  const httpClient = { post: async () => ({ status: 200, data: { access_token: 'ya29.new-token', expires_in: 3600 } }) };
+  const service = createGmailService({ httpClient });
+  const result = await service.refreshAccessToken('1//old-refresh-token');
+  assert.equal(result.refreshToken, null);
+});
+
+test('refreshAccessToken returns the new refreshToken when Google does rotate it', async () => {
+  const httpClient = { post: async () => ({ status: 200, data: { access_token: 'ya29.new-token', refresh_token: '1//new-refresh', expires_in: 3600 } }) };
+  const service = createGmailService({ httpClient });
+  const result = await service.refreshAccessToken('1//old-refresh-token');
+  assert.equal(result.refreshToken, '1//new-refresh');
+});
+
+test('refreshAccessToken rejects a non-2xx response (e.g. a revoked/expired refresh token)', async () => {
+  const httpClient = { post: async () => ({ status: 400, data: { error: 'invalid_grant' } }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(() => service.refreshAccessToken('1//dead'), (err) => err.code === ERROR_CODES.HTTP_ERROR);
+});
+
+test('refreshAccessToken never leaks the client secret in a thrown error message', async () => {
+  const httpClient = { post: async () => { throw new Error('boom with secret test-gmail-client-secret leaked'); } };
+  const service = createGmailService({ httpClient });
+  try {
+    await service.refreshAccessToken('1//old');
+    assert.fail('expected refreshAccessToken to throw');
+  } catch (err) {
+    assert.equal(err.message.includes('test-gmail-client-secret'), false);
+  }
+});
+
+test('refreshAccessToken requires a refreshToken', async () => {
+  const service = createGmailService({ httpClient: { post: async () => ({ status: 200, data: {} }) } });
+  await assert.rejects(() => service.refreshAccessToken(null), /requires refreshToken/);
+});
+
+// ─────────────────────────────────────────────
+// listLabels / getOrCreateManagedLabel (§10 — idempotent managed label)
+// ─────────────────────────────────────────────
+
+test('listLabels maps the labels.list response to {id, name} pairs', async () => {
+  const httpClient = { get: async () => ({ status: 200, data: { labels: [{ id: 'Label_1', name: 'Relativity/Knowledge', type: 'user' }, { id: 'INBOX', name: 'INBOX', type: 'system' }] } }) };
+  const service = createGmailService({ httpClient });
+  const labels = await service.listLabels('token');
+  assert.deepEqual(labels, [{ id: 'Label_1', name: 'Relativity/Knowledge' }, { id: 'INBOX', name: 'INBOX' }]);
+});
+
+test('getOrCreateManagedLabel reuses an existing "Relativity/Knowledge" label rather than creating a duplicate', async () => {
+  const calls = { get: 0, post: 0 };
+  const httpClient = {
+    get: async () => { calls.get++; return { status: 200, data: { labels: [{ id: 'Label_42', name: MANAGED_LABEL_NAME }] } }; },
+    post: async () => { calls.post++; throw new Error('should not be called'); },
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.getOrCreateManagedLabel('token');
+  assert.deepEqual(result, { labelId: 'Label_42', created: false });
+  assert.equal(calls.post, 0);
+});
+
+test('getOrCreateManagedLabel creates the label when it does not already exist', async () => {
+  const httpClient = {
+    get: async () => ({ status: 200, data: { labels: [{ id: 'INBOX', name: 'INBOX' }] } }),
+    post: async (url, body) => {
+      assert.equal(body.name, MANAGED_LABEL_NAME);
+      return { status: 200, data: { id: 'Label_99', name: MANAGED_LABEL_NAME } };
+    },
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.getOrCreateManagedLabel('token');
+  assert.deepEqual(result, { labelId: 'Label_99', created: true });
+});
+
+test('getOrCreateManagedLabel surfaces a create failure as a GMAIL_HTTP_ERROR', async () => {
+  const httpClient = {
+    get: async () => ({ status: 200, data: { labels: [] } }),
+    post: async () => ({ status: 500, data: {} }),
+  };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(() => service.getOrCreateManagedLabel('token'), (err) => err.code === ERROR_CODES.HTTP_ERROR);
+});
+
+// ─────────────────────────────────────────────
+// listMessageIdsByQuery / getMessageMetadata (§14.1 preview, §17)
+// ─────────────────────────────────────────────
+
+test('listMessageIdsByQuery returns bare message ids and passes q/maxResults/pageToken through', async () => {
+  let captured;
+  const httpClient = {
+    get: async (url) => {
+      captured = url;
+      return { status: 200, data: { messages: [{ id: 'msg-1' }, { id: 'msg-2' }], nextPageToken: 'page-2' } };
+    },
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.listMessageIdsByQuery({ accessToken: 'token', query: 'label:Relativity/Knowledge', pageToken: 'page-1', maxResults: 10 });
+  assert.deepEqual(result, { messageIds: ['msg-1', 'msg-2'], nextPageToken: 'page-2' });
+  assert.ok(captured.includes('pageToken=page-1'));
+  assert.ok(captured.includes('maxResults=10'));
+});
+
+test('listMessageIdsByQuery short-circuits to an empty result without a network call when query is null (fail-closed — §16.1 item 6)', async () => {
+  let called = false;
+  const httpClient = { get: async () => { called = true; return { status: 200, data: {} }; } };
+  const service = createGmailService({ httpClient });
+  const result = await service.listMessageIdsByQuery({ accessToken: 'token', query: null });
+  assert.deepEqual(result, { messageIds: [], nextPageToken: null });
+  assert.equal(called, false);
+});
+
+test('listMessageIdsByQuery returns an empty array (not a throw) when the response has no messages field (Gmail omits it for a zero-result query)', async () => {
+  const httpClient = { get: async () => ({ status: 200, data: {} }) };
+  const service = createGmailService({ httpClient });
+  const result = await service.listMessageIdsByQuery({ accessToken: 'token', query: 'label:Nothing' });
+  assert.deepEqual(result, { messageIds: [], nextPageToken: null });
+});
+
+test('getMessageMetadata parses subject/from/date headers, extracts a bare email address, and never fetches the body', async () => {
+  let capturedUrl;
+  const httpClient = {
+    get: async (url) => {
+      capturedUrl = url;
+      return {
+        status: 200,
+        data: {
+          labelIds: ['INBOX', 'Label_42'],
+          payload: { headers: [
+            { name: 'Subject', value: 'Q3 Invoice' },
+            { name: 'From', value: 'Alex Doe <alex@example.com>' },
+            { name: 'Date', value: 'Mon, 1 Jan 2026 00:00:00 +0000' },
+          ] },
+        },
+      };
+    },
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.getMessageMetadata({ accessToken: 'token', messageId: 'msg-1' });
+  assert.equal(result.subject, 'Q3 Invoice');
+  assert.equal(result.fromAddress, 'alex@example.com');
+  assert.ok(result.date);
+  assert.deepEqual(result.labelIds, ['INBOX', 'Label_42']);
+  assert.equal(result.isSent, false);
+  assert.ok(capturedUrl.includes('format=metadata'));
+  assert.equal(capturedUrl.includes('format=full'), false);
+});
+
+test('getMessageMetadata reports isSent: true when labelIds includes SENT', async () => {
+  const httpClient = { get: async () => ({ status: 200, data: { labelIds: ['SENT'], payload: { headers: [] } } }) };
+  const service = createGmailService({ httpClient });
+  const result = await service.getMessageMetadata({ accessToken: 'token', messageId: 'msg-1' });
+  assert.equal(result.isSent, true);
+});
+
+// ─────────────────────────────────────────────
+// extractEmailAddress / parseMessageHeaders — pure
+// ─────────────────────────────────────────────
+
+test('extractEmailAddress pulls the address out of a "Display Name <addr>" header', () => {
+  assert.equal(extractEmailAddress('Alex Doe <alex@example.com>'), 'alex@example.com');
+});
+
+test('extractEmailAddress accepts a bare address with no display name', () => {
+  assert.equal(extractEmailAddress('alex@example.com'), 'alex@example.com');
+});
+
+test('extractEmailAddress lowercases the result', () => {
+  assert.equal(extractEmailAddress('Alex Doe <Alex@Example.COM>'), 'alex@example.com');
+});
+
+test('extractEmailAddress returns null for an unparseable or missing value', () => {
+  assert.equal(extractEmailAddress(''), null);
+  assert.equal(extractEmailAddress(null), null);
+  assert.equal(extractEmailAddress('not an address'), null);
+});
+
+// ─────────────────────────────────────────────
+// compileSearchQuery — pure (§10, §17, §14.1)
+// ─────────────────────────────────────────────
+
+test('compileSearchQuery for manual_selected mode is always exactly label:Relativity/Knowledge -in:chats, regardless of policy rules', () => {
+  const rules = [{ ruleType: 'allow', labelOrFolder: 'finance', enabled: true }];
+  assert.equal(compileSearchQuery({ mode: 'manual_selected', rules }), 'label:Relativity/Knowledge -in:chats');
+  assert.equal(compileSearchQuery({ mode: 'manual_selected', rules: [] }), 'label:Relativity/Knowledge -in:chats');
+});
+
+test('compileSearchQuery for automatic mode ORs together each enabled allow rule\'s label/sender criteria', () => {
+  const rules = [
+    { ruleType: 'allow', enabled: true, labelOrFolder: 'finance', senderPattern: null },
+    { ruleType: 'allow', enabled: true, labelOrFolder: null, senderPattern: '@client.com' },
+  ];
+  const query = compileSearchQuery({ mode: 'automatic', rules });
+  assert.equal(query, '(label:finance) OR (from:@client.com) -in:chats');
+});
+
+test('compileSearchQuery for automatic mode never compiles deny rules into the query (deny is local-only, §10 item 4)', () => {
+  const rules = [
+    { ruleType: 'allow', enabled: true, labelOrFolder: 'finance' },
+    { ruleType: 'deny', enabled: true, labelOrFolder: 'finance/payroll' },
+  ];
+  const query = compileSearchQuery({ mode: 'automatic', rules });
+  assert.equal(query.includes('payroll'), false);
+});
+
+test('compileSearchQuery for automatic mode skips disabled allow rules', () => {
+  const rules = [
+    { ruleType: 'allow', enabled: false, labelOrFolder: 'finance' },
+    { ruleType: 'allow', enabled: true, senderPattern: '@client.com' },
+  ];
+  const query = compileSearchQuery({ mode: 'automatic', rules });
+  assert.equal(query, 'from:@client.com -in:chats');
+});
+
+test('compileSearchQuery for automatic mode returns null when there are zero enabled allow rules (fail-closed, §16.1 item 6) — callers must not list the whole mailbox', () => {
+  assert.equal(compileSearchQuery({ mode: 'automatic', rules: [] }), null);
+  assert.equal(compileSearchQuery({ mode: 'automatic', rules: [{ ruleType: 'deny', enabled: true, labelOrFolder: 'x' }] }), null);
+});
+
+test('compileSearchQuery for automatic mode returns null when every allow rule has neither a compilable label nor sender criterion (e.g. subject-only rules, not query-compilable in the MVP)', () => {
+  const rules = [{ ruleType: 'allow', enabled: true, labelOrFolder: null, senderPattern: null, subjectKeyword: 'invoice' }];
+  assert.equal(compileSearchQuery({ mode: 'automatic', rules }), null);
 });

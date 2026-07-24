@@ -2,10 +2,12 @@
 
 // Gmail OAuth connection routes (EM2 — Architecture/architecture/
 // EMAIL_INGESTION.md §14.1), extended in EM3 with organization policy
-// (/policy, /settings) and in EM4 with the member mailbox settings surface
-// (/connections/:id/sync-mode, /member-settings). Thin Express adapter —
-// all logic lives in services/emailConnectionService.js /
-// services/emailPolicyService.js / services/supabaseService.js so it stays
+// (/policy, /settings), in EM4 with the member mailbox settings surface
+// (/connections/:id/sync-mode, /member-settings), and in EM5 with the
+// label-query dry-run preview (/connections/:id/preview) — still no
+// ingestion of any kind (EM6). Thin Express adapter — all logic lives in
+// services/emailConnectionService.js / services/emailPolicyService.js /
+// services/emailPreviewService.js / services/supabaseService.js so it stays
 // unit-testable without an HTTP layer. Mounted at /api/integrations/email
 // in app.js.
 //
@@ -32,6 +34,7 @@ const emailConnectionService = require('../../services/emailConnectionService');
 const oauthConnectionsService = require('../../services/oauthConnectionsService');
 const gmailService = require('../../services/gmailService');
 const emailPolicyService = require('../../services/emailPolicyService');
+const emailPreviewService = require('../../services/emailPreviewService');
 const supabaseService = require('../../services/supabaseService');
 const { REDIRECT, PROVIDER, canDisconnectConnection } = emailConnectionService;
 
@@ -225,6 +228,67 @@ router.put('/member-settings', clientAuth, async (req, res) => {
   } catch (err) {
     console.error('PUT /api/integrations/email/member-settings error:', err.message);
     res.status(500).json({ error: 'Could not save your settings.' });
+  }
+});
+
+/**
+ * POST /api/integrations/email/connections/:id/preview
+ * Self-service only (EM5 — §14.1, §17, §31), same ownership shape as
+ * sync-mode above (reuses canDisconnectConnection). Dry-run: compiles a
+ * Gmail search query from the connection's current sync_mode plus
+ * organization policy, lists a bounded page of candidates, and re-verifies
+ * each one locally via the Policy Evaluation Model (§16) — never fetches
+ * message bodies, never persists anything, never ingests. Body: optional
+ * `{pageToken}` to continue a prior call's pagination.
+ */
+router.post('/connections/:id/preview', clientAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const connection = await oauthConnectionsService.getConnectionById(id);
+    if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const emailConnectionRow = await emailConnectionService.getEmailConnectionRecord(id);
+    if (!emailConnectionRow) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+
+    let accessToken;
+    try {
+      accessToken = await emailConnectionService.getValidGmailAccessToken(id);
+    } catch (err) {
+      if (err.code === 'AUTHORIZATION_EXPIRED') {
+        return res.status(400).json({ error: 'Gmail authorization has expired. Please reconnect your mailbox.' });
+      }
+      throw err;
+    }
+
+    // Automatic mode never consults the label (§16.1 item 3) — only
+    // manual/paused connections need managed_label_id resolved before the
+    // preview's hasLabel check can be trusted.
+    if (emailConnectionRow.sync_mode !== 'automatic') {
+      emailConnectionRow.managed_label_id = await emailConnectionService.ensureManagedLabel({
+        oauthConnectionId: id,
+        emailConnectionRow,
+        accessToken,
+      });
+    }
+
+    const { pageToken } = req.body || {};
+    const result = await emailPreviewService.buildPreview({
+      clientId: req.client.id,
+      emailConnectionRow,
+      accessToken,
+      pageToken: typeof pageToken === 'string' ? pageToken : null,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/integrations/email/connections/:id/preview error:', err.message);
+    res.status(500).json({ error: 'Could not generate preview.' });
   }
 });
 

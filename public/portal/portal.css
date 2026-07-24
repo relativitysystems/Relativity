@@ -498,6 +498,45 @@ body {
   padding: 5px 8px;
 }
 
+/* ---- Overview: Gmail label workflow shell, preview-only (EM5) ---- */
+.email-sync-shell-section {
+  width: 100%;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.email-manual-instructions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.email-sync-now-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.email-preview-result {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.email-preview-sample-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 /* ---- Overview: email organization policy (EM3) ---- */
 .email-policy-summary-section,
 .email-policy-builder-section {

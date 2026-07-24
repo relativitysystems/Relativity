@@ -123,6 +123,21 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  // EM5 — label-query dry-run preview (§14.1, §17, §31). Same limitation as
+  // sync-mode/disconnect above: the owns-this-connection gate and the live
+  // Gmail-call path (getValidGmailAccessToken/ensureManagedLabel/buildPreview)
+  // run only after clientAuth succeeds, so they aren't exercised here; see
+  // test/emailConnectionService.test.js and test/emailPreviewService.test.js.
+  await t.test('POST /api/integrations/email/connections/:id/preview requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);

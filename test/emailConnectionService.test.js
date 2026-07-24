@@ -22,6 +22,11 @@ function makeFakes(overrides = {}) {
     getConnectionById: [],
     updateSyncMode: [],
     getSettings: [],
+    getOrCreateManagedLabel: [],
+    updateManagedLabelId: [],
+    refreshAccessToken: [],
+    getDecryptedCredentialForConnection: [],
+    updateCredentialForConnection: [],
   };
 
   // In-memory model of oauth_connections rows, keyed by connectionId, so
@@ -64,6 +69,16 @@ function makeFakes(overrides = {}) {
     revokeToken: async (token) => {
       calls.revokeToken.push(token);
       return overrides.revokeToken ? overrides.revokeToken(token) : true;
+    },
+    getOrCreateManagedLabel: async (accessToken) => {
+      calls.getOrCreateManagedLabel.push(accessToken);
+      if (overrides.getOrCreateManagedLabel) return overrides.getOrCreateManagedLabel(accessToken);
+      return { labelId: 'Label_managed_1', created: true };
+    },
+    refreshAccessToken: async (refreshToken) => {
+      calls.refreshAccessToken.push(refreshToken);
+      if (overrides.refreshAccessToken) return overrides.refreshAccessToken(refreshToken);
+      return { accessToken: 'ya29.refreshed-token', refreshToken: null, expiresAt: new Date(Date.now() + 3600000).toISOString() };
     },
   };
 
@@ -112,8 +127,17 @@ function makeFakes(overrides = {}) {
       return connectionsStore.get(connectionId) || null;
     },
     getDecryptedCredentialForConnection: async (connectionId) => {
+      calls.getDecryptedCredentialForConnection.push(connectionId);
       if (overrides.getDecryptedCredentialForConnection) return overrides.getDecryptedCredentialForConnection(connectionId);
-      return { accessToken: 'ya29.decrypted-token', refreshToken: null, expiresAt: null };
+      // Fresh by default (~1hr out) so getValidGmailAccessToken's tests opt
+      // into an expiring/expired credential explicitly via override instead
+      // of every disconnect-focused test accidentally triggering a refresh.
+      return { accessToken: 'ya29.decrypted-token', refreshToken: '1//decrypted-refresh-token', expiresAt: new Date(Date.now() + 3600000).toISOString() };
+    },
+    updateCredentialForConnection: async (connectionId, args) => {
+      calls.updateCredentialForConnection.push({ connectionId, ...args });
+      if (overrides.updateCredentialForConnection) return overrides.updateCredentialForConnection(connectionId, args);
+      return undefined;
     },
     markConnectionRevokedForMember: async (clientId, provider, memberId) => {
       calls.markConnectionRevokedForMember.push({ clientId, provider, memberId });
@@ -174,6 +198,12 @@ function makeFakes(overrides = {}) {
       calls.updateSyncMode.push({ oauthConnectionId, syncMode });
       if (overrides.updateSyncMode) return overrides.updateSyncMode(oauthConnectionId, syncMode);
       return { oauth_connection_id: oauthConnectionId, sync_mode: syncMode };
+    },
+    // EM5 — ensureManagedLabel's lazy-backfill write path.
+    updateManagedLabelId: async (oauthConnectionId, managedLabelId) => {
+      calls.updateManagedLabelId.push({ oauthConnectionId, managedLabelId });
+      if (overrides.updateManagedLabelId) return overrides.updateManagedLabelId(oauthConnectionId, managedLabelId);
+      return { oauth_connection_id: oauthConnectionId, managed_label_id: managedLabelId };
     },
   };
 
@@ -345,6 +375,145 @@ test('a fully valid callback persists the connection with the expected metadata 
   assert.equal(upsertArgs.mailboxAddress, 'alex@example.com');
   assert.equal(upsertArgs.displayName, 'Alex Doe');
   assert.ok(upsertArgs.oauthConnectionId);
+});
+
+// ─────────────────────────────────────────────
+// handleCallback — managed-label create-or-reuse (EM5 — §10)
+// ─────────────────────────────────────────────
+
+test('a successful callback creates/reuses the managed label using the fresh access token and persists its id onto email_connections', async () => {
+  const { service, calls } = makeFakes();
+  const result = await service.handleCallback({ code: 'the-code', state: 'the-state', error: null });
+
+  assert.equal(result.redirectPath, REDIRECT.SUCCESS);
+  assert.equal(calls.getOrCreateManagedLabel.length, 1);
+  assert.equal(calls.getOrCreateManagedLabel[0], 'ya29.real-access-token');
+  assert.equal(calls.upsertConnection[0].managedLabelId, 'Label_managed_1');
+});
+
+test('a managed-label creation failure does NOT fail the whole connection — it completes with managedLabelId left null (best-effort, lazily retried later)', async () => {
+  const { service, calls } = makeFakes({
+    getOrCreateManagedLabel: async () => { throw new Error('Gmail labels.create request failed'); },
+  });
+  const result = await service.handleCallback({ code: 'the-code', state: 'the-state', error: null });
+
+  assert.equal(result.redirectPath, REDIRECT.SUCCESS);
+  assert.equal(calls.upsertConnection.length, 1);
+  assert.equal(calls.upsertConnection[0].managedLabelId, null);
+});
+
+// ─────────────────────────────────────────────
+// getValidGmailAccessToken (EM5 — token-refresh orchestration)
+// ─────────────────────────────────────────────
+
+test('getValidGmailAccessToken returns the stored access token unchanged when it is not close to expiring', async () => {
+  const { service, calls } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({
+      accessToken: 'ya29.still-fresh', refreshToken: '1//r', expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    }),
+  });
+  const token = await service.getValidGmailAccessToken('conn-1');
+  assert.equal(token, 'ya29.still-fresh');
+  assert.equal(calls.refreshAccessToken.length, 0);
+});
+
+test('getValidGmailAccessToken refreshes and persists a new token when the stored one is expiring soon', async () => {
+  const { service, calls } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({
+      accessToken: 'ya29.about-to-expire', refreshToken: '1//old-refresh', expiresAt: new Date(Date.now() + 60000).toISOString(), // 1 min out, inside the 5-min margin
+    }),
+  });
+  const token = await service.getValidGmailAccessToken('conn-1');
+  assert.equal(token, 'ya29.refreshed-token');
+  assert.equal(calls.refreshAccessToken.length, 1);
+  assert.equal(calls.refreshAccessToken[0], '1//old-refresh');
+  assert.equal(calls.updateCredentialForConnection.length, 1);
+  assert.equal(calls.updateCredentialForConnection[0].accessToken, 'ya29.refreshed-token');
+});
+
+test('getValidGmailAccessToken refreshes when expiresAt is missing entirely (treated as already expired, not "never expires")', async () => {
+  const { service, calls } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({ accessToken: 'ya29.no-expiry', refreshToken: '1//r', expiresAt: null }),
+  });
+  await service.getValidGmailAccessToken('conn-1');
+  assert.equal(calls.refreshAccessToken.length, 1);
+});
+
+test('getValidGmailAccessToken preserves the prior refresh token when Google\'s refresh response omits a new one (does not null it out)', async () => {
+  const { service, calls } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({
+      accessToken: 'ya29.expiring', refreshToken: '1//keep-me', expiresAt: new Date(Date.now() + 1000).toISOString(),
+    }),
+    refreshAccessToken: async () => ({ accessToken: 'ya29.new', refreshToken: null, expiresAt: new Date(Date.now() + 3600000).toISOString() }),
+  });
+  await service.getValidGmailAccessToken('conn-1');
+  assert.equal(calls.updateCredentialForConnection[0].refreshToken, '1//keep-me');
+});
+
+test('getValidGmailAccessToken uses the rotated refresh token when Google does return a new one', async () => {
+  const { service, calls } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({
+      accessToken: 'ya29.expiring', refreshToken: '1//old', expiresAt: new Date(Date.now() + 1000).toISOString(),
+    }),
+    refreshAccessToken: async () => ({ accessToken: 'ya29.new', refreshToken: '1//rotated', expiresAt: new Date(Date.now() + 3600000).toISOString() }),
+  });
+  await service.getValidGmailAccessToken('conn-1');
+  assert.equal(calls.updateCredentialForConnection[0].refreshToken, '1//rotated');
+});
+
+test('getValidGmailAccessToken throws AUTHORIZATION_EXPIRED when no credential row exists', async () => {
+  const { service } = makeFakes({ getDecryptedCredentialForConnection: async () => null });
+  await assert.rejects(() => service.getValidGmailAccessToken('conn-1'), (err) => err.code === 'AUTHORIZATION_EXPIRED');
+});
+
+test('getValidGmailAccessToken throws AUTHORIZATION_EXPIRED when the token is expiring and there is no refresh token to fall back on', async () => {
+  const { service } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({ accessToken: 'ya29.expiring', refreshToken: null, expiresAt: new Date(Date.now() + 1000).toISOString() }),
+  });
+  await assert.rejects(() => service.getValidGmailAccessToken('conn-1'), (err) => err.code === 'AUTHORIZATION_EXPIRED');
+});
+
+test('getValidGmailAccessToken throws AUTHORIZATION_EXPIRED (not the raw Gmail error) when the refresh attempt itself fails', async () => {
+  const { service } = makeFakes({
+    getDecryptedCredentialForConnection: async () => ({ accessToken: 'ya29.expiring', refreshToken: '1//dead', expiresAt: new Date(Date.now() + 1000).toISOString() }),
+    refreshAccessToken: async () => { const e = new Error('invalid_grant'); e.code = 'GMAIL_HTTP_ERROR'; throw e; },
+  });
+  await assert.rejects(() => service.getValidGmailAccessToken('conn-1'), (err) => err.code === 'AUTHORIZATION_EXPIRED');
+});
+
+// ─────────────────────────────────────────────
+// ensureManagedLabel / getEmailConnectionRecord (EM5)
+// ─────────────────────────────────────────────
+
+test('ensureManagedLabel is a no-op (no network, no write) when the row already has a managed_label_id', async () => {
+  const { service, calls } = makeFakes();
+  const labelId = await service.ensureManagedLabel({
+    oauthConnectionId: 'conn-1',
+    emailConnectionRow: { managed_label_id: 'Label_existing' },
+    accessToken: 'ya29.token',
+  });
+  assert.equal(labelId, 'Label_existing');
+  assert.equal(calls.getOrCreateManagedLabel.length, 0);
+  assert.equal(calls.updateManagedLabelId.length, 0);
+});
+
+test('ensureManagedLabel creates/reuses the label and persists it when the row has no managed_label_id yet', async () => {
+  const { service, calls } = makeFakes();
+  const labelId = await service.ensureManagedLabel({
+    oauthConnectionId: 'conn-1',
+    emailConnectionRow: { managed_label_id: null },
+    accessToken: 'ya29.token',
+  });
+  assert.equal(labelId, 'Label_managed_1');
+  assert.equal(calls.getOrCreateManagedLabel.length, 1);
+  assert.deepEqual(calls.updateManagedLabelId[0], { oauthConnectionId: 'conn-1', managedLabelId: 'Label_managed_1' });
+});
+
+test('getEmailConnectionRecord returns the email_connections row for a given oauth_connections id', async () => {
+  const { service, calls } = makeFakes();
+  const row = await service.getEmailConnectionRecord('conn-1');
+  assert.equal(row.oauth_connection_id, 'conn-1');
+  assert.equal(calls.getByOauthConnectionId.length, 1);
 });
 
 test('handleCallback never throws for any input — every branch resolves to a redirect path', async () => {
