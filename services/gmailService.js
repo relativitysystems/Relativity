@@ -2,17 +2,21 @@
 
 // Gmail OAuth client (EM2 — Architecture/architecture/EMAIL_INGESTION.md §10,
 // §12), extended in EM5 with the managed-label workflow and the read-only
-// message calls the preview dry-run needs (§10, §17). Mirrors
-// services/slackService.js's shape one-for-one: provider-specific,
-// dependency-injected httpClient so tests never make a real network call.
-// Still no ingestion here — this file only ever reads (messages.list/get,
-// labels.list/create) or writes exactly one thing, the managed label itself
-// (labels.create) — never modifies, sends, or deletes a message.
+// message calls the preview dry-run needs (§10, §17), in EM6 with the
+// format=full body fetch (§19), and in EM7 with the History API incremental
+// diff (§18) — getMailboxHistoryId (users.getProfile, to capture a fresh
+// cursor) and listHistory (users.history.list, to read what changed since a
+// stored cursor). Mirrors services/slackService.js's shape one-for-one:
+// provider-specific, dependency-injected httpClient so tests never make a
+// real network call. Still no write/mutation here beyond the managed label
+// itself (labels.create) — never modifies, sends, or deletes a message.
 //
 // Scope grew from EM2's gmail.readonly + identity to add gmail.labels here
 // (EM5) — required to create the managed "Relativity/Knowledge" label
 // (labels.list/get alone cannot create one). Still no gmail.modify/compose/
 // send — labels.create/list is the only mutation this scope permits.
+// history.list/getProfile both fall under the existing gmail.readonly scope
+// — no scope addition needed for EM7.
 
 const axios = require('axios');
 const { gmail } = require('../config');
@@ -40,6 +44,12 @@ const ERROR_CODES = Object.freeze({
   HTTP_ERROR: 'GMAIL_HTTP_ERROR',
   INVALID_RESPONSE: 'GMAIL_INVALID_RESPONSE',
   OAUTH_FAILED: 'GMAIL_OAUTH_FAILED',
+  // EM7 (§18.4) — Gmail returns 404 when a startHistoryId is older than the
+  // mailbox's retained history window (at least 7 days, per Google's docs).
+  // Distinct from HTTP_ERROR so callers can distinguish "cursor is stale,
+  // fall back to a bounded historical re-scan" from a real, unexpected
+  // failure that shouldn't silently trigger a full re-scan.
+  HISTORY_EXPIRED: 'GMAIL_HISTORY_EXPIRED',
 });
 
 function gmailError(code, message) {
@@ -539,6 +549,104 @@ function createGmailService({ httpClient = axios } = {}) {
     return { messageId, html, text };
   }
 
+  /**
+   * `users.getProfile` (EM7 — §18.3's `next_sync_due_at`/cursor bookkeeping
+   * groundwork). The ONLY reliable way to obtain the mailbox's current
+   * historyId with no other side effect — used to establish a fresh cursor
+   * right after a full historical sync completes, so the NEXT sync can go
+   * incremental (§18.2).
+   */
+  async function getMailboxHistoryId(accessToken) {
+    if (!accessToken) throw new Error('getMailboxHistoryId requires accessToken');
+    let response;
+    try {
+      response = await httpClient.get(`${GMAIL_API_BASE}/profile`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: GMAIL_API_TIMEOUT_MS,
+      });
+    } catch {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail users.getProfile request failed');
+    }
+    if (!response || response.status < 200 || response.status >= 300) {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail users.getProfile returned an unsuccessful HTTP status');
+    }
+    const historyId = response.data && response.data.historyId;
+    if (!historyId) {
+      throw gmailError(ERROR_CODES.INVALID_RESPONSE, 'Gmail users.getProfile response is missing historyId');
+    }
+    return { historyId: String(historyId) };
+  }
+
+  /**
+   * `users.history.list` (EM7 — §18, §18.4): reads what changed for the
+   * managed label since `startHistoryId`, scoped via the `labelId` query
+   * param so this never sees unrelated mailbox activity (§18.2 — EM7 stays
+   * `manual_selected`-only, the label remains the only signal). Returns a
+   * flat, ORDER-PRESERVING list of `{type, messageId}` changes — callers
+   * reduce this to one final action per message (last-write-wins) rather
+   * than this function pre-grouping into added/removed sets, since a
+   * message can legitimately be labeled and then unlabeled again within the
+   * same page and only the net effect matters (§24.2).
+   *
+   * Throws `ERROR_CODES.HISTORY_EXPIRED` on Gmail's documented 404 for a
+   * `startHistoryId` older than the retained history window — callers must
+   * treat this as "fall back to a bounded historical re-scan," never a
+   * generic failure (§18.4).
+   */
+  async function listHistory({ accessToken, startHistoryId, labelId, pageToken, maxResults = 50 }) {
+    if (!accessToken) throw new Error('listHistory requires accessToken');
+    if (!startHistoryId) throw new Error('listHistory requires startHistoryId');
+
+    const params = new URLSearchParams({ startHistoryId: String(startHistoryId), maxResults: String(maxResults) });
+    params.append('historyTypes', 'labelAdded');
+    params.append('historyTypes', 'labelRemoved');
+    params.append('historyTypes', 'messageDeleted');
+    if (labelId) params.set('labelId', labelId);
+    if (pageToken) params.set('pageToken', pageToken);
+
+    let response;
+    try {
+      response = await httpClient.get(`${GMAIL_API_BASE}/history?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: GMAIL_API_TIMEOUT_MS,
+      });
+    } catch {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail users.history.list request failed');
+    }
+
+    if (response && response.status === 404) {
+      throw gmailError(ERROR_CODES.HISTORY_EXPIRED, 'Gmail history cursor is expired or invalid');
+    }
+    if (!response || response.status < 200 || response.status >= 300) {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail users.history.list returned an unsuccessful HTTP status');
+    }
+
+    const changes = [];
+    for (const record of (response.data && response.data.history) || []) {
+      for (const entry of record.labelsAdded || []) {
+        const messageId = entry.message && entry.message.id;
+        if (messageId) changes.push({ type: 'labelAdded', messageId });
+      }
+      for (const entry of record.labelsRemoved || []) {
+        const messageId = entry.message && entry.message.id;
+        if (messageId) changes.push({ type: 'labelRemoved', messageId });
+      }
+      for (const entry of record.messagesDeleted || []) {
+        const messageId = entry.message && entry.message.id;
+        if (messageId) changes.push({ type: 'messageDeleted', messageId });
+      }
+    }
+
+    return {
+      changes,
+      // Gmail returns the mailbox's current historyId on every page — the
+      // caller only needs the LAST page's value as the new cursor once the
+      // whole incremental sync completes (§18.2).
+      historyId: (response.data && response.data.historyId) ? String(response.data.historyId) : null,
+      nextPageToken: (response.data && response.data.nextPageToken) || null,
+    };
+  }
+
   return {
     exchangeCodeForToken,
     revokeToken,
@@ -548,6 +656,8 @@ function createGmailService({ httpClient = axios } = {}) {
     listMessageIdsByQuery,
     getMessageMetadata,
     getMessageBody,
+    getMailboxHistoryId,
+    listHistory,
   };
 }
 

@@ -623,3 +623,128 @@ test('getMessageBody requires accessToken and messageId', async () => {
   await assert.rejects(() => service.getMessageBody({ messageId: 'msg-1' }));
   await assert.rejects(() => service.getMessageBody({ accessToken: 'token' }));
 });
+
+// ─────────────────────────────────────────────
+// getMailboxHistoryId / listHistory (EM7 — §18, §18.4)
+// ─────────────────────────────────────────────
+
+test('getMailboxHistoryId requests users/me/profile and returns a stringified historyId', async () => {
+  let capturedUrl;
+  const httpClient = { get: async (url) => { capturedUrl = url; return { status: 200, data: { historyId: 12345, emailAddress: 'sam@client.com' } }; } };
+  const service = createGmailService({ httpClient });
+  const result = await service.getMailboxHistoryId('token');
+  assert.equal(result.historyId, '12345');
+  assert.match(capturedUrl, /\/profile$/);
+});
+
+test('getMailboxHistoryId throws GMAIL_INVALID_RESPONSE when historyId is missing', async () => {
+  const httpClient = { get: async () => ({ status: 200, data: {} }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(
+    () => service.getMailboxHistoryId('token'),
+    (err) => err.code === ERROR_CODES.INVALID_RESPONSE
+  );
+});
+
+test('getMailboxHistoryId throws GMAIL_HTTP_ERROR on a non-2xx response', async () => {
+  const httpClient = { get: async () => ({ status: 500, data: {} }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(
+    () => service.getMailboxHistoryId('token'),
+    (err) => err.code === ERROR_CODES.HTTP_ERROR
+  );
+});
+
+test('getMailboxHistoryId requires accessToken', async () => {
+  const service = createGmailService({ httpClient: { get: async () => ({ status: 200, data: {} }) } });
+  await assert.rejects(() => service.getMailboxHistoryId());
+});
+
+test('listHistory passes startHistoryId/labelId/pageToken and requests labelAdded+labelRemoved+messageDeleted history types', async () => {
+  let capturedUrl;
+  const httpClient = {
+    get: async (url) => { capturedUrl = url; return { status: 200, data: { history: [], historyId: '999' } }; },
+  };
+  const service = createGmailService({ httpClient });
+  await service.listHistory({ accessToken: 'token', startHistoryId: '100', labelId: 'Label_1', pageToken: 'p1' });
+  assert.match(capturedUrl, /startHistoryId=100/);
+  assert.match(capturedUrl, /labelId=Label_1/);
+  assert.match(capturedUrl, /pageToken=p1/);
+  const historyTypeMatches = capturedUrl.match(/historyTypes=/g) || [];
+  assert.equal(historyTypeMatches.length, 3);
+});
+
+test('listHistory flattens labelsAdded/labelsRemoved/messagesDeleted into an ordered {type, messageId} change list', async () => {
+  const httpClient = {
+    get: async () => ({
+      status: 200,
+      data: {
+        historyId: '150',
+        history: [
+          { labelsAdded: [{ message: { id: 'm1' } }] },
+          { labelsRemoved: [{ message: { id: 'm2' } }] },
+          { messagesDeleted: [{ message: { id: 'm3' } }] },
+        ],
+      },
+    }),
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.listHistory({ accessToken: 'token', startHistoryId: '100' });
+  assert.deepEqual(result.changes, [
+    { type: 'labelAdded', messageId: 'm1' },
+    { type: 'labelRemoved', messageId: 'm2' },
+    { type: 'messageDeleted', messageId: 'm3' },
+  ]);
+  assert.equal(result.historyId, '150');
+  assert.equal(result.nextPageToken, null);
+});
+
+test('listHistory preserves record order across multiple history records for the same message (last-write-wins is the caller\'s job)', async () => {
+  const httpClient = {
+    get: async () => ({
+      status: 200,
+      data: {
+        historyId: '200',
+        history: [
+          { labelsAdded: [{ message: { id: 'm1' } }] },
+          { labelsRemoved: [{ message: { id: 'm1' } }] },
+        ],
+      },
+    }),
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.listHistory({ accessToken: 'token', startHistoryId: '100' });
+  assert.deepEqual(result.changes.map((c) => c.type), ['labelAdded', 'labelRemoved']);
+});
+
+test('listHistory throws GMAIL_HISTORY_EXPIRED on a 404 (Gmail\'s documented stale-cursor response)', async () => {
+  const httpClient = { get: async () => ({ status: 404, data: {} }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(
+    () => service.listHistory({ accessToken: 'token', startHistoryId: '1' }),
+    (err) => err.code === ERROR_CODES.HISTORY_EXPIRED
+  );
+});
+
+test('listHistory throws generic GMAIL_HTTP_ERROR on other non-2xx statuses, not HISTORY_EXPIRED', async () => {
+  const httpClient = { get: async () => ({ status: 500, data: {} }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(
+    () => service.listHistory({ accessToken: 'token', startHistoryId: '1' }),
+    (err) => err.code === ERROR_CODES.HTTP_ERROR
+  );
+});
+
+test('listHistory returns an empty change list (not a throw) for a page with no history records', async () => {
+  const httpClient = { get: async () => ({ status: 200, data: {} }) };
+  const service = createGmailService({ httpClient });
+  const result = await service.listHistory({ accessToken: 'token', startHistoryId: '1' });
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.historyId, null);
+});
+
+test('listHistory requires accessToken and startHistoryId', async () => {
+  const service = createGmailService({ httpClient: { get: async () => ({ status: 200, data: {} }) } });
+  await assert.rejects(() => service.listHistory({ startHistoryId: '1' }));
+  await assert.rejects(() => service.listHistory({ accessToken: 'token' }));
+});

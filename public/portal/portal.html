@@ -167,8 +167,9 @@
                     <span id="email-mailbox-settings-save-status" class="kb-upload-status" hidden></span>
                   </div>
 
-                  <!-- EM5/EM6 — Gmail label workflow (§7, §10, §14.1, §14.2, §17, §31).
-                       "Sync now" runs real historical import (manual mode only, EM6) —
+                  <!-- EM5/EM6/EM7 — Gmail label workflow (§7, §10, §14.1, §14.2, §17,
+                       §18, §31). "Sync now" runs real import — a full scan (historical)
+                       or a quick check (incremental, once a cursor is established) —
                        shown only while connected. -->
                   <div id="email-sync-shell-section" class="email-sync-shell-section" hidden>
                     <p class="slack-collections-label">Sync</p>
@@ -181,6 +182,8 @@
                       <span id="email-sync-now-status" class="kb-upload-status" hidden></span>
                     </div>
                     <div id="email-preview-result" class="email-preview-result" hidden></div>
+                    <!-- EM7 — recent sync-run history (§27). -->
+                    <ul id="email-sync-history-list" class="email-sync-history-list"></ul>
                   </div>
 
                   <!-- EM3 — organization policy summary, every active member (read-only unless owner/admin). -->

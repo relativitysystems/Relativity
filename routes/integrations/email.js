@@ -297,15 +297,19 @@ router.post('/connections/:id/preview', clientAuth, async (req, res) => {
 
 /**
  * POST /api/integrations/email/connections/:id/sync
- * Self-service only (EM6 — §14.2, §15, §17, §31), same ownership shape as
- * preview/sync-mode above (reuses canDisconnectConnection). Runs one
- * bounded page of historical import — `manual_selected` mode only (a
- * connection whose sync_mode is `automatic` gets a distinct 400, deferred to
- * EM7/EM8, see emailSyncService.js's file header). Body: optional
- * `{pageToken}` to continue a prior call's pagination. Returns a
- * `{syncRunId, status, complete, nextPageToken, imported, skipped, failed,
- * reconciled}` summary — the same structured-summary UX pattern already
- * proven for ZIP import (§27).
+ * Self-service only (EM6/EM7 — §14.2, §15, §17, §18, §31), same ownership
+ * shape as preview/sync-mode above (reuses canDisconnectConnection). Runs
+ * one bounded page of sync — historical (EM6) or incremental (EM7),
+ * decided automatically from the connection's stored cursor — `manual_
+ * selected` mode only (a connection whose sync_mode is `automatic` gets a
+ * distinct 400, deferred to EM8, see emailSyncService.js's file header).
+ * Body: optional `{pageToken, runType}` to continue a prior call's
+ * pagination — EM7 requires BOTH together when resuming (the response
+ * always echoes the `runType` a caller must pass back, since a resumed page
+ * needs to know whether to continue a full re-scan or a history-diff read).
+ * Returns a `{syncRunId, runType, status, complete, nextPageToken,
+ * imported, skipped, failed, reconciled, errorSummary}` summary — the same
+ * structured-summary UX pattern already proven for ZIP import (§27).
  */
 router.post('/connections/:id/sync', clientAuth, async (req, res) => {
   const { id } = req.params;
@@ -341,7 +345,7 @@ router.post('/connections/:id/sync', clientAuth, async (req, res) => {
       });
     }
 
-    const { pageToken } = req.body || {};
+    const { pageToken, runType } = req.body || {};
     const result = await emailSyncService.syncConnection({
       clientId: req.client.id,
       emailConnectionRow,
@@ -349,6 +353,7 @@ router.post('/connections/:id/sync', clientAuth, async (req, res) => {
       accessToken,
       triggeredByMemberId: req.member.id,
       pageToken: typeof pageToken === 'string' ? pageToken : null,
+      runType: typeof runType === 'string' ? runType : null,
     });
     res.json(result);
   } catch (err) {
@@ -357,6 +362,36 @@ router.post('/connections/:id/sync', clientAuth, async (req, res) => {
     }
     console.error('POST /api/integrations/email/connections/:id/sync error:', err.message);
     res.status(500).json({ error: 'Could not sync this connection.' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/connections/:id/sync-runs
+ * Self-service only (EM7 — §27, §31), same ownership shape as sync/preview
+ * above. Returns `{syncRuns: [...]}`, newest first — the portal's sync-run
+ * history view (§7).
+ */
+router.get('/connections/:id/sync-runs', clientAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const connection = await oauthConnectionsService.getConnectionById(id);
+    if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const emailConnectionRow = await emailConnectionService.getEmailConnectionRecord(id);
+    if (!emailConnectionRow) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+
+    const syncRuns = await emailSyncService.listSyncRuns(emailConnectionRow.id);
+    res.json({ syncRuns });
+  } catch (err) {
+    console.error('GET /api/integrations/email/connections/:id/sync-runs error:', err.message);
+    res.status(500).json({ error: 'Could not load sync history.' });
   }
 });
 

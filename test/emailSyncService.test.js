@@ -8,7 +8,7 @@ const {
   ERROR_CODES,
   HISTORICAL_PAGE_SIZE,
 } = require('../services/emailSyncService');
-const { compileSearchQuery } = require('../services/gmailService');
+const { compileSearchQuery, ERROR_CODES: GMAIL_ERROR_CODES } = require('../services/gmailService');
 const { evaluateMessageAgainstPolicy } = require('../services/emailPolicyService');
 const { normalizeEmailBody } = require('../services/emailNormalizationService');
 
@@ -42,8 +42,18 @@ function fixtureConnection(overrides = {}) {
   };
 }
 
-function fixtureGmailService({ pages = [], labels = LABELS, bodies = {}, calls = {} } = {}) {
+// EM7 — a default fake historyId every fixture-driven historical sync
+// establishes on completion, unless a test overrides getMailboxHistoryId
+// itself. Distinct from any real history.list response's historyId so a
+// test can tell "the fallback default" from "a real captured cursor" apart.
+const DEFAULT_FIXTURE_HISTORY_ID = 'history-default';
+
+function fixtureGmailService({
+  pages = [], labels = LABELS, bodies = {}, calls = {},
+  mailboxHistoryId = DEFAULT_FIXTURE_HISTORY_ID, historyPages = [],
+} = {}) {
   let pageCall = 0;
+  let historyPageCall = 0;
   return {
     compileSearchQuery,
     listMessageIdsByQuery: async ({ query, pageToken }) => {
@@ -74,6 +84,19 @@ function fixtureGmailService({ pages = [], labels = LABELS, bodies = {}, calls =
       if (bodies[messageId] === undefined) throw new Error(`fixture: no body for ${messageId}`);
       return bodies[messageId];
     },
+    // EM7
+    getMailboxHistoryId: async () => {
+      calls.getMailboxHistoryId = (calls.getMailboxHistoryId || 0) + 1;
+      return { historyId: mailboxHistoryId };
+    },
+    listHistory: async ({ startHistoryId, pageToken }) => {
+      calls.listHistory = calls.listHistory || [];
+      calls.listHistory.push({ startHistoryId, pageToken });
+      const page = historyPages[historyPageCall] || { changes: [], historyId: mailboxHistoryId, nextPageToken: null };
+      historyPageCall++;
+      if (page.throws) throw page.throws;
+      return { changes: page.changes || [], historyId: page.historyId || mailboxHistoryId, nextPageToken: page.nextPageToken || null };
+    },
   };
 }
 
@@ -96,13 +119,17 @@ function fixtureAikbService({ documents = [], failIngestFor = new Set(), calls =
   };
 }
 
-function fixtureEmailSyncRepo({ previouslyIngested = [] } = {}) {
+function fixtureEmailSyncRepo({ previouslyIngested = [], initialSyncState = null } = {}) {
   const runs = new Map();
   const events = [];
+  const syncStateCalls = [];
+  let syncState = initialSyncState;
   let nextId = 1;
   return {
     _runs: runs,
     _events: events,
+    _syncStateCalls: syncStateCalls,
+    get _syncState() { return syncState; },
     createSyncRun: async ({ clientId, emailConnectionId, runType, triggeredByMemberId }) => {
       const id = `run-${nextId++}`;
       const row = { id, clientId, emailConnectionId, runType, triggeredByMemberId, status: 'running' };
@@ -115,14 +142,44 @@ function fixtureEmailSyncRepo({ previouslyIngested = [] } = {}) {
     },
     recordEvents: async (evts) => { events.push(...evts); },
     updateHistoricalImportStatus: async () => {},
-    upsertSyncState: async () => {},
+    getSyncState: async () => syncState,
+    // EM7 — only overwrites the cursor fields when the caller actually
+    // passes them (mirrors the real repo's "undefined = leave unchanged"
+    // contract), so a resumed/failed-run call never wipes a valid cursor.
+    upsertSyncState: async (emailConnectionId, patch) => {
+      syncStateCalls.push(patch);
+      syncState = {
+        email_connection_id: emailConnectionId,
+        cursor_status: (syncState && syncState.cursor_status) || 'none',
+        provider_cursor: (syncState && syncState.provider_cursor) || null,
+        ...syncState,
+        last_sync_started_at: patch.lastSyncStartedAt,
+        last_sync_completed_at: patch.lastSyncCompletedAt,
+        last_sync_status: patch.lastSyncStatus,
+        ...(patch.providerCursor !== undefined ? { provider_cursor: patch.providerCursor } : {}),
+        ...(patch.cursorStatus !== undefined ? { cursor_status: patch.cursorStatus } : {}),
+        ...(patch.cursorObtainedAt !== undefined ? { cursor_obtained_at: patch.cursorObtainedAt } : {}),
+      };
+    },
+    markCursorExpired: async (emailConnectionId) => {
+      syncStateCalls.push({ cursorStatus: 'expired' });
+      syncState = { ...(syncState || { email_connection_id: emailConnectionId }), cursor_status: 'expired' };
+    },
     getPreviouslyIngestedMessageIds: async () => previouslyIngested,
+    listRecentSyncRuns: async (emailConnectionId, limit = 10) => {
+      return Array.from(runs.values())
+        .filter((r) => r.emailConnectionId === emailConnectionId)
+        .slice(0, limit);
+    },
   };
 }
 
-function makeService({ pages, rules, labels, gmailCalls, bodies, documents, failIngestFor, aikbCalls, previouslyIngested, maxDocuments } = {}) {
-  const emailSyncRepo = fixtureEmailSyncRepo({ previouslyIngested });
-  const gmailService = fixtureGmailService({ pages, labels, bodies, calls: gmailCalls || {} });
+function makeService({
+  pages, rules, labels, gmailCalls, bodies, documents, failIngestFor, aikbCalls, previouslyIngested, maxDocuments,
+  historyPages, mailboxHistoryId, initialSyncState,
+} = {}) {
+  const emailSyncRepo = fixtureEmailSyncRepo({ previouslyIngested, initialSyncState });
+  const gmailService = fixtureGmailService({ pages, labels, bodies, calls: gmailCalls || {}, historyPages, mailboxHistoryId });
   const aikbService = fixtureAikbService({ documents, failIngestFor, calls: aikbCalls || {} });
   const service = createEmailSyncService({
     gmailService,
@@ -367,9 +424,11 @@ test('pagination: a page with more results returns complete:false and a nextPage
   assert.equal(first.complete, false);
   assert.equal(first.nextPageToken, 'page-2');
   assert.equal(first.imported.length, 1);
+  assert.equal(first.runType, 'historical');
 
   const second = await service.syncConnection({
-    clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't', pageToken: first.nextPageToken,
+    clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't',
+    pageToken: first.nextPageToken, runType: first.runType,
   });
   assert.equal(second.complete, true);
   assert.equal(second.nextPageToken, null);
@@ -393,9 +452,17 @@ test('the document-limit check only runs on the first page (pageToken null), not
   // have blocked a fresh sync — a run already in progress should be allowed
   // to finish its remaining pages.
   const result = await service.syncConnection({
-    clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't', pageToken: 'resume-token',
+    clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't', pageToken: 'resume-token', runType: 'historical',
   });
   assert.equal(result.complete, true);
+});
+
+test('resuming without a runType is rejected (INVALID_RESUME) rather than silently guessing', async () => {
+  const { service } = makeService({ pages: [{ messages: [], nextPageToken: null }], rules: [] });
+  await assert.rejects(
+    () => service.syncConnection({ clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't', pageToken: 'resume-token' }),
+    (err) => err.code === ERROR_CODES.INVALID_RESUME
+  );
 });
 
 // ─────────────────────────────────────────────
@@ -459,6 +526,8 @@ test('label-removal reconciliation: a message still under the label is NOT tombs
     listLabels: async () => LABELS,
     getMessageMetadata: async () => { throw new Error('not used in this test'); },
     getMessageBody: async () => { throw new Error('not used in this test'); },
+    getMailboxHistoryId: async () => ({ historyId: DEFAULT_FIXTURE_HISTORY_ID }),
+    listHistory: async () => { throw new Error('not used in this test'); },
   };
   const emailSyncRepo = fixtureEmailSyncRepo({ previouslyIngested: ['still-labeled'] });
   const aikbService = fixtureAikbService({ documents });
@@ -495,6 +564,8 @@ test('a page-level failure (the list call itself throws) marks the run failed wi
     listLabels: async () => LABELS,
     getMessageMetadata: async () => { throw new Error('not reached'); },
     getMessageBody: async () => { throw new Error('not reached'); },
+    getMailboxHistoryId: async () => { throw new Error('not reached'); },
+    listHistory: async () => { throw new Error('not used in this test'); },
   };
   const emailSyncRepo = fixtureEmailSyncRepo();
   const aikbService = fixtureAikbService({});
@@ -518,4 +589,249 @@ test('a page-level failure (the list call itself throws) marks the run failed wi
 
 test('HISTORICAL_PAGE_SIZE is a small, bounded page (Vercel-timeout constraint, §17 item 3)', () => {
   assert.ok(HISTORICAL_PAGE_SIZE > 0 && HISTORICAL_PAGE_SIZE <= 50);
+});
+
+// ─────────────────────────────────────────────
+// EM7 — cursor lifecycle: a completed historical sync establishes a fresh cursor
+// ─────────────────────────────────────────────
+
+test('a fresh sync with no stored cursor runs historical, and on completion establishes a valid cursor via getMailboxHistoryId', async () => {
+  const pages = [{ messages: [], nextPageToken: null }];
+  const { service, emailSyncRepo } = makeService({ pages, rules: [], mailboxHistoryId: 'hist-fresh-1' });
+  const result = await service.syncConnection({ clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.runType, 'historical');
+  assert.equal(result.complete, true);
+  assert.equal(emailSyncRepo._syncState.cursor_status, 'valid');
+  assert.equal(emailSyncRepo._syncState.provider_cursor, 'hist-fresh-1');
+});
+
+test('the cursor is NOT established while a historical sync is still incomplete (more pages remain)', async () => {
+  const pages = [{ messages: [], nextPageToken: 'more' }];
+  const { service, emailSyncRepo } = makeService({ pages, rules: [] });
+  const result = await service.syncConnection({ clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.complete, false);
+  assert.notEqual(emailSyncRepo._syncState && emailSyncRepo._syncState.cursor_status, 'valid');
+});
+
+test('a failed sync run does not establish or overwrite the cursor', async () => {
+  const gmailService = {
+    compileSearchQuery,
+    listMessageIdsByQuery: async () => { throw new Error('boom'); },
+    listLabels: async () => LABELS,
+    getMessageMetadata: async () => { throw new Error('not reached'); },
+    getMessageBody: async () => { throw new Error('not reached'); },
+    getMailboxHistoryId: async () => { throw new Error('must not be called on a failed run'); },
+    listHistory: async () => { throw new Error('not used in this test'); },
+  };
+  const emailSyncRepo = fixtureEmailSyncRepo({ initialSyncState: { cursor_status: 'valid', provider_cursor: 'keep-me' } });
+  const aikbService = fixtureAikbService({});
+  const service = createEmailSyncService({
+    gmailService, emailPolicyService: fixtureEmailPolicyService([]), emailNormalizationService: { normalizeEmailBody },
+    aikbService, emailSyncRepo, maxDocuments: 50,
+  });
+  // No managed_label_id -> hasValidCursor is false even though a cursor is
+  // stored, so this goes down the historical path (and its listMessageIdsByQuery
+  // throw) rather than the incremental probe.
+  const result = await service.syncConnection({
+    clientId: 'c1', emailConnectionRow: fixtureConnection({ managed_label_id: null }), memberSearchEnabled: true, accessToken: 't',
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(emailSyncRepo._syncState.provider_cursor, 'keep-me');
+});
+
+// ─────────────────────────────────────────────
+// EM7 — incremental sync: a valid stored cursor is used instead of a full re-scan
+// ─────────────────────────────────────────────
+
+test('a fresh sync with a valid stored cursor runs incremental — listHistory scoped to the managed label, not a full listMessageIdsByQuery scan', async () => {
+  const gmailCalls = {};
+  const { service, emailSyncRepo } = makeService({
+    pages: [], rules: [], gmailCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.runType, 'incremental');
+  assert.equal(gmailCalls.listMessageIdsByQuery, undefined, 'incremental sync must never fall back to a full label scan');
+  assert.equal(gmailCalls.listHistory[0].startHistoryId, '100');
+  assert.equal(emailSyncRepo._syncState.provider_cursor, '150');
+  assert.equal(emailSyncRepo._syncState.cursor_status, 'valid');
+});
+
+test('incremental sync: a labelAdded change is run through the full eligibility/ingest pipeline exactly like historical', async () => {
+  const pages = [{ messages: [{ id: 'm1', subject: 'New invoice', fromAddress: 'ap@vendor.com', labelIds: [MANAGED_LABEL_ID, 'Label_finance'] }] }];
+  const aikbCalls = {};
+  const { service } = makeService({
+    pages, rules: [ALLOW_FINANCE], bodies: { m1: { text: 'Invoice body.' } }, aikbCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'labelAdded', messageId: 'm1' }], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.imported.length, 1);
+  assert.equal(result.imported[0].messageId, 'm1');
+  assert.equal(aikbCalls.uploadAndIngest[0].emailMetadata.providerMessageId, 'm1');
+});
+
+test('incremental sync: a labelAdded change that fails policy is recorded skipped, exactly like historical', async () => {
+  const pages = [{ messages: [{ id: 'm1', subject: 'Random', fromAddress: 'someone@random.com', labelIds: [MANAGED_LABEL_ID] }] }];
+  const { service } = makeService({
+    pages, rules: [ALLOW_FINANCE],
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'labelAdded', messageId: 'm1' }], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.imported.length, 0);
+  assert.equal(result.skipped.length, 1);
+});
+
+test('incremental sync: a labelRemoved change tombstones the previously-ingested document directly from the diff, with no full re-list', async () => {
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'old-msg', status: 'indexed' }];
+  const gmailCalls = {};
+  const { service, emailSyncRepo } = makeService({
+    pages: [], rules: [ALLOW_FINANCE], documents, gmailCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'labelRemoved', messageId: 'old-msg' }], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.reconciled.length, 1);
+  assert.equal(result.reconciled[0].messageId, 'old-msg');
+  const event = emailSyncRepo._events.find((e) => e.provider_message_id === 'old-msg');
+  assert.equal(event.outcome, 'tombstoned_label_removed');
+  assert.match(event.reason, /label removed/);
+});
+
+test('incremental sync: a messageDeleted change also tombstones, with a distinct reason from a label removal', async () => {
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'deleted-msg', status: 'indexed' }];
+  const { service, emailSyncRepo } = makeService({
+    pages: [], rules: [ALLOW_FINANCE], documents,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'messageDeleted', messageId: 'deleted-msg' }], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.reconciled.length, 1);
+  const event = emailSyncRepo._events.find((e) => e.provider_message_id === 'deleted-msg');
+  assert.match(event.reason, /deleted at the provider/);
+});
+
+test('incremental sync: a message labeled then unlabeled within the SAME page nets to removed, not ingested (last-write-wins)', async () => {
+  const documents = [{ id: 'doc-1', source_provider: 'gmail', source_file_id: 'm1', status: 'indexed' }];
+  const aikbCalls = {};
+  const { service } = makeService({
+    pages: [{ messages: [{ id: 'm1', subject: 'X', fromAddress: 'a@x.com', labelIds: [] }] }], rules: [ALLOW_FINANCE], documents, aikbCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{
+      changes: [{ type: 'labelAdded', messageId: 'm1' }, { type: 'labelRemoved', messageId: 'm1' }],
+      historyId: '150', nextPageToken: null,
+    }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.imported.length, 0);
+  assert.equal(aikbCalls.uploadAndIngest.length, 0, 'must never ingest a message whose final action in the same page was a removal');
+  assert.equal(result.reconciled.length, 1);
+  assert.equal(result.reconciled[0].messageId, 'm1');
+});
+
+// ─────────────────────────────────────────────
+// EM7 — cursor expiry fallback (§18.4)
+// ─────────────────────────────────────────────
+
+function gmailHistoryExpiredError() {
+  return Object.assign(new Error('Gmail history cursor is expired or invalid'), { code: GMAIL_ERROR_CODES.HISTORY_EXPIRED });
+}
+
+test('cursor expiry: a stale cursor falls back to a bounded historical re-scan within the SAME call, not an error', async () => {
+  const pages = [{ messages: [{ id: 'm1', subject: 'Old mail', fromAddress: 'a@x.com', labelIds: [MANAGED_LABEL_ID, 'Label_finance'] }], nextPageToken: null }];
+  const { service, emailSyncRepo, gmailService } = makeService({
+    pages, rules: [ALLOW_FINANCE], bodies: { m1: { text: 'body' } },
+    initialSyncState: { cursor_status: 'valid', provider_cursor: 'stale-100' },
+    historyPages: [{ throws: gmailHistoryExpiredError() }],
+    mailboxHistoryId: 'hist-after-fallback',
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.runType, 'historical');
+  assert.equal(result.imported.length, 1);
+  // A fresh, valid cursor is established once the fallback completes.
+  assert.equal(emailSyncRepo._syncState.cursor_status, 'valid');
+  assert.equal(emailSyncRepo._syncState.provider_cursor, 'hist-after-fallback');
+});
+
+test('cursor expiry: markCursorExpired is called before falling back, so a crash mid-fallback still leaves the cursor correctly marked stale', async () => {
+  const { service, emailSyncRepo } = makeService({
+    pages: [{ messages: [], nextPageToken: null }], rules: [],
+    initialSyncState: { cursor_status: 'valid', provider_cursor: 'stale-100' },
+    historyPages: [{ throws: gmailHistoryExpiredError() }],
+  });
+  await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  const expiredCall = emailSyncRepo._syncStateCalls.find((c) => c.cursorStatus === 'expired');
+  assert.ok(expiredCall, 'markCursorExpired must have been called');
+});
+
+test('a genuine (non-expiry) failure probing history.list propagates as a real error, never silently falls back', async () => {
+  const httpError = Object.assign(new Error('Gmail 500'), { code: GMAIL_ERROR_CODES.HTTP_ERROR });
+  const { service } = makeService({
+    pages: [], rules: [],
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ throws: httpError }],
+  });
+  await assert.rejects(
+    () => service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' }),
+    (err) => err.message === 'Gmail 500'
+  );
+});
+
+// ─────────────────────────────────────────────
+// EM7 — pagination across incremental pages
+// ─────────────────────────────────────────────
+
+test('incremental pagination: a second page reuses the SAME startHistoryId (the run-scoped, not-yet-finalized cursor) plus the returned pageToken', async () => {
+  const pages = [{ messages: [{ id: 'm1', subject: 'A', fromAddress: 'a@x.com', labelIds: [] }, { id: 'm2', subject: 'B', fromAddress: 'a@x.com', labelIds: [] }] }];
+  const gmailCalls = {};
+  const { service, emailSyncRepo } = makeService({
+    pages, rules: [], gmailCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [
+      { changes: [{ type: 'labelRemoved', messageId: 'm1' }], historyId: '120', nextPageToken: 'hist-page-2' },
+      { changes: [{ type: 'labelRemoved', messageId: 'm2' }], historyId: '150', nextPageToken: null },
+    ],
+  });
+
+  const first = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(first.complete, false);
+  assert.equal(first.runType, 'incremental');
+  assert.notEqual(emailSyncRepo._syncState.provider_cursor, '120', 'the cursor must not move until the whole run completes');
+
+  const second = await service.syncConnection({
+    clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't',
+    pageToken: first.nextPageToken, runType: first.runType,
+  });
+  assert.equal(second.complete, true);
+  assert.equal(gmailCalls.listHistory[1].startHistoryId, '100', 'the SAME startHistoryId is reused across every page of one run');
+  assert.equal(gmailCalls.listHistory[1].pageToken, 'hist-page-2');
+  assert.equal(emailSyncRepo._syncState.provider_cursor, '150');
+});
+
+test('resuming an incremental sync with no stored cursor is rejected (INVALID_RESUME) rather than calling Gmail with an undefined startHistoryId', async () => {
+  const { service } = makeService({ pages: [], rules: [] }); // no initialSyncState
+  await assert.rejects(
+    () => service.syncConnection({ clientId: 'c1', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't', pageToken: 'p1', runType: 'incremental' }),
+    (err) => err.code === ERROR_CODES.INVALID_RESUME
+  );
+});
+
+// ─────────────────────────────────────────────
+// EM7 — sync-run history (§27, §31 EM7 Frontend)
+// ─────────────────────────────────────────────
+
+test('listSyncRuns returns the connection\'s recent sync runs, newest first, as recorded by the repo', async () => {
+  const emailSyncRepo = fixtureEmailSyncRepo();
+  const gmailService = fixtureGmailService({ pages: [{ messages: [], nextPageToken: null }] });
+  const service = createEmailSyncService({
+    gmailService, emailPolicyService: fixtureEmailPolicyService([]), emailNormalizationService: { normalizeEmailBody },
+    aikbService: fixtureAikbService({}), emailSyncRepo, maxDocuments: 50,
+  });
+  const conn = fixtureConnection();
+  await service.syncConnection({ clientId: 'client-a', emailConnectionRow: conn, memberSearchEnabled: true, accessToken: 't' });
+  const runs = await service.listSyncRuns(conn.id);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].emailConnectionId, conn.id);
 });

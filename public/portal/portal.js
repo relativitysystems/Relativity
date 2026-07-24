@@ -400,6 +400,7 @@
     if (isConnected && emailSyncNowBtn) {
       emailSyncNowBtn.dataset.connectionId = own.connectionId;
       if (emailManualInstructions) emailManualInstructions.hidden = own.syncMode === 'automatic';
+      loadEmailSyncRunHistory(own.connectionId);
     }
   }
 
@@ -577,15 +578,16 @@
     });
   }
 
-  // EM6 — "Sync now" runs real historical import: POST /connections/:id/sync
-  // (manual mode only — §14.2, §15, §17). A first click starts a fresh run
-  // (no pageToken); each page's {imported, skipped, failed} counts
-  // accumulate into a running total, mirroring the existing ZIP-import
-  // structured-summary pattern (§27). When a page reports complete: false,
-  // the next page is walked automatically (no separate "Load more" click
-  // needed — unlike EM5's preview, a member starting a real sync wants it
-  // to finish, not to manually drive pagination) up to a small safety cap
-  // so a runaway loop can never hang the tab indefinitely.
+  // EM6/EM7 — "Sync now" runs real import: POST /connections/:id/sync
+  // (manual mode only — §14.2, §15, §17, §18). A first click starts a fresh
+  // run (no pageToken/runType); each page's {imported, skipped, failed}
+  // counts accumulate into a running total, mirroring the existing
+  // ZIP-import structured-summary pattern (§27). When a page reports
+  // complete: false, the next page is walked automatically — passing back
+  // BOTH the returned nextPageToken AND runType, since EM7 added a second
+  // sync type (incremental) that needs to be threaded through resumed pages
+  // — up to a small safety cap so a runaway loop can never hang the tab
+  // indefinitely.
   const EMAIL_SYNC_MAX_AUTO_PAGES = 40; // 40 * HISTORICAL_PAGE_SIZE(25) = 1000 messages per click, a generous ceiling
   let emailSyncTotals = { imported: 0, skipped: 0, failed: 0 };
 
@@ -600,9 +602,14 @@
           <li>${escHtml(m.subject || '(no subject)')}</li>
         `).join('') + '</ul>'
       : '';
+    // EM7 — surfaces which sync mechanism actually ran: "incremental"
+    // (fast, only what changed since the last sync) vs "historical" (a full
+    // bounded re-scan — the first sync ever, or a fallback after the stored
+    // cursor expired, §18.4).
+    const runTypeLabel = result.runType === 'incremental' ? 'Quick check' : 'Full scan';
     const statusLine = inProgress
-      ? `Syncing… ${emailSyncTotals.imported} imported so far.`
-      : `Sync complete: ${emailSyncTotals.imported} imported, ${emailSyncTotals.skipped} skipped, ${emailSyncTotals.failed} failed.`;
+      ? `Syncing (${runTypeLabel})… ${emailSyncTotals.imported} imported so far.`
+      : `${runTypeLabel} complete: ${emailSyncTotals.imported} imported, ${emailSyncTotals.skipped} skipped, ${emailSyncTotals.failed} failed.`;
     emailPreviewResult.innerHTML = `<p>${escHtml(statusLine)}</p>${sampleHtml}`;
     emailPreviewResult.hidden = false;
   }
@@ -615,13 +622,14 @@
     if (emailSyncNowStatus) emailSyncNowStatus.hidden = true;
 
     let pageToken = null;
+    let runType = null;
     let pagesRun = 0;
     try {
       for (;;) {
         const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({ pageToken }),
+          body: JSON.stringify({ pageToken, runType }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || 'Could not sync.');
@@ -631,8 +639,10 @@
 
         if (body.complete || !body.nextPageToken || pagesRun >= EMAIL_SYNC_MAX_AUTO_PAGES) break;
         pageToken = body.nextPageToken;
+        runType = body.runType;
       }
       loadGmailStatus();
+      loadEmailSyncRunHistory(connectionId);
     } catch (err) {
       if (emailSyncNowStatus) {
         emailSyncNowStatus.textContent = err.message || 'Could not sync.';
@@ -646,6 +656,44 @@
 
   if (emailSyncNowBtn) {
     emailSyncNowBtn.addEventListener('click', () => runSync());
+  }
+
+  // EM7 — sync-run history view (§27, §31 EM7 Frontend): the connection's
+  // last few sync runs (type, status, counts, when), loaded on connect and
+  // refreshed after every "Sync now" click.
+  const emailSyncHistoryList = document.getElementById('email-sync-history-list');
+
+  function renderSyncRunHistory(syncRuns) {
+    if (!emailSyncHistoryList) return;
+    if (!syncRuns || syncRuns.length === 0) {
+      emailSyncHistoryList.innerHTML = '<li class="email-sync-history-empty">No syncs yet.</li>';
+      return;
+    }
+    emailSyncHistoryList.innerHTML = syncRuns.map((run) => {
+      const typeLabel = run.run_type === 'incremental' ? 'Quick check' : 'Full scan';
+      const when = run.started_at ? new Date(run.started_at).toLocaleString() : '';
+      const counts = `${run.messages_ingested || 0} imported, ${run.messages_failed || 0} failed`;
+      return `<li class="email-sync-history-item email-sync-history-item--${escHtml(run.status || 'unknown')}">
+        <span class="email-sync-history-type">${escHtml(typeLabel)}</span>
+        <span class="email-sync-history-status">${escHtml(run.status || '')}</span>
+        <span class="email-sync-history-counts">${escHtml(counts)}</span>
+        <span class="email-sync-history-when">${escHtml(when)}</span>
+      </li>`;
+    }).join('');
+  }
+
+  async function loadEmailSyncRunHistory(connectionId) {
+    if (!emailSyncHistoryList || !connectionId) return;
+    try {
+      const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/sync-runs`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return;
+      const { syncRuns } = await res.json();
+      renderSyncRunHistory(syncRuns);
+    } catch {
+      // Non-blocking — the history list simply stays as-is on a load failure.
+    }
   }
 
   // 4d. Email organization policy (EM3 — Architecture/architecture/

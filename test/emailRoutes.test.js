@@ -152,6 +152,11 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  await t.test('GET /api/integrations/email/connections/:id/sync-runs requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/sync-runs`, { redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);
