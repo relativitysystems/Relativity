@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, appBaseUrl } = require('../config');
+const { supabase: supabaseConfig, appBaseUrl, rateLimits } = require('../config');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const clientAuth = require('../middleware/clientAuth');
 const apiKey = require('../middleware/apiKey');
@@ -233,13 +233,15 @@ router.post('/accept-team-invite', async (req, res) => {
  * Always returns a generic success response to prevent account enumeration.
  */
 
-// Simple in-memory rate limit: max 3 requests per email per 10 minutes
+// Simple in-memory rate limit — see architecture/SECURITY.md and
+// roadmap/FEATURE_BACKLOG.md H6 for this store's multi-replica limitation
+// (not addressed by this config change).
 const _resetLog = new Map();
 function _isResetRateLimited(email) {
   const now = Date.now();
-  const window = 10 * 60 * 1000;
+  const window = rateLimits.passwordReset.windowMs;
   const prev = (_resetLog.get(email) || []).filter(t => now - t < window);
-  if (prev.length >= 3) return true;
+  if (prev.length >= rateLimits.passwordReset.maxAttempts) return true;
   _resetLog.set(email, [...prev, now]);
   return false;
 }

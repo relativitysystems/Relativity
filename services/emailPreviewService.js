@@ -15,6 +15,7 @@
 // import (EM6) will reuse: the provider query narrows the candidate set,
 // the local check is what actually decides eligibility.
 
+const { email: emailConfig } = require('../config');
 const defaultGmailService = require('./gmailService');
 const defaultEmailPolicyService = require('./emailPolicyService');
 
@@ -22,7 +23,7 @@ const defaultEmailPolicyService = require('./emailPolicyService');
 // this stays small regardless of mailbox size (§17 item 3's Vercel-timeout
 // reasoning applies to any live per-message loop, not only historical
 // import's; a caller wanting more walks pageToken across multiple calls).
-const PREVIEW_PAGE_SIZE = 10;
+const PREVIEW_PAGE_SIZE = emailConfig.previewPageSize;
 
 /**
  * @param {object} [deps] — injected for testing; each defaults to the real singleton service.

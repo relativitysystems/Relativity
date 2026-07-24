@@ -21,10 +21,11 @@
 // — tracked as a follow-up, not blocking this change.
 
 const rateLimit = require('express-rate-limit');
+const config = require('../config');
 
 const adminLoginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
+  windowMs: config.rateLimits.adminLogin.windowMs,
+  limit: config.rateLimits.adminLogin.max,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again later.' },
@@ -34,8 +35,8 @@ const adminLoginLimiter = rateLimit({
 // the JWT-gated invite-accept call (routes/auth.js) — same token-guessing
 // threat model, same limiter.
 const teamInviteLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
+  windowMs: config.rateLimits.teamInvite.windowMs,
+  limit: config.rateLimits.teamInvite.max,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },

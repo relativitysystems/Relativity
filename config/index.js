@@ -1,5 +1,19 @@
 require('dotenv').config();
 
+// Parses an optional positive-integer env var, falling back to defaultValue
+// when unset/empty. Fails fast and clearly (rather than silently coercing to
+// NaN, which the pre-existing parseInt(... || 'default', 10) calls below
+// this function would do) if the value is set but not a valid positive
+// integer.
+function parsePositiveInt(name, rawValue, defaultValue) {
+  if (rawValue === undefined || rawValue === '') return defaultValue;
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${name}: must be a positive integer, got "${rawValue}"`);
+  }
+  return parsed;
+}
+
 module.exports = {
   port: process.env.PORT || 3000,
   supabase: {
@@ -80,6 +94,13 @@ module.exports = {
     smtpPass: process.env.SMTP_PASS,
     leadNotificationEmail: process.env.LEAD_NOTIFICATION_EMAIL,
     fromAddress: process.env.EMAIL_FROM || 'noreply@relativitysystems.ai',
+    // EM6/EM7 (services/emailSyncService.js) — one page of historical import,
+    // or one page of history-diff processing, per POST /sync call (bounded
+    // per request — Vercel timeout, §17 item 3).
+    historicalSyncPageSize: parsePositiveInt('EMAIL_HISTORICAL_SYNC_PAGE_SIZE', process.env.EMAIL_HISTORICAL_SYNC_PAGE_SIZE, 25),
+    // EM5 (services/emailPreviewService.js) — one Gmail messages.get round
+    // trip per candidate in the label-query dry-run preview.
+    previewPageSize: parsePositiveInt('EMAIL_PREVIEW_PAGE_SIZE', process.env.EMAIL_PREVIEW_PAGE_SIZE, 10),
   },
   aikb: {
     apiBaseUrl: process.env.AIKB_API_BASE_URL,
@@ -111,6 +132,38 @@ module.exports = {
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
+    // Voice-transcription model pair (services/openaiService.js#transcribeAudio).
+    // primary is tried first; fallback is used only if primary 404s / reports
+    // model_not_found / the error message mentions "model" (isModelUnavailableError).
+    transcribePrimaryModel: process.env.OPENAI_TRANSCRIBE_PRIMARY_MODEL || 'gpt-4o-mini-transcribe',
+    transcribeFallbackModel: process.env.OPENAI_TRANSCRIBE_FALLBACK_MODEL || 'whisper-1',
+  },
+  // Backlog M6 — general-purpose rate limiting (middleware/rateLimiters.js,
+  // routes/auth.js's password-reset limiter). See architecture/SECURITY.md
+  // and roadmap/FEATURE_BACKLOG.md H6 for the in-memory-store limitation
+  // these thresholds operate under (not addressed by this config change).
+  rateLimits: {
+    // routes/admin.js#POST /login — a single shared admin password, so this
+    // guards against brute-forcing it.
+    adminLogin: {
+      windowMs: parsePositiveInt('ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS', process.env.ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+      max: parsePositiveInt('ADMIN_LOGIN_RATE_LIMIT_MAX', process.env.ADMIN_LOGIN_RATE_LIMIT_MAX, 10),
+    },
+    // Shared by routes/team.js#GET /team/invites/verify and
+    // routes/auth.js#POST /complete-invite — same unauthenticated
+    // token-guessing threat model.
+    teamInvite: {
+      windowMs: parsePositiveInt('TEAM_INVITE_RATE_LIMIT_WINDOW_MS', process.env.TEAM_INVITE_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+      max: parsePositiveInt('TEAM_INVITE_RATE_LIMIT_MAX', process.env.TEAM_INVITE_RATE_LIMIT_MAX, 30),
+    },
+    // routes/auth.js#POST /password-reset/request's hand-rolled in-memory
+    // limiter (_isResetRateLimited) — a distinct mechanism from the
+    // express-rate-limit-backed limiters above, but the same kind of
+    // tunable threshold.
+    passwordReset: {
+      windowMs: parsePositiveInt('PASSWORD_RESET_RATE_LIMIT_WINDOW_MS', process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
+      maxAttempts: parsePositiveInt('PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS', process.env.PASSWORD_RESET_RATE_LIMIT_MAX_ATTEMPTS, 3),
+    },
   },
   limits: {
     maxDocuments: parseInt(process.env.MAX_DOCUMENTS || '50', 10),

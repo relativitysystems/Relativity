@@ -21,7 +21,7 @@
 // inconsistency.
 
 const { createClient } = require('@supabase/supabase-js');
-const { supabase: supabaseConfig, limits } = require('../config');
+const { supabase: supabaseConfig, limits, email: emailConfig } = require('../config');
 const defaultGmailService = require('./gmailService');
 const { ERROR_CODES: GMAIL_ERROR_CODES } = require('./gmailService');
 const defaultEmailPolicyService = require('./emailPolicyService');
@@ -32,7 +32,7 @@ const defaultAikbService = require('./aikbService');
 // import, or one page of history-diff processing, per POST /sync call. A
 // caller re-invokes with the returned nextPageToken (and runType) until
 // complete: true.
-const HISTORICAL_PAGE_SIZE = 25;
+const HISTORICAL_PAGE_SIZE = emailConfig.historicalSyncPageSize;
 
 // Label-removal reconciliation (§24.2) for a FULL historical sync (fresh or
 // cursor-expired-fallback) needs "every message currently under the

@@ -40,8 +40,8 @@ async function buildFile(buffer, ext, mimeType) {
   return toFile(buffer, `recording.${ext}`, { type: mimeType || `audio/${ext}` });
 }
 
-const PRIMARY_MODEL = 'gpt-4o-mini-transcribe';
-const FALLBACK_MODEL = 'whisper-1';
+const PRIMARY_MODEL = openaiConfig.transcribePrimaryModel;
+const FALLBACK_MODEL = openaiConfig.transcribeFallbackModel;
 
 function isModelUnavailableError(err) {
   return err.status === 404
