@@ -21,13 +21,23 @@
 
   if (!me.authenticated) {
     // Session exists but there's no usable client membership behind it —
-    // sign out first so login.js doesn't just bounce us straight back here.
+    // clear any cached portal data before signing out so login.js doesn't
+    // just bounce us straight back here.
+    PortalCache.clearAll();
     await supabase.auth.signOut();
     window.location.href = '/login.html?error=' + encodeURIComponent(me.reason || 'session_invalid');
     return;
   }
 
   const { clientId, clientName, email, memberId, memberRole } = me;
+
+  // Milestone: portal frontend cache (sessionStorage, stale-while-revalidate).
+  // See architecture/PORTAL_FRONTEND_CACHE.md for the full design.
+  const CACHE_TTL = {
+    collections: 5 * 60 * 1000,
+    documents: 2 * 60 * 1000,
+    teamMembers: 5 * 60 * 1000,
+  };
 
   const identityName = document.getElementById('clientIdentityName');
   const identityId   = document.getElementById('clientIdentityId');
@@ -549,6 +559,8 @@
       });
 
       if (res.ok) {
+        // A deleted document changes its collection's documentCount.
+        PortalCache.invalidate(clientId, memberId, 'collections');
         // Poll until the document is confirmed gone from the server
         const settled = await pollUntilSettled(async () => {
           const docs = await fetchDocuments();
@@ -592,6 +604,8 @@
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Could not move document.');
       }
+      // Moving a document changes documentCount on both the source and target collection.
+      PortalCache.invalidate(clientId, memberId, 'collections');
       refreshDocuments();
     } catch (err) {
       showBanner('error', err.message || 'Could not move document.');
@@ -684,7 +698,12 @@
       });
       if (!res.ok) return null;
       const data = await res.json();
-      return data.documents || (Array.isArray(data) ? data : []);
+      const docs = data.documents || (Array.isArray(data) ? data : []);
+      // Keep the cache fresh on every successful fetch, regardless of caller
+      // (initial load, post-mutation refresh, or delete/upload polling) — see
+      // architecture/PORTAL_FRONTEND_CACHE.md.
+      PortalCache.set(clientId, memberId, 'documents', docs);
+      return docs;
     } catch {
       return null;
     }
@@ -761,6 +780,10 @@
 
   // Refreshes both documents and ingestion jobs together, keeping onboarding progress in sync.
   async function refreshKnowledgeStatus() {
+    // Every call site is a consequence of an upload/import mutation, which can
+    // change a collection's documentCount — invalidate so the Collections tab
+    // never shows a stale count on its next load.
+    PortalCache.invalidate(clientId, memberId, 'collections');
     const [docs, jobs] = await Promise.all([refreshDocuments(), refreshJobs()]);
     if (docs) { loadedDocs = docs; maybeUpdateProgress(); }
     return { docs, jobs };
@@ -790,7 +813,7 @@
     }
   }
 
-  async function loadDocuments() {
+  function showDocumentsLoadingSkeleton() {
     kbDocsList.innerHTML = `
       <div class="kb-doc-row loading-row">
         <div class="kb-doc-info">
@@ -806,10 +829,31 @@
         </div>
         <div class="skeleton" style="width:58px;height:20px;border-radius:99px"></div>
       </div>`;
-    const docs = await fetchDocuments();
-    loadedDocs = docs || [];
-    renderDocuments(docs);
-    maybeUpdateProgress();
+  }
+
+  async function loadDocuments() {
+    await PortalCache.staleWhileRevalidate({
+      clientId, memberId, resource: 'documents', maxAgeMs: CACHE_TTL.documents,
+      // fetchDocuments() resolves to null (rather than rejecting) on failure —
+      // translate that into a rejection so the cache is never overwritten with
+      // a failed result and the SWR helper's "keep cache on failure" logic applies.
+      fetchFn: async () => {
+        const docs = await fetchDocuments();
+        if (docs === null) throw new Error('Failed to load documents');
+        return docs;
+      },
+      onLoading: showDocumentsLoadingSkeleton,
+      onData: (docs) => {
+        loadedDocs = docs || [];
+        renderDocuments(docs);
+        maybeUpdateProgress();
+      },
+      onError: () => {
+        loadedDocs = [];
+        renderDocuments(null);
+        maybeUpdateProgress();
+      },
+    });
   }
 
   async function loadSessions() {
@@ -980,17 +1024,24 @@
   }
 
   async function loadMembers() {
-    try {
-      const res = await fetch('/api/team/members', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) { loadedMembers = []; maybeUpdateProgress(); return; }
-      loadedMembers = await res.json();
-      maybeUpdateProgress();
-    } catch {
-      loadedMembers = [];
-      maybeUpdateProgress();
-    }
+    await PortalCache.staleWhileRevalidate({
+      clientId, memberId, resource: 'teamMembers', maxAgeMs: CACHE_TTL.teamMembers,
+      fetchFn: async () => {
+        const res = await fetch('/api/team/members', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('Failed to load members');
+        return res.json();
+      },
+      onData: (members) => {
+        loadedMembers = members;
+        maybeUpdateProgress();
+      },
+      onError: () => {
+        loadedMembers = [];
+        maybeUpdateProgress();
+      },
+    });
   }
 
   function renderJobs(jobs) {
@@ -2126,6 +2177,7 @@
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
+      PortalCache.clearAll();
       await supabase.auth.signOut();
       window.location.href = '/login.html';
     });
@@ -2242,7 +2294,7 @@
       return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
-    async function loadTeamMembers() {
+    function showTeamMembersLoadingSkeleton() {
       tbody.innerHTML = `
         <tr class="loading-row">
           <td><div class="skeleton skeleton-line" style="width:70%"></div></td>
@@ -2260,16 +2312,24 @@
           <td><div class="skeleton skeleton-line" style="width:40%"></div></td>
           <td></td>
         </tr>`;
-      try {
-        const res = await fetch('/api/team/members', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error('Failed to load members');
-        const members = await res.json();
-        renderMembers(members);
-      } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" class="team-empty-state">Could not load team members.</td></tr>`;
-      }
+    }
+
+    async function loadTeamMembers() {
+      await PortalCache.staleWhileRevalidate({
+        clientId, memberId, resource: 'teamMembers', maxAgeMs: CACHE_TTL.teamMembers,
+        fetchFn: async () => {
+          const res = await fetch('/api/team/members', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!res.ok) throw new Error('Failed to load members');
+          return res.json();
+        },
+        onLoading: showTeamMembersLoadingSkeleton,
+        onData: renderMembers,
+        onError: () => {
+          tbody.innerHTML = `<tr><td colspan="6" class="team-empty-state">Could not load team members.</td></tr>`;
+        },
+      });
     }
 
     function renderMembers(members) {
@@ -2343,6 +2403,11 @@
               const d = await res.json().catch(() => ({}));
               alert(d.error || 'Could not update role');
               await loadTeamMembers();
+            } else {
+              // No reload happens on the success path (the <select> already
+              // shows the new role) — invalidate so a later page load can't
+              // serve the pre-change role from cache.
+              PortalCache.invalidate(clientId, memberId, 'teamMembers');
             }
           } catch { alert('Could not update role'); await loadTeamMembers(); }
           sel.disabled = false;
@@ -2388,6 +2453,8 @@
               });
               if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed');
             }
+            // resend doesn't change roster data — only invalidate for the actions that do.
+            if (action !== 'resend') PortalCache.invalidate(clientId, memberId, 'teamMembers');
             await loadTeamMembers();
           } catch (err) {
             alert(err.message || 'Action failed');
@@ -2436,6 +2503,7 @@
         if (!res.ok) throw new Error(data.error || 'Could not send invite');
 
         modal.hidden = true;
+        PortalCache.invalidate(clientId, memberId, 'teamMembers');
         await loadTeamMembers();
       } catch (err) {
         inviteError.textContent = err.message;
@@ -2466,28 +2534,39 @@
 
     let editingCollectionId = null; // null = creating a new collection
 
-    async function loadCollectionsTable() {
+    function showCollectionsLoadingSkeleton() {
       tbody.innerHTML = `
         <tr class="loading-row">
           <td><div class="skeleton skeleton-line" style="width:60%"></div></td>
           <td><div class="skeleton skeleton-line" style="width:30%"></div></td>
           <td></td>
         </tr>`;
-      try {
-        const res = await fetch('/api/collections', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error('Failed to load collections');
-        const data = await res.json();
-        loadedCollections = data.collections || [];
-        renderCollectionsTable(loadedCollections);
-        // Refresh document rows so the "move to collection" select reflects
-        // the current collection list once it's known.
-        if (loadedDocs) renderDocuments(loadedDocs);
-      } catch (err) {
-        loadedCollections = [];
-        tbody.innerHTML = `<tr><td colspan="3" class="team-empty-state">Could not load collections.</td></tr>`;
-      }
+    }
+
+    async function loadCollectionsTable() {
+      await PortalCache.staleWhileRevalidate({
+        clientId, memberId, resource: 'collections', maxAgeMs: CACHE_TTL.collections,
+        fetchFn: async () => {
+          const res = await fetch('/api/collections', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!res.ok) throw new Error('Failed to load collections');
+          const data = await res.json();
+          return data.collections || [];
+        },
+        onLoading: showCollectionsLoadingSkeleton,
+        onData: (collections) => {
+          loadedCollections = collections;
+          renderCollectionsTable(collections);
+          // Refresh document rows so the "move to collection" select reflects
+          // the current collection list once it's known.
+          if (loadedDocs) renderDocuments(loadedDocs);
+        },
+        onError: () => {
+          loadedCollections = [];
+          tbody.innerHTML = `<tr><td colspan="3" class="team-empty-state">Could not load collections.</td></tr>`;
+        },
+      });
     }
 
     function renderCollectionsTable(collections) {
@@ -2541,6 +2620,7 @@
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body.error || 'Could not delete collection');
               }
+              PortalCache.invalidate(clientId, memberId, 'collections');
               await loadCollectionsTable();
             } catch (err) {
               alert(err.message);
@@ -2588,6 +2668,7 @@
         if (!res.ok) throw new Error(data.error || 'Could not save collection');
 
         modal.hidden = true;
+        PortalCache.invalidate(clientId, memberId, 'collections');
         await loadCollectionsTable();
       } catch (err) {
         formError.textContent = err.message;
