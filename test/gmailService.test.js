@@ -506,3 +506,120 @@ test('compileSearchQuery for automatic mode returns null when every allow rule h
   const rules = [{ ruleType: 'allow', enabled: true, labelOrFolder: null, senderPattern: null, subjectKeyword: 'invoice' }];
   assert.equal(compileSearchQuery({ mode: 'automatic', rules }), null);
 });
+
+// ─────────────────────────────────────────────
+// getMessageBody / extractBodyParts / decodeBase64Url (EM6 — §19)
+// ─────────────────────────────────────────────
+
+const { decodeBase64Url, extractBodyParts } = require('../services/gmailService');
+
+function toBase64Url(str) {
+  return Buffer.from(str, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+test('decodeBase64Url decodes Gmail\'s url-safe, unpadded base64 encoding', () => {
+  const encoded = toBase64Url('Hello, world! ünïcödé');
+  assert.equal(decodeBase64Url(encoded), 'Hello, world! ünïcödé');
+});
+
+test('decodeBase64Url returns empty string for missing/empty input', () => {
+  assert.equal(decodeBase64Url(''), '');
+  assert.equal(decodeBase64Url(undefined), '');
+});
+
+test('extractBodyParts reads a simple single-part text/plain message', () => {
+  const payload = { mimeType: 'text/plain', body: { data: toBase64Url('Plain body text.') } };
+  const { html, text } = extractBodyParts(payload);
+  assert.equal(text, 'Plain body text.');
+  assert.equal(html, null);
+});
+
+test('extractBodyParts finds text/plain and text/html inside a multipart/alternative payload', () => {
+  const payload = {
+    mimeType: 'multipart/alternative',
+    parts: [
+      { mimeType: 'text/plain', body: { data: toBase64Url('Plain version.') } },
+      { mimeType: 'text/html', body: { data: toBase64Url('<p>HTML version.</p>') } },
+    ],
+  };
+  const { html, text } = extractBodyParts(payload);
+  assert.equal(text, 'Plain version.');
+  assert.equal(html, '<p>HTML version.</p>');
+});
+
+test('extractBodyParts recurses into nested multipart/mixed > multipart/alternative (attachments alongside a body)', () => {
+  const payload = {
+    mimeType: 'multipart/mixed',
+    parts: [
+      {
+        mimeType: 'multipart/alternative',
+        parts: [
+          { mimeType: 'text/plain', body: { data: toBase64Url('Nested plain body.') } },
+          { mimeType: 'text/html', body: { data: toBase64Url('<p>Nested HTML body.</p>') } },
+        ],
+      },
+      { mimeType: 'application/pdf', filename: 'report.pdf', body: { attachmentId: 'att-1' } },
+    ],
+  };
+  const { html, text } = extractBodyParts(payload);
+  assert.equal(text, 'Nested plain body.');
+  assert.equal(html, '<p>Nested HTML body.</p>');
+});
+
+test('extractBodyParts never treats a filenamed part as a body, even if it claims a text/* MIME type', () => {
+  const payload = {
+    mimeType: 'multipart/mixed',
+    parts: [
+      { mimeType: 'text/plain', filename: 'notes.txt', body: { attachmentId: 'att-1' } },
+      { mimeType: 'text/plain', body: { data: toBase64Url('Real body.') } },
+    ],
+  };
+  const { text } = extractBodyParts(payload);
+  assert.equal(text, 'Real body.');
+});
+
+test('extractBodyParts returns nulls for an empty/missing payload', () => {
+  assert.deepEqual(extractBodyParts(null), { html: null, text: null });
+  assert.deepEqual(extractBodyParts({}), { html: null, text: null });
+});
+
+test('getMessageBody requests format=full and returns decoded html/text, never a raw base64 blob', async () => {
+  const rawHtml = '<p>Body content.</p>';
+  const httpClient = {
+    get: async (url) => {
+      assert.match(url, /format=full/);
+      return {
+        status: 200,
+        data: {
+          payload: {
+            mimeType: 'multipart/alternative',
+            parts: [
+              { mimeType: 'text/plain', body: { data: toBase64Url('Body content.') } },
+              { mimeType: 'text/html', body: { data: toBase64Url(rawHtml) } },
+            ],
+          },
+        },
+      };
+    },
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.getMessageBody({ accessToken: 'token', messageId: 'msg-1' });
+  assert.equal(result.text, 'Body content.');
+  assert.equal(result.html, rawHtml);
+  assert.equal(result.messageId, 'msg-1');
+});
+
+test('getMessageBody throws GMAIL_HTTP_ERROR on a non-2xx response', async () => {
+  const httpClient = { get: async () => ({ status: 404, data: {} }) };
+  const service = createGmailService({ httpClient });
+  await assert.rejects(
+    () => service.getMessageBody({ accessToken: 'token', messageId: 'missing' }),
+    (err) => err.code === ERROR_CODES.HTTP_ERROR
+  );
+});
+
+test('getMessageBody requires accessToken and messageId', async () => {
+  const service = createGmailService({ httpClient: { get: async () => ({ status: 200, data: {} }) } });
+  await assert.rejects(() => service.getMessageBody({ messageId: 'msg-1' }));
+  await assert.rejects(() => service.getMessageBody({ accessToken: 'token' }));
+});

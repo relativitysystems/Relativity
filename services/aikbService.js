@@ -61,9 +61,18 @@ async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType) {
   return storagePath;
 }
 
-async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fileBuffer }) {
+// EM6 (EMAIL_INGESTION.md §14.2): sourceProvider/collectionId/emailMetadata
+// are all optional and additive — every existing portal_upload caller
+// (routes/api.js's upload/ZIP-import/Google-Drive-import flows) passes none
+// of them and is unaffected. collectionId lets a caller (an email
+// ingestion rule's destination_collection_id, §22) route straight to a
+// non-default collection at first insert; emailMetadata is required by
+// AIKB's /ingest route whenever sourceProvider is gmail/microsoft.
+async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fileBuffer, sourceProvider = 'portal_upload', collectionId, emailMetadata }) {
   const storagePath = await uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType);
-  const payload = { sourceProvider: 'portal_upload', sourceFileId, fileName, mimeType, storagePath };
+  const payload = { sourceProvider, sourceFileId, fileName, mimeType, storagePath };
+  if (collectionId) payload.collectionId = collectionId;
+  if (emailMetadata) payload.emailMetadata = emailMetadata;
   const envelope = signedEnvelope(clientId, payload);
 
   try {
@@ -191,6 +200,29 @@ async function deleteDocument(clientId, sourceFileId) {
     });
   } catch (err) {
     throw new Error(`AIKB deleteDocument failed: ${extractAxiosError(err)}`);
+  }
+}
+
+// EM6 (EMAIL_INGESTION.md §14.2, §24.2) — tombstones an email-sourced
+// document by its real AIKB document UUID, not by source (email's
+// documentId is never returned synchronously from uploadAndIngest, since
+// /ingest only enqueues an async Inngest event — see
+// services/emailSyncService.js's findEmailDocumentIdsBySource, which
+// resolves the real id via listDocuments before calling this). Deliberately
+// does NOT send sourceProvider in the payload — AIKB's DELETE /document/:id
+// route only uses that field for its own by-source validation branch, which
+// this id-based call never takes (§14.2: "no AIKB change needed here at
+// all").
+async function deleteDocumentById(clientId, documentId) {
+  const payload = {};
+  const envelope = signedEnvelope(clientId, payload);
+  try {
+    await axios.delete(`${aikbConfig.apiBaseUrl}/api/knowledge/document/${documentId}`, {
+      headers: aikbHeaders(),
+      data: { ...envelope, payload },
+    });
+  } catch (err) {
+    throw new Error(`AIKB deleteDocumentById failed: ${extractAxiosError(err)}`);
   }
 }
 
@@ -442,6 +474,7 @@ module.exports = {
   queryKnowledge,
   saveKnowledgeGap,
   deleteDocument,
+  deleteDocumentById,
   listChatSessions,
   listChatMessages,
   deleteChatSession,

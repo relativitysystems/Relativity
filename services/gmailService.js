@@ -153,6 +153,48 @@ function parseMessageHeaders(headers) {
 }
 
 /**
+ * Decodes Gmail's base64url message-body encoding (RFC 4648 §5 — '-'/'_'
+ * instead of '+'/'/', no padding) into a UTF-8 string. Pure.
+ */
+function decodeBase64Url(data) {
+  if (typeof data !== 'string' || !data) return '';
+  const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  return Buffer.from(base64, 'base64').toString('utf8');
+}
+
+/**
+ * Walks a `format=full` message's MIME `payload` tree (recursively, since
+ * `multipart/alternative`/`multipart/mixed` can nest, e.g. an alternative
+ * pair inside a mixed part that also carries attachments) and returns the
+ * first `text/plain` and first `text/html` body found. Pure. Parts that
+ * carry a `filename` are attachments (or inline images), never a message
+ * body — skipped here regardless of MIME type, matching §21's "attachment
+ * ingestion is a separate, deferred milestone" scoping (EM6 never descends
+ * into an attachment's own bytes).
+ */
+function extractBodyParts(payload) {
+  let html = null;
+  let text = null;
+
+  function walk(part) {
+    if (!part || (html && text)) return;
+    if (part.filename) return; // attachment/inline-image, not a body part
+
+    const mimeType = part.mimeType || '';
+    if (mimeType === 'text/html' && !html && part.body && part.body.data) {
+      html = decodeBase64Url(part.body.data);
+    } else if (mimeType === 'text/plain' && !text && part.body && part.body.data) {
+      text = decodeBase64Url(part.body.data);
+    } else if (Array.isArray(part.parts)) {
+      for (const child of part.parts) walk(child);
+    }
+  }
+
+  walk(payload);
+  return { html, text };
+}
+
+/**
  * Compiles a Gmail search-query string (`q` param, §10) for a preview/
  * historical-import candidate list. Pure — no network access.
  *
@@ -451,12 +493,50 @@ function createGmailService({ httpClient = axios } = {}) {
     const labelIds = Array.isArray(response.data && response.data.labelIds) ? response.data.labelIds : [];
     return {
       messageId,
+      // EM6 — Gmail's messages.get response always carries threadId at the
+      // top level (regardless of format), used to populate
+      // email_source_messages.provider_thread_id for UI thread-grouping
+      // (§20) — not consulted by preview (EM5), only by historical import.
+      threadId: (response.data && response.data.threadId) || null,
       subject: headers.subject,
       fromAddress: headers.fromAddress,
       date: headers.date,
       labelIds,
       isSent: labelIds.includes('SENT'),
     };
+  }
+
+  /**
+   * `users.messages.get?format=full` — the ONLY call in this file that
+   * fetches message body content (EM6). Historical import calls this only
+   * for a message that has already been eligibility-checked via the
+   * metadata-only getMessageMetadata + local policy re-verification
+   * (§17 item 4) — never for a candidate that hasn't cleared that gate.
+   * Returns raw HTML/plain-text bodies as fetched; callers MUST pass this
+   * through services/emailNormalizationService.js before it is ever
+   * persisted or forwarded to AIKB — this function itself never sanitizes,
+   * strips, or normalizes anything (§19: "raw HTML/raw MIME — never
+   * stored").
+   */
+  async function getMessageBody({ accessToken, messageId }) {
+    if (!accessToken) throw new Error('getMessageBody requires accessToken');
+    if (!messageId) throw new Error('getMessageBody requires messageId');
+
+    let response;
+    try {
+      response = await httpClient.get(`${GMAIL_API_BASE}/messages/${encodeURIComponent(messageId)}?format=full`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: GMAIL_API_TIMEOUT_MS,
+      });
+    } catch {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail messages.get (format=full) request failed');
+    }
+    if (!response || response.status < 200 || response.status >= 300) {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail messages.get (format=full) returned an unsuccessful HTTP status');
+    }
+
+    const { html, text } = extractBodyParts(response.data && response.data.payload);
+    return { messageId, html, text };
   }
 
   return {
@@ -467,6 +547,7 @@ function createGmailService({ httpClient = axios } = {}) {
     getOrCreateManagedLabel,
     listMessageIdsByQuery,
     getMessageMetadata,
+    getMessageBody,
   };
 }
 
@@ -482,6 +563,8 @@ module.exports = {
   compileSearchQuery,
   extractEmailAddress,
   parseMessageHeaders,
+  decodeBase64Url,
+  extractBodyParts,
   REQUIRED_SCOPES,
   MANAGED_LABEL_NAME,
   ERROR_CODES,

@@ -348,16 +348,14 @@
   const emailSyncModeSelect         = document.getElementById('email-sync-mode-select');
   const emailMailboxSettingsStatus  = document.getElementById('email-mailbox-settings-save-status');
 
-  // EM5 — Gmail label workflow shell (§7, §10, §17, §31): "Open Gmail"
-  // shortcut, label instructions (manual mode only), and a preview-only
-  // "Sync now" button — no real ingestion until EM6.
+  // EM5/EM6 — Gmail label workflow shell (§7, §10, §14.2, §17, §31): "Open
+  // Gmail" shortcut, label instructions (manual mode only), and "Sync now"
+  // (real historical import as of EM6).
   const emailSyncShellSection    = document.getElementById('email-sync-shell-section');
   const emailManualInstructions  = document.getElementById('email-manual-instructions');
   const emailSyncNowBtn          = document.getElementById('email-sync-now-btn');
   const emailSyncNowStatus       = document.getElementById('email-sync-now-status');
   const emailPreviewResult       = document.getElementById('email-preview-result');
-  let emailPreviewNextPageToken  = null;
-  let emailPreviewTotals         = { matched: 0, scanned: 0 };
 
   function renderGmailStatus({ connections, configured }) {
     if (!gmailStatusBadge) return;
@@ -579,56 +577,65 @@
     });
   }
 
-  // EM5 — "Sync now" is preview-only until EM6 ships real ingestion: it
-  // calls POST /connections/:id/preview (a dry-run — never persists, never
-  // fetches message bodies, §14.1) and renders the resulting count/sample.
-  // A first click starts a fresh preview (no pageToken); "Load more" walks
-  // subsequent pages via the returned nextPageToken, accumulating totals
-  // across calls rather than replacing them, mirroring how a member would
-  // read "how much would this sync so far."
-  function renderPreviewResult(result) {
-    if (!emailPreviewResult) return;
-    emailPreviewTotals.matched += result.matchedCount;
-    emailPreviewTotals.scanned += result.scannedCount;
-    emailPreviewNextPageToken = result.nextPageToken;
+  // EM6 — "Sync now" runs real historical import: POST /connections/:id/sync
+  // (manual mode only — §14.2, §15, §17). A first click starts a fresh run
+  // (no pageToken); each page's {imported, skipped, failed} counts
+  // accumulate into a running total, mirroring the existing ZIP-import
+  // structured-summary pattern (§27). When a page reports complete: false,
+  // the next page is walked automatically (no separate "Load more" click
+  // needed — unlike EM5's preview, a member starting a real sync wants it
+  // to finish, not to manually drive pagination) up to a small safety cap
+  // so a runaway loop can never hang the tab indefinitely.
+  const EMAIL_SYNC_MAX_AUTO_PAGES = 40; // 40 * HISTORICAL_PAGE_SIZE(25) = 1000 messages per click, a generous ceiling
+  let emailSyncTotals = { imported: 0, skipped: 0, failed: 0 };
 
-    const sampleHtml = result.sample.length
-      ? '<ul class="email-preview-sample-list">' + result.sample.map((s) => `
-          <li>${escHtml(s.subject || '(no subject)')} — ${escHtml(s.from || '')}</li>
+  function renderSyncResult(result, { inProgress }) {
+    if (!emailPreviewResult) return;
+    emailSyncTotals.imported += result.imported.length;
+    emailSyncTotals.skipped += result.skipped.length;
+    emailSyncTotals.failed += result.failed.length;
+
+    const sampleHtml = result.imported.length
+      ? '<ul class="email-preview-sample-list">' + result.imported.slice(0, 10).map((m) => `
+          <li>${escHtml(m.subject || '(no subject)')}</li>
         `).join('') + '</ul>'
       : '';
-    emailPreviewResult.innerHTML = `
-      <p>${emailPreviewTotals.matched} of ${emailPreviewTotals.scanned} scanned message${emailPreviewTotals.scanned === 1 ? '' : 's'} would be imported.</p>
-      ${sampleHtml}
-      ${emailPreviewNextPageToken ? '<button type="button" class="btn-kb-upload" id="email-preview-load-more-btn">Load more</button>' : ''}
-    `;
+    const statusLine = inProgress
+      ? `Syncing… ${emailSyncTotals.imported} imported so far.`
+      : `Sync complete: ${emailSyncTotals.imported} imported, ${emailSyncTotals.skipped} skipped, ${emailSyncTotals.failed} failed.`;
+    emailPreviewResult.innerHTML = `<p>${escHtml(statusLine)}</p>${sampleHtml}`;
     emailPreviewResult.hidden = false;
-
-    const loadMoreBtn = document.getElementById('email-preview-load-more-btn');
-    if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => runPreview({ append: true }));
   }
 
-  async function runPreview({ append = false } = {}) {
+  async function runSync() {
     const connectionId = emailSyncNowBtn && emailSyncNowBtn.dataset.connectionId;
     if (!connectionId) return;
-    if (!append) {
-      emailPreviewTotals = { matched: 0, scanned: 0 };
-      emailPreviewNextPageToken = null;
-    }
+    emailSyncTotals = { imported: 0, skipped: 0, failed: 0 };
     emailSyncNowBtn.disabled = true;
     if (emailSyncNowStatus) emailSyncNowStatus.hidden = true;
+
+    let pageToken = null;
+    let pagesRun = 0;
     try {
-      const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ pageToken: append ? emailPreviewNextPageToken : null }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || 'Could not generate preview.');
-      renderPreviewResult(body);
+      for (;;) {
+        const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ pageToken }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Could not sync.');
+
+        pagesRun++;
+        renderSyncResult(body, { inProgress: !body.complete });
+
+        if (body.complete || !body.nextPageToken || pagesRun >= EMAIL_SYNC_MAX_AUTO_PAGES) break;
+        pageToken = body.nextPageToken;
+      }
+      loadGmailStatus();
     } catch (err) {
       if (emailSyncNowStatus) {
-        emailSyncNowStatus.textContent = err.message || 'Could not generate preview.';
+        emailSyncNowStatus.textContent = err.message || 'Could not sync.';
         emailSyncNowStatus.className = 'kb-upload-status kb-upload-status--error';
         emailSyncNowStatus.hidden = false;
       }
@@ -638,7 +645,7 @@
   }
 
   if (emailSyncNowBtn) {
-    emailSyncNowBtn.addEventListener('click', () => runPreview({ append: false }));
+    emailSyncNowBtn.addEventListener('click', () => runSync());
   }
 
   // 4d. Email organization policy (EM3 — Architecture/architecture/

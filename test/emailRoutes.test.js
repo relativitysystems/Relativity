@@ -138,6 +138,20 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  // EM6 — historical import (§14.2, §15, §17, §31). Same limitation as
+  // preview above: the owns-this-connection gate and the real sync path run
+  // only after clientAuth succeeds; see test/emailSyncService.test.js for
+  // the orchestration logic's own DI-faked coverage.
+  await t.test('POST /api/integrations/email/connections/:id/sync requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);
