@@ -469,6 +469,95 @@ body {
   margin-bottom: 0;
 }
 
+/* ---- Overview: email organization policy (EM3) ---- */
+.email-policy-summary-section,
+.email-policy-builder-section {
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.email-policy-summary-text {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.email-policy-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.email-policy-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.email-policy-rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.email-policy-rule-row select,
+.email-policy-rule-row input[type="text"],
+.email-policy-rule-row input[type="number"] {
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  padding: 5px 8px;
+}
+
+.email-policy-rule-row input[type="text"] {
+  min-width: 150px;
+  flex: 1 1 150px;
+}
+
+.email-policy-rule-row input[type="number"] {
+  width: 70px;
+}
+
+.email-policy-rule-row .email-policy-rule-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.email-policy-rule-remove-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.email-policy-rule-remove-btn:hover { opacity: 0.85; }
+
+.email-policy-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
 @media (max-width: 520px) {
   .integration-row {
     flex-direction: column;

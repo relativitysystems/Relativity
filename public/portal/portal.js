@@ -436,6 +436,208 @@
 
   loadGmailStatus();
 
+  // 4d. Email organization policy (EM3 — Architecture/architecture/
+  // EMAIL_INGESTION.md §14.1, §16, §31). Owner/admin sees and edits the full
+  // rule builder plus the org-wide automatic-sync toggle; every other active
+  // member sees a read-only summary of what already bounds their own
+  // mailbox (§7's "Organization policy summary" requirement). Still no
+  // ingestion happens from this UI — that's EM5/EM6.
+  const emailPolicySummarySection = document.getElementById('email-policy-summary-section');
+  const emailPolicySummaryText    = document.getElementById('email-policy-summary-text');
+  const emailPolicyBuilderSection = document.getElementById('email-policy-builder-section');
+  const emailPolicyRulesList      = document.getElementById('email-policy-rules-list');
+  const emailPolicyAddRuleBtn     = document.getElementById('email-policy-add-rule-btn');
+  const emailPolicySaveBtn        = document.getElementById('email-policy-save-btn');
+  const emailPolicySaveStatus     = document.getElementById('email-policy-save-status');
+  const emailAutomaticSyncToggle  = document.getElementById('email-automatic-sync-toggle');
+  const emailSettingsSaveStatus   = document.getElementById('email-settings-save-status');
+
+  function summarizePolicy(rules) {
+    const enabled = (rules || []).filter((r) => r.enabled);
+    if (!enabled.length) return 'No rules configured — nothing is imported from any mailbox until an owner/admin adds one.';
+    const allowCount = enabled.filter((r) => r.ruleType === 'allow').length;
+    const denyCount = enabled.filter((r) => r.ruleType === 'deny').length;
+    return `${allowCount} allow rule${allowCount === 1 ? '' : 's'}, ${denyCount} deny rule${denyCount === 1 ? '' : 's'} currently bound your mailbox.`;
+  }
+
+  function ruleRowTemplate(rule = {}) {
+    const collectionOptions = (loadedCollections || []).map((c) => `
+      <option value="${escHtml(c.id)}" ${rule.destinationCollectionId === c.id ? 'selected' : ''}>${escHtml(c.name)}</option>
+    `).join('');
+    return `
+      <div class="email-policy-rule-row">
+        <select class="ep-rule-type">
+          <option value="allow" ${rule.ruleType !== 'deny' ? 'selected' : ''}>Allow</option>
+          <option value="deny" ${rule.ruleType === 'deny' ? 'selected' : ''}>Deny</option>
+        </select>
+        <input type="text" class="ep-label" placeholder="Gmail label" value="${escHtml(rule.labelOrFolder || '')}" />
+        <input type="text" class="ep-sender" placeholder="Sender: @domain.com or address" value="${escHtml(rule.senderPattern || '')}" />
+        <label class="email-policy-rule-checkbox"><input type="checkbox" class="ep-include-sent" ${rule.includeSent ? 'checked' : ''}/> Sent</label>
+        <label class="email-policy-rule-checkbox"><input type="checkbox" class="ep-include-attachments" ${rule.includeAttachments ? 'checked' : ''}/> Attachments</label>
+        <label class="email-policy-rule-checkbox">Max days <input type="number" class="ep-max-days" min="1" max="730" value="${rule.maxHistoricalDays || 90}" /></label>
+        <select class="ep-collection">
+          <option value="">Default collection</option>
+          ${collectionOptions}
+        </select>
+        <button type="button" class="email-policy-rule-remove-btn">Remove</button>
+      </div>
+    `;
+  }
+
+  function renderRuleRows(rules) {
+    if (!emailPolicyRulesList) return;
+    if (!rules || !rules.length) {
+      emailPolicyRulesList.innerHTML = '<span class="kb-doc-meta">No rules yet — add one below. Nothing imports until at least one allow rule exists.</span>';
+      return;
+    }
+    emailPolicyRulesList.innerHTML = rules.map(ruleRowTemplate).join('');
+  }
+
+  function collectRuleRowsFromDom() {
+    return Array.from(emailPolicyRulesList.querySelectorAll('.email-policy-rule-row')).map((row) => ({
+      ruleType: row.querySelector('.ep-rule-type').value,
+      labelOrFolder: row.querySelector('.ep-label').value.trim() || null,
+      senderPattern: row.querySelector('.ep-sender').value.trim() || null,
+      includeSent: row.querySelector('.ep-include-sent').checked,
+      includeAttachments: row.querySelector('.ep-include-attachments').checked,
+      maxHistoricalDays: Number(row.querySelector('.ep-max-days').value) || 90,
+      destinationCollectionId: row.querySelector('.ep-collection').value || null,
+      enabled: true,
+    }));
+  }
+
+  async function loadEmailPolicySummary() {
+    if (!emailPolicySummarySection) return;
+    try {
+      const res = await fetch('/api/integrations/email/policy', { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) throw new Error('failed');
+      const { rules } = await res.json();
+      if (emailPolicySummaryText) emailPolicySummaryText.textContent = summarizePolicy(rules);
+      emailPolicySummarySection.hidden = false;
+    } catch {
+      emailPolicySummarySection.hidden = true;
+    }
+  }
+
+  async function loadEmailPolicyBuilder() {
+    if (!emailPolicyBuilderSection || !isOwnerAdmin) return;
+    emailPolicyBuilderSection.hidden = false;
+    try {
+      const needsCollections = !loadedCollections;
+      const [policyRes, settingsRes, collectionsRes] = await Promise.all([
+        fetch('/api/integrations/email/policy', { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch('/api/integrations/email/settings', { headers: { Authorization: `Bearer ${accessToken}` } }),
+        needsCollections
+          ? fetch('/api/collections', { headers: { Authorization: `Bearer ${accessToken}` } })
+          : Promise.resolve(null),
+      ]);
+      if (collectionsRes) {
+        const body = await collectionsRes.json().catch(() => ({}));
+        loadedCollections = body.collections || [];
+      }
+      if (policyRes.ok) {
+        const { rules } = await policyRes.json();
+        renderRuleRows(rules);
+      } else if (emailPolicyRulesList) {
+        emailPolicyRulesList.innerHTML = '<span class="kb-doc-meta">Could not load policy.</span>';
+      }
+      if (settingsRes.ok && emailAutomaticSyncToggle) {
+        const { automaticSyncEnabled } = await settingsRes.json();
+        emailAutomaticSyncToggle.checked = !!automaticSyncEnabled;
+      }
+    } catch {
+      if (emailPolicyRulesList) emailPolicyRulesList.innerHTML = '<span class="kb-doc-meta">Could not load policy.</span>';
+    }
+  }
+
+  if (emailPolicyAddRuleBtn) {
+    emailPolicyAddRuleBtn.addEventListener('click', () => {
+      if (!emailPolicyRulesList.querySelector('.email-policy-rule-row')) emailPolicyRulesList.innerHTML = '';
+      emailPolicyRulesList.insertAdjacentHTML('beforeend', ruleRowTemplate({ ruleType: 'allow' }));
+    });
+  }
+
+  if (emailPolicyRulesList) {
+    emailPolicyRulesList.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('email-policy-rule-remove-btn')) return;
+      const row = e.target.closest('.email-policy-rule-row');
+      if (row) row.remove();
+      if (!emailPolicyRulesList.querySelector('.email-policy-rule-row')) {
+        emailPolicyRulesList.innerHTML = '<span class="kb-doc-meta">No rules yet — add one below. Nothing imports until at least one allow rule exists.</span>';
+      }
+    });
+  }
+
+  if (emailPolicySaveBtn) {
+    emailPolicySaveBtn.addEventListener('click', async () => {
+      emailPolicySaveBtn.disabled = true;
+      if (emailPolicySaveStatus) emailPolicySaveStatus.hidden = true;
+      try {
+        const rules = collectRuleRowsFromDom();
+        const res = await fetch('/api/integrations/email/policy', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ rules }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Could not save policy.');
+        renderRuleRows(body.rules);
+        if (emailPolicySaveStatus) {
+          emailPolicySaveStatus.textContent = 'Saved.';
+          emailPolicySaveStatus.className = 'kb-upload-status kb-upload-status--success';
+          emailPolicySaveStatus.hidden = false;
+        }
+      } catch (err) {
+        if (emailPolicySaveStatus) {
+          emailPolicySaveStatus.textContent = err.message || 'Could not save policy.';
+          emailPolicySaveStatus.className = 'kb-upload-status kb-upload-status--error';
+          emailPolicySaveStatus.hidden = false;
+        }
+      } finally {
+        emailPolicySaveBtn.disabled = false;
+      }
+    });
+  }
+
+  if (emailAutomaticSyncToggle) {
+    emailAutomaticSyncToggle.addEventListener('change', async () => {
+      const automaticSyncEnabled = emailAutomaticSyncToggle.checked;
+      emailAutomaticSyncToggle.disabled = true;
+      if (emailSettingsSaveStatus) emailSettingsSaveStatus.hidden = true;
+      try {
+        const res = await fetch('/api/integrations/email/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ automaticSyncEnabled }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Could not save.');
+        }
+        if (emailSettingsSaveStatus) {
+          emailSettingsSaveStatus.textContent = 'Saved.';
+          emailSettingsSaveStatus.className = 'kb-upload-status kb-upload-status--success';
+          emailSettingsSaveStatus.hidden = false;
+        }
+      } catch (err) {
+        emailAutomaticSyncToggle.checked = !automaticSyncEnabled; // revert on failure
+        if (emailSettingsSaveStatus) {
+          emailSettingsSaveStatus.textContent = err.message || 'Could not save.';
+          emailSettingsSaveStatus.className = 'kb-upload-status kb-upload-status--error';
+          emailSettingsSaveStatus.hidden = false;
+        }
+      } finally {
+        emailAutomaticSyncToggle.disabled = false;
+      }
+    });
+  }
+
+  if (isOwnerAdmin) {
+    loadEmailPolicyBuilder();
+  } else {
+    loadEmailPolicySummary();
+  }
+
   // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');
   const kbUploadBtn       = document.getElementById('kb-upload-btn');

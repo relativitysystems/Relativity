@@ -27,10 +27,23 @@ const clientAuth = require('../../middleware/clientAuth');
 const emailConnectionService = require('../../services/emailConnectionService');
 const oauthConnectionsService = require('../../services/oauthConnectionsService');
 const gmailService = require('../../services/gmailService');
+const emailPolicyService = require('../../services/emailPolicyService');
 const { REDIRECT, PROVIDER, canDisconnectConnection } = emailConnectionService;
 
 const OWNER_ADMIN = ['owner', 'admin'];
 const SUPPORTED_PROVIDERS = [PROVIDER]; // just 'gmail' for EM2 — microsoft is EM12
+
+// The owner/admin closure §14.1's own file-level comment anticipated this
+// milestone would need, alongside the pre-existing owns-this-connection
+// inline check below (§4.1's "no shared requireRole middleware" gap is not
+// fixed platform-wide by this, just given a local, reusable name here —
+// matches routes/collections.js's own local requireRole precedent).
+function requireOwnerAdmin(req, res, next) {
+  if (!req.member || !OWNER_ADMIN.includes(req.member.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  next();
+}
 
 /**
  * GET /api/integrations/email/:provider/start
@@ -138,6 +151,91 @@ router.post('/connections/:id/disconnect', clientAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /api/integrations/email/connections/:id/disconnect error:', err.message);
     res.status(500).json({ error: 'Could not disconnect Gmail. Please try again.' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/policy
+ * Any active member — every member sees the same organization policy that
+ * bounds their own mailbox, not just owners/admins (§14.1, §16.1: "a
+ * configured allow rule's effect is immediately visible to every connected
+ * member").
+ */
+router.get('/policy', clientAuth, async (req, res) => {
+  try {
+    const result = await emailPolicyService.getPolicy(req.client.id);
+    res.json(result);
+  } catch (err) {
+    console.error('GET /api/integrations/email/policy error:', err.message);
+    res.status(500).json({ error: 'Could not load organization policy.' });
+  }
+});
+
+/**
+ * PUT /api/integrations/email/policy
+ * owner/admin only (§14.1). Body: { rules: [...] }. Replaces the FULL rule
+ * set — fail-closed: {rules: []} means ingest nothing, from anyone, in any
+ * mode (§16.1 item 6), enforced by emailPolicyService.replacePolicy's
+ * delete-then-insert order.
+ */
+router.put('/policy', clientAuth, requireOwnerAdmin, async (req, res) => {
+  const { rules } = req.body;
+  if (!Array.isArray(rules)) {
+    return res.status(400).json({ error: 'rules must be an array' });
+  }
+  try {
+    const result = await emailPolicyService.replacePolicy({
+      clientId: req.client.id,
+      rules,
+      updatedByMemberId: req.member.id,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('PUT /api/integrations/email/policy error:', err.message);
+    res.status(500).json({ error: 'Could not save organization policy.' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/settings
+ * Any active member — informs whether the sync-mode selector even offers
+ * Automatic (§14.1). Fails closed (automaticSyncEnabled: false) when the
+ * client has never visited this setting, since email_organization_settings
+ * is created lazily (§13.1).
+ */
+router.get('/settings', clientAuth, async (req, res) => {
+  try {
+    const result = await emailPolicyService.getSettings(req.client.id);
+    res.json(result);
+  } catch (err) {
+    console.error('GET /api/integrations/email/settings error:', err.message);
+    res.status(500).json({ error: 'Could not load email settings.' });
+  }
+});
+
+/**
+ * PUT /api/integrations/email/settings
+ * owner/admin only (§14.1). Body: { automaticSyncEnabled }. Toggles the
+ * org-wide automatic-sync switch (§13.1).
+ */
+router.put('/settings', clientAuth, requireOwnerAdmin, async (req, res) => {
+  const { automaticSyncEnabled } = req.body;
+  if (typeof automaticSyncEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'automaticSyncEnabled must be a boolean' });
+  }
+  try {
+    const result = await emailPolicyService.updateSettings({
+      clientId: req.client.id,
+      automaticSyncEnabled,
+      updatedByMemberId: req.member.id,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('PUT /api/integrations/email/settings error:', err.message);
+    res.status(500).json({ error: 'Could not save email settings.' });
   }
 });
 

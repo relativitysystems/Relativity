@@ -55,6 +55,42 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  // EM3 — organization policy engine routes (§14.1). GET/PUT /policy and
+  // GET/PUT /settings all require clientAuth like every other route above;
+  // PUT's additional owner/admin gate (requireOwnerAdmin) runs only after
+  // clientAuth succeeds, so it can't be exercised here without a real
+  // authenticated session — same limitation this file's header comment
+  // already documents for the disconnect route's ownership check.
+  await t.test('GET /api/integrations/email/policy requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/policy`, { redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('PUT /api/integrations/email/policy requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/policy`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules: [] }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('GET /api/integrations/email/settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/settings`, { redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('PUT /api/integrations/email/settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ automaticSyncEnabled: true }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);
