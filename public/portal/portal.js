@@ -155,6 +155,24 @@
     window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
   }
 
+  // EM2 — Gmail per-member OAuth connect. Mirrors Slack's redirect-banner
+  // handling above, keyed off the same REDIRECT constants emailConnectionService.js uses.
+  const GMAIL_ERROR_MESSAGES = {
+    access_denied: 'Gmail authorization was cancelled.',
+    invalid_state: 'Your Gmail connection attempt was invalid or already used. Please try connecting again.',
+    expired_state: 'Your Gmail connection attempt expired. Please try connecting again.',
+    connection_failed: 'Could not connect Gmail. Please try again or contact support.',
+  };
+
+  if (integrationParam === 'gmail') {
+    if (statusParam === 'connected') {
+      showBanner('success', 'Gmail connected successfully.');
+    } else if (error) {
+      showBanner('error', GMAIL_ERROR_MESSAGES[error] || 'Gmail connection failed. Please try again.');
+    }
+    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+  }
+
   // 4b. Slack Integration
   const slackStatusBadge   = document.getElementById('slack-status-badge');
   const slackWorkspaceName = document.getElementById('slack-workspace-name');
@@ -311,6 +329,112 @@
   }
 
   loadSlackStatus();
+
+  // 4c. Gmail Integration (EM2 — per-member OAuth connect only; no policy,
+  // label, or sync UI yet, see Architecture/architecture/EMAIL_INGESTION.md).
+  // Self-service: any active member whose role isn't 'viewer' may connect
+  // their OWN mailbox — this is the one visibility difference from Slack's
+  // card, which is owner/admin-only.
+  const gmailStatusBadge    = document.getElementById('gmail-status-badge');
+  const gmailMailboxAddress = document.getElementById('gmail-mailbox-address');
+  const gmailConnectBtn     = document.getElementById('gmail-connect-btn');
+  const gmailDisconnectBtn  = document.getElementById('gmail-disconnect-btn');
+  const canConnectGmail     = memberRole !== 'viewer';
+
+  function renderGmailStatus({ connections, configured }) {
+    if (!gmailStatusBadge) return;
+    const own = (connections || [])[0] || null;
+    const isConnected = !!own;
+
+    // Server has no Gmail OAuth client configured at all — hide the Connect
+    // button entirely rather than let a member click it and only find out
+    // it fails after the round trip. A pre-existing connection (e.g. config
+    // was removed after the fact) still gets shown so it can be disconnected.
+    if (!configured && !isConnected) {
+      gmailStatusBadge.textContent = 'Not available';
+      gmailStatusBadge.className = 'integration-status badge badge--soon';
+      if (gmailMailboxAddress) gmailMailboxAddress.textContent = '';
+      if (gmailConnectBtn) gmailConnectBtn.hidden = true;
+      if (gmailDisconnectBtn) gmailDisconnectBtn.hidden = true;
+      return;
+    }
+
+    gmailStatusBadge.textContent = isConnected ? 'Connected' : 'Not connected';
+    gmailStatusBadge.className = `integration-status badge ${isConnected ? 'badge--indexed' : 'badge--soon'}`;
+    if (gmailMailboxAddress) {
+      gmailMailboxAddress.textContent = isConnected && own.mailboxAddress ? own.mailboxAddress : '';
+    }
+    if (gmailConnectBtn) gmailConnectBtn.hidden = !canConnectGmail || isConnected || !configured;
+    if (gmailDisconnectBtn) {
+      gmailDisconnectBtn.hidden = !isConnected;
+      gmailDisconnectBtn.dataset.connectionId = isConnected ? own.connectionId : '';
+    }
+  }
+
+  async function loadGmailStatus() {
+    if (!gmailStatusBadge) return;
+    try {
+      const res = await fetch('/api/integrations/email/connections', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error('connections request failed');
+      const body = await res.json();
+      renderGmailStatus(body);
+    } catch {
+      gmailStatusBadge.textContent = 'Unavailable';
+      gmailStatusBadge.className = 'integration-status badge badge--failed';
+      if (gmailMailboxAddress) gmailMailboxAddress.textContent = '';
+    }
+  }
+
+  if (gmailConnectBtn) {
+    gmailConnectBtn.addEventListener('click', async () => {
+      gmailConnectBtn.disabled = true;
+      try {
+        const res = await fetch('/api/integrations/email/gmail/start', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body.url) {
+          window.location.href = body.url;
+          return;
+        }
+        showBanner('error', body.error || 'Could not start Gmail connection.');
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      } finally {
+        gmailConnectBtn.disabled = false;
+      }
+    });
+  }
+
+  if (gmailDisconnectBtn) {
+    gmailDisconnectBtn.addEventListener('click', async () => {
+      const connectionId = gmailDisconnectBtn.dataset.connectionId;
+      if (!connectionId) return;
+      if (!confirm('Disconnect your Gmail account?')) return;
+      gmailDisconnectBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/disconnect`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.ok) {
+          showBanner('success', 'Gmail disconnected.');
+        } else {
+          const body = await res.json().catch(() => ({}));
+          showBanner('error', body.error || 'Could not disconnect Gmail.');
+        }
+      } catch {
+        showBanner('error', 'Network error. Please try again.');
+      } finally {
+        gmailDisconnectBtn.disabled = false;
+        loadGmailStatus();
+      }
+    });
+  }
+
+  loadGmailStatus();
 
   // 5. Knowledge Base
   const kbFileInput       = document.getElementById('kb-file-input');

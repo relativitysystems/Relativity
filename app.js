@@ -10,6 +10,7 @@ const leadsRoutes = require('./routes/leads');
 const teamRoutes = require('./routes/team');
 const collectionsRoutes = require('./routes/collections');
 const slackIntegrationRoutes = require('./routes/integrations/slack');
+const emailIntegrationRoutes = require('./routes/integrations/email');
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use('/api', leadsRoutes);
 app.use('/api', teamRoutes);
 app.use('/api', collectionsRoutes);
 app.use('/api/integrations/slack', slackIntegrationRoutes);
+app.use('/api/integrations/email', emailIntegrationRoutes);
 app.use('/admin', adminRoutes);
 
 module.exports = app;

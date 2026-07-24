@@ -52,6 +52,16 @@ module.exports = {
     clientId: process.env.GOOGLE_CLIENT_ID,
     pickerApiKey: process.env.GOOGLE_PICKER_API_KEY,
   },
+  // Gmail OAuth per member (EM2 — Architecture/architecture/EMAIL_INGESTION.md).
+  // Distinct from googleDrive above: this is a real server-side
+  // authorization-code exchange (needs a client secret), not the Picker's
+  // browser-only flow. Reuses the existing generic
+  // INTEGRATION_CREDENTIAL_ENCRYPTION_KEY — no separate encryption key.
+  gmail: {
+    clientId: process.env.GMAIL_CLIENT_ID,
+    clientSecret: process.env.GMAIL_CLIENT_SECRET,
+    redirectUri: process.env.GMAIL_REDIRECT_URI,
+  },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
   // Backlog M6 — explicit CORS allowlist (middleware/corsPolicy.js).
   // Comma-separated list of additional origins allowed to make

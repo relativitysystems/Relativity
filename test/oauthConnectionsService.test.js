@@ -173,6 +173,111 @@ test('getActiveConnectionForClient scopes strictly by the given clientId — cli
   assert.equal(calls.queries[1].filters.client_id, 'client-b');
 });
 
+// ─────────────────────────────────────────────
+// Member-scoped functions (EM2 — Gmail per-member connections). Slack/Drive/
+// Dropbox never needed these since only one active connection ever exists
+// per (clientId, provider); gmail/microsoft can have one per member.
+// ─────────────────────────────────────────────
+
+test('getActiveConnectionForClientAndMember scopes by clientId, provider, AND memberId — member A cannot see member B\'s row', async () => {
+  const { client, calls } = createFakeSupabaseClient({
+    onQuery: (state) => {
+      if (state.filters.client_id === 'client-a' && state.filters.provider === 'gmail' && state.filters.connected_by_member_id === 'member-a') {
+        return { data: { id: 'conn-a', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  });
+  const service = createOauthConnectionsService(client);
+
+  const forA = await service.getActiveConnectionForClientAndMember('client-a', 'gmail', 'member-a');
+  assert.equal(forA.connected_by_member_id, 'member-a');
+
+  const forB = await service.getActiveConnectionForClientAndMember('client-a', 'gmail', 'member-b');
+  assert.equal(forB, null);
+
+  assert.equal(calls.queries[0].filters.connected_by_member_id, 'member-a');
+  assert.equal(calls.queries[1].filters.connected_by_member_id, 'member-b');
+});
+
+test('getActiveConnectionForClientAndMember requires clientId, provider, and memberId', async () => {
+  const { client, calls } = createFakeSupabaseClient();
+  const service = createOauthConnectionsService(client);
+
+  await assert.rejects(() => service.getActiveConnectionForClientAndMember(undefined, 'gmail', 'member-a'), /requires clientId/);
+  await assert.rejects(() => service.getActiveConnectionForClientAndMember('client-a', undefined, 'member-a'), /requires provider/);
+  await assert.rejects(() => service.getActiveConnectionForClientAndMember('client-a', 'gmail', undefined), /requires memberId/);
+  assert.equal(calls.queries.length, 0);
+});
+
+test('listActiveConnectionsForClient returns every active connection for the client+provider, across every member (not .maybeSingle())', async () => {
+  const { client, calls } = createFakeSupabaseClient({
+    onQuery: (state) => {
+      if (state.table === 'oauth_connections' && state.filters.client_id === 'client-a' && state.filters.provider === 'gmail') {
+        return {
+          data: [
+            { id: 'conn-a', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' },
+            { id: 'conn-b', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-b', status: 'active' },
+          ],
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    },
+  });
+  const service = createOauthConnectionsService(client);
+
+  const rows = await service.listActiveConnectionsForClient('client-a', 'gmail');
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((r) => r.connected_by_member_id).sort(), ['member-a', 'member-b']);
+
+  const otherClientRows = await service.listActiveConnectionsForClient('client-b', 'gmail');
+  assert.deepEqual(otherClientRows, []);
+  assert.equal(calls.queries[1].filters.client_id, 'client-b');
+});
+
+test('markConnectionRevokedForMember only revokes the given member\'s connection — a different member\'s active connection for the same client+provider is untouched', async () => {
+  const { client, calls } = createFakeSupabaseClient({
+    onQuery: (state) => {
+      if (state.table === 'oauth_connections' && state.operation === 'update' && state.filters.connected_by_member_id === 'member-a') {
+        return { data: { id: 'conn-a' }, error: null };
+      }
+      if (state.table === 'oauth_connections' && state.operation === 'update') {
+        return { data: null, error: null }; // simulates member-b's row never matching this scoped update
+      }
+      return { data: null, error: null };
+    },
+  });
+  const service = createOauthConnectionsService(client);
+
+  const resultA = await service.markConnectionRevokedForMember('client-a', 'gmail', 'member-a');
+  assert.deepEqual(resultA, { revoked: true });
+
+  const updateCall = calls.queries.find((q) => q.operation === 'update');
+  assert.equal(updateCall.filters.client_id, 'client-a');
+  assert.equal(updateCall.filters.provider, 'gmail');
+  assert.equal(updateCall.filters.connected_by_member_id, 'member-a');
+  assert.equal(updateCall.filters.status, 'active');
+
+  const deleteCall = calls.queries.find((q) => q.operation === 'delete');
+  assert.equal(deleteCall.table, 'oauth_credentials');
+  assert.equal(deleteCall.filters.connection_id, 'conn-a');
+
+  // Revoking member-b's connection with these fakes finds no matching row.
+  const resultB = await service.markConnectionRevokedForMember('client-a', 'gmail', 'member-b');
+  assert.deepEqual(resultB, { revoked: false });
+});
+
+test('markConnectionRevokedForMember requires clientId, provider, and memberId', async () => {
+  const { client, calls } = createFakeSupabaseClient();
+  const service = createOauthConnectionsService(client);
+
+  await assert.rejects(() => service.markConnectionRevokedForMember(undefined, 'gmail', 'member-a'), /requires clientId/);
+  await assert.rejects(() => service.markConnectionRevokedForMember('client-a', undefined, 'member-a'), /requires provider/);
+  await assert.rejects(() => service.markConnectionRevokedForMember('client-a', 'gmail', undefined), /requires memberId/);
+  assert.equal(calls.queries.length, 0);
+});
+
 test('getActiveConnectionByExternalAccount is scoped by provider, not just external account id', async () => {
   const { client, calls } = createFakeSupabaseClient({
     onQuery: () => ({ data: null, error: null }),

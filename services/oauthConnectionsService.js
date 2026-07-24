@@ -156,6 +156,55 @@ function createOauthConnectionsService(client) {
     return data || null;
   }
 
+  /**
+   * Member-scoped counterpart to getActiveConnectionForClient — added for
+   * EM2 (Gmail per-member connections, Architecture/architecture/
+   * EMAIL_INGESTION.md §6 gap 10, §12). Slack/Drive/Dropbox only ever have
+   * one active connection per (clientId, provider), so getActiveConnectionForClient
+   * above is unchanged and still correct for them; gmail/microsoft can have
+   * one active connection per member, so callers must additionally scope by
+   * connectedByMemberId to find the right one.
+   */
+  async function getActiveConnectionForClientAndMember(clientId, provider, memberId) {
+    if (!clientId) throw new Error('getActiveConnectionForClientAndMember requires clientId');
+    if (!provider) throw new Error('getActiveConnectionForClientAndMember requires provider');
+    if (!memberId) throw new Error('getActiveConnectionForClientAndMember requires memberId');
+
+    const { data, error } = await client
+      .from('oauth_connections')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('provider', provider)
+      .eq('connected_by_member_id', memberId)
+      .eq('status', STATUS.ACTIVE)
+      .maybeSingle();
+
+    if (error) throw new Error(`getActiveConnectionForClientAndMember failed: ${error.message}`);
+    return data || null;
+  }
+
+  /**
+   * Lists every active connection for a client+provider, across every
+   * member — added for EM2's `GET /connections?all=true` admin view. Unlike
+   * getActiveConnectionForClient, this is not `.maybeSingle()`: multiple
+   * members of the same client can each have their own active gmail/microsoft
+   * connection simultaneously.
+   */
+  async function listActiveConnectionsForClient(clientId, provider) {
+    if (!clientId) throw new Error('listActiveConnectionsForClient requires clientId');
+    if (!provider) throw new Error('listActiveConnectionsForClient requires provider');
+
+    const { data, error } = await client
+      .from('oauth_connections')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('provider', provider)
+      .eq('status', STATUS.ACTIVE);
+
+    if (error) throw new Error(`listActiveConnectionsForClient failed: ${error.message}`);
+    return data || [];
+  }
+
   async function getActiveConnectionByExternalAccount(provider, externalAccountId) {
     if (!provider) throw new Error('getActiveConnectionByExternalAccount requires provider');
     if (!externalAccountId) throw new Error('getActiveConnectionByExternalAccount requires externalAccountId');
@@ -298,6 +347,40 @@ function createOauthConnectionsService(client) {
   }
 
   /**
+   * Member-scoped counterpart to markConnectionRevoked — added for EM2.
+   * Critical for cross-member isolation (EMAIL_INGESTION.md §25): without
+   * the memberId filter, disconnecting one member's Gmail would revoke
+   * every active gmail connection for the client, including other members'.
+   */
+  async function markConnectionRevokedForMember(clientId, provider, memberId) {
+    if (!clientId) throw new Error('markConnectionRevokedForMember requires clientId');
+    if (!provider) throw new Error('markConnectionRevokedForMember requires provider');
+    if (!memberId) throw new Error('markConnectionRevokedForMember requires memberId');
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await client
+      .from('oauth_connections')
+      .update({ status: STATUS.REVOKED, revoked_at: nowIso, updated_at: nowIso })
+      .eq('client_id', clientId)
+      .eq('provider', provider)
+      .eq('connected_by_member_id', memberId)
+      .eq('status', STATUS.ACTIVE)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw new Error(`markConnectionRevokedForMember failed: ${error.message}`);
+    if (!data) return { revoked: false };
+
+    const { error: credError } = await client
+      .from('oauth_credentials')
+      .delete()
+      .eq('connection_id', data.id);
+
+    if (credError) throw new Error(`markConnectionRevokedForMember (credential cleanup) failed: ${credError.message}`);
+    return { revoked: true };
+  }
+
+  /**
    * Backlog M3 — lists connection_ids whose stored encryption_key_version
    * doesn't match the currently configured key, i.e. rows a rotation still
    * needs to re-encrypt. Read-only; does not touch any credential.
@@ -374,12 +457,15 @@ function createOauthConnectionsService(client) {
   return {
     createOrReplaceConnection,
     getActiveConnectionForClient,
+    getActiveConnectionForClientAndMember,
+    listActiveConnectionsForClient,
     getActiveConnectionByExternalAccount,
     getConnectionById,
     getSafeConnectionStatus,
     getDecryptedCredentialForConnection,
     updateCredentialForConnection,
     markConnectionRevoked,
+    markConnectionRevokedForMember,
     deleteConnection,
     listConnectionIdsNeedingKeyRotation,
     reencryptCredentialForConnection,
