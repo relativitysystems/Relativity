@@ -341,6 +341,13 @@
   const gmailDisconnectBtn  = document.getElementById('gmail-disconnect-btn');
   const canConnectGmail     = memberRole !== 'viewer';
 
+  // EM4 — member mailbox settings (§7, §13.1, §31): own search-contribution
+  // toggle and sync-mode selector, shown only while connected.
+  const emailMailboxSettingsSection = document.getElementById('email-mailbox-settings-section');
+  const emailSearchEnabledToggle    = document.getElementById('email-search-enabled-toggle');
+  const emailSyncModeSelect         = document.getElementById('email-sync-mode-select');
+  const emailMailboxSettingsStatus  = document.getElementById('email-mailbox-settings-save-status');
+
   function renderGmailStatus({ connections, configured }) {
     if (!gmailStatusBadge) return;
     const own = (connections || [])[0] || null;
@@ -356,6 +363,7 @@
       if (gmailMailboxAddress) gmailMailboxAddress.textContent = '';
       if (gmailConnectBtn) gmailConnectBtn.hidden = true;
       if (gmailDisconnectBtn) gmailDisconnectBtn.hidden = true;
+      if (emailMailboxSettingsSection) emailMailboxSettingsSection.hidden = true;
       return;
     }
 
@@ -368,6 +376,14 @@
     if (gmailDisconnectBtn) {
       gmailDisconnectBtn.hidden = !isConnected;
       gmailDisconnectBtn.dataset.connectionId = isConnected ? own.connectionId : '';
+    }
+
+    if (emailMailboxSettingsSection) emailMailboxSettingsSection.hidden = !isConnected;
+    if (isConnected && emailSyncModeSelect) {
+      emailSyncModeSelect.dataset.connectionId = own.connectionId;
+      const mode = own.syncMode || 'manual_selected';
+      emailSyncModeSelect.value = mode;
+      emailSyncModeSelect.dataset.priorValue = mode;
     }
   }
 
@@ -435,6 +451,114 @@
   }
 
   loadGmailStatus();
+
+  // EM4 — member mailbox settings: the member's own search_enabled flag
+  // (independent of any specific connection, but only shown/meaningful
+  // while a mailbox is connected) and, once org policy allows it, whether
+  // the sync-mode selector's Automatic option is actually selectable.
+  async function loadEmailMemberSettings() {
+    if (!emailSearchEnabledToggle) return;
+    try {
+      const res = await fetch('/api/integrations/email/member-settings', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return;
+      const { searchEnabled } = await res.json();
+      emailSearchEnabledToggle.checked = searchEnabled !== false;
+    } catch {
+      // Leave the toggle at its default (checked) — a load failure here
+      // shouldn't block the rest of the Gmail card from rendering.
+    }
+  }
+
+  async function loadEmailAutomaticAvailability() {
+    if (!emailSyncModeSelect) return;
+    try {
+      const res = await fetch('/api/integrations/email/settings', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return;
+      const { automaticSyncEnabled } = await res.json();
+      const automaticOption = emailSyncModeSelect.querySelector('option[value="automatic"]');
+      if (automaticOption) {
+        automaticOption.disabled = !automaticSyncEnabled;
+        automaticOption.textContent = automaticSyncEnabled ? 'Automatic' : 'Automatic (disabled by admin)';
+      }
+    } catch {
+      // Leave both options enabled — the server still enforces the gate on
+      // POST /sync-mode regardless of what the selector shows here.
+    }
+  }
+
+  loadEmailMemberSettings();
+  loadEmailAutomaticAvailability();
+
+  if (emailSearchEnabledToggle) {
+    emailSearchEnabledToggle.addEventListener('change', async () => {
+      const searchEnabled = emailSearchEnabledToggle.checked;
+      emailSearchEnabledToggle.disabled = true;
+      if (emailMailboxSettingsStatus) emailMailboxSettingsStatus.hidden = true;
+      try {
+        const res = await fetch('/api/integrations/email/member-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ searchEnabled }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Could not save.');
+        if (emailMailboxSettingsStatus) {
+          emailMailboxSettingsStatus.textContent = 'Saved.';
+          emailMailboxSettingsStatus.className = 'kb-upload-status kb-upload-status--success';
+          emailMailboxSettingsStatus.hidden = false;
+        }
+      } catch (err) {
+        emailSearchEnabledToggle.checked = !searchEnabled; // revert on failure
+        if (emailMailboxSettingsStatus) {
+          emailMailboxSettingsStatus.textContent = err.message || 'Could not save.';
+          emailMailboxSettingsStatus.className = 'kb-upload-status kb-upload-status--error';
+          emailMailboxSettingsStatus.hidden = false;
+        }
+      } finally {
+        emailSearchEnabledToggle.disabled = false;
+      }
+    });
+  }
+
+  if (emailSyncModeSelect) {
+    emailSyncModeSelect.addEventListener('change', async () => {
+      const connectionId = emailSyncModeSelect.dataset.connectionId;
+      if (!connectionId) return;
+      const syncMode = emailSyncModeSelect.value;
+      const priorValue = emailSyncModeSelect.dataset.priorValue || 'manual_selected';
+      emailSyncModeSelect.disabled = true;
+      if (emailMailboxSettingsStatus) emailMailboxSettingsStatus.hidden = true;
+      try {
+        const res = await fetch(`/api/integrations/email/connections/${encodeURIComponent(connectionId)}/sync-mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ syncMode }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Could not update sync mode.');
+        emailSyncModeSelect.value = body.syncMode;
+        emailSyncModeSelect.dataset.priorValue = body.syncMode;
+        if (emailMailboxSettingsStatus) {
+          emailMailboxSettingsStatus.textContent = 'Saved.';
+          emailMailboxSettingsStatus.className = 'kb-upload-status kb-upload-status--success';
+          emailMailboxSettingsStatus.hidden = false;
+        }
+      } catch (err) {
+        emailSyncModeSelect.value = priorValue; // revert on failure
+        if (emailMailboxSettingsStatus) {
+          emailMailboxSettingsStatus.textContent = err.message || 'Could not update sync mode.';
+          emailMailboxSettingsStatus.className = 'kb-upload-status kb-upload-status--error';
+          emailMailboxSettingsStatus.hidden = false;
+        }
+      } finally {
+        emailSyncModeSelect.disabled = false;
+      }
+    });
+  }
 
   // 4d. Email organization policy (EM3 — Architecture/architecture/
   // EMAIL_INGESTION.md §14.1, §16, §31). Owner/admin sees and edits the full

@@ -20,6 +20,8 @@ function makeFakes(overrides = {}) {
     upsertConnection: [],
     getByOauthConnectionId: [],
     getConnectionById: [],
+    updateSyncMode: [],
+    getSettings: [],
   };
 
   // In-memory model of oauth_connections rows, keyed by connectionId, so
@@ -163,10 +165,28 @@ function makeFakes(overrides = {}) {
         historical_import_status: 'not_started',
       };
     },
+    // EM4 — POST /connections/:id/sync-mode. `null` return models "no
+    // email_connections row exists for this oauth_connection_id" (should be
+    // unreachable in production once EM2's connect flow has run, but
+    // updateSyncMode still treats it as CONNECTION_NOT_FOUND rather than
+    // assuming the row exists).
+    updateSyncMode: async (oauthConnectionId, syncMode) => {
+      calls.updateSyncMode.push({ oauthConnectionId, syncMode });
+      if (overrides.updateSyncMode) return overrides.updateSyncMode(oauthConnectionId, syncMode);
+      return { oauth_connection_id: oauthConnectionId, sync_mode: syncMode };
+    },
+  };
+
+  const emailPolicyService = {
+    getSettings: async (clientId) => {
+      calls.getSettings.push(clientId);
+      if (overrides.getSettings) return overrides.getSettings(clientId);
+      return { automaticSyncEnabled: false, updatedByMemberId: null, updatedAt: null };
+    },
   };
 
   const service = createEmailConnectionService({
-    oauthStateService, gmailService, oauthConnectionsService, supabaseService, emailConnectionsRepo,
+    oauthStateService, gmailService, oauthConnectionsService, supabaseService, emailConnectionsRepo, emailPolicyService,
   });
   return { service, calls, connectionsStore };
 }
@@ -515,6 +535,53 @@ test('canDisconnectConnection denies when actingMemberId is missing, even if a c
   const connection = { connected_by_member_id: 'member-a' };
   assert.equal(canDisconnectConnection({ connection, actingMemberId: null }), false);
   assert.equal(canDisconnectConnection({ connection, actingMemberId: undefined }), false);
+});
+
+// ─────────────────────────────────────────────
+// updateSyncMode (EM4 — §14.1 POST /connections/:id/sync-mode)
+// ─────────────────────────────────────────────
+
+test('updateSyncMode sets manual_selected without ever consulting org automatic-sync settings', async () => {
+  const { service, calls } = makeFakes();
+  const result = await service.updateSyncMode({ clientId: 'client-a', oauthConnectionId: 'conn-1', syncMode: 'manual_selected' });
+  assert.deepEqual(result, { syncMode: 'manual_selected' });
+  assert.equal(calls.getSettings.length, 0);
+  assert.equal(calls.updateSyncMode.length, 1);
+  assert.deepEqual(calls.updateSyncMode[0], { oauthConnectionId: 'conn-1', syncMode: 'manual_selected' });
+});
+
+test('updateSyncMode allows automatic when the org has automatic_sync_enabled on', async () => {
+  const { service, calls } = makeFakes({ getSettings: async () => ({ automaticSyncEnabled: true }) });
+  const result = await service.updateSyncMode({ clientId: 'client-a', oauthConnectionId: 'conn-1', syncMode: 'automatic' });
+  assert.deepEqual(result, { syncMode: 'automatic' });
+  assert.equal(calls.getSettings.length, 1);
+  assert.equal(calls.updateSyncMode.length, 1);
+});
+
+test('updateSyncMode rejects automatic with AUTOMATIC_SYNC_DISABLED when the org setting is off, without writing anything', async () => {
+  const { service, calls } = makeFakes({ getSettings: async () => ({ automaticSyncEnabled: false }) });
+  await assert.rejects(
+    () => service.updateSyncMode({ clientId: 'client-a', oauthConnectionId: 'conn-1', syncMode: 'automatic' }),
+    (err) => err.code === 'AUTOMATIC_SYNC_DISABLED'
+  );
+  assert.equal(calls.updateSyncMode.length, 0);
+});
+
+test('updateSyncMode rejects an unsupported syncMode value (e.g. "paused" — reached only via a separate pause control, not this route)', async () => {
+  const { service, calls } = makeFakes();
+  await assert.rejects(
+    () => service.updateSyncMode({ clientId: 'client-a', oauthConnectionId: 'conn-1', syncMode: 'paused' }),
+    (err) => err.code === 'INVALID_SYNC_MODE'
+  );
+  assert.equal(calls.updateSyncMode.length, 0);
+});
+
+test('updateSyncMode surfaces CONNECTION_NOT_FOUND when no email_connections row matches the oauth connection id', async () => {
+  const { service } = makeFakes({ updateSyncMode: async () => null });
+  await assert.rejects(
+    () => service.updateSyncMode({ clientId: 'client-a', oauthConnectionId: 'conn-missing', syncMode: 'manual_selected' }),
+    (err) => err.code === 'CONNECTION_NOT_FOUND'
+  );
 });
 
 // ─────────────────────────────────────────────

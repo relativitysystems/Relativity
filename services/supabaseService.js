@@ -490,6 +490,11 @@ async function updateClientMember(memberId, clientId, updates) {
   if (updates.status !== undefined) allowed.status = updates.status;
   if (updates.full_name !== undefined) allowed.full_name = updates.full_name;
   if (updates.last_active_at !== undefined) allowed.last_active_at = updates.last_active_at;
+  // search_enabled (EM4 — EMAIL_INGESTION.md §13.1, §31): self-service, own
+  // row only — the caller in routes/integrations/email.js's PUT
+  // /member-settings always passes req.member.id as memberId, never another
+  // member's, so no additional role check is needed here.
+  if (updates.search_enabled !== undefined) allowed.search_enabled = updates.search_enabled;
   allowed.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase

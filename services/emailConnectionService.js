@@ -10,7 +10,9 @@
 // specific connection it was asked to, never every connection for the client.
 //
 // No organization policy, Gmail label, or sync/ingestion logic lives here —
-// those are EM3+. This file only connects/lists/disconnects.
+// those are EM3/EM5+. This file connects/lists/disconnects (EM2) and, as of
+// EM4, lets a member switch their own connection's sync_mode between
+// manual_selected/automatic (§14.1) — still no label workflow or ingestion.
 //
 // Disconnect is self-service ONLY in EM2 — a member may disconnect only
 // their own connection, with no owner/admin override, even though §14.1's
@@ -19,7 +21,10 @@
 // feature like a personal mailbox connection, that administrative override
 // is deliberately deferred to EM9 (member offboarding and policy
 // reconciliation) rather than built now — see the EM2 Implementation
-// Record in EMAIL_INGESTION.md for the full reasoning.
+// Record in EMAIL_INGESTION.md for the full reasoning. updateSyncMode
+// (EM4) follows the identical self-service-only shape — the route enforces
+// canDisconnectConnection's own-connection check before calling it, no
+// owner/admin override here either.
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
@@ -27,6 +32,9 @@ const defaultOauthStateService = require('./oauthStateService');
 const defaultGmailService = require('./gmailService');
 const defaultOauthConnectionsService = require('./oauthConnectionsService');
 const defaultSupabaseService = require('./supabaseService');
+const defaultEmailPolicyService = require('./emailPolicyService');
+
+const SYNC_MODES = ['manual_selected', 'automatic'];
 
 const PROVIDER = 'gmail';
 
@@ -79,6 +87,22 @@ const defaultEmailConnectionsRepo = {
     if (error) throw new Error(`getByOauthConnectionId failed: ${error.message}`);
     return data || null;
   },
+
+  // EM4 (§14.1 POST /connections/:id/sync-mode) — :id in the route is always
+  // the oauth_connections row's id (mapGmailConnectionResponse's
+  // connectionId), never email_connections.id, matching disconnect's
+  // existing convention above.
+  async updateSyncMode(oauthConnectionId, syncMode) {
+    const { data, error } = await defaultDbClient
+      .from('email_connections')
+      .update({ sync_mode: syncMode, updated_at: new Date().toISOString() })
+      .eq('oauth_connection_id', oauthConnectionId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`updateSyncMode failed: ${error.message}`);
+    return data || null;
+  },
 };
 
 /**
@@ -123,6 +147,7 @@ function createEmailConnectionService({
   oauthConnectionsService = defaultOauthConnectionsService,
   supabaseService = defaultSupabaseService,
   emailConnectionsRepo = defaultEmailConnectionsRepo,
+  emailPolicyService = defaultEmailPolicyService,
 } = {}) {
   /**
    * GET /:provider/start — self-service: any active member whose role isn't
@@ -307,7 +332,46 @@ function createEmailConnectionService({
     return { disconnected: true };
   }
 
-  return { startConnection, handleCallback, getConnections, disconnect };
+  /**
+   * POST /connections/:id/sync-mode (EM4 — §14.1). The route loads the
+   * oauth_connections row and enforces canDisconnectConnection's same
+   * own-connection-only check before calling this (identical ownership
+   * shape to disconnect — EM4 gives no owner/admin override here either).
+   * Rejects `automatic` with AUTOMATIC_SYNC_DISABLED while the client's
+   * email_organization_settings.automatic_sync_enabled is false (§Manual vs
+   * Automatic Sync) — `paused` is out of scope here, reached only via a
+   * separate pause/resume control this milestone doesn't build (§31's EM4
+   * entry lists only sync-mode + search_enabled).
+   */
+  async function updateSyncMode({ clientId, oauthConnectionId, syncMode }) {
+    if (!clientId) throw new Error('updateSyncMode requires clientId');
+    if (!oauthConnectionId) throw new Error('updateSyncMode requires oauthConnectionId');
+    if (!SYNC_MODES.includes(syncMode)) {
+      const err = new Error(`updateSyncMode: unsupported syncMode "${syncMode}"`);
+      err.code = 'INVALID_SYNC_MODE';
+      throw err;
+    }
+
+    if (syncMode === 'automatic') {
+      const { automaticSyncEnabled } = await emailPolicyService.getSettings(clientId);
+      if (!automaticSyncEnabled) {
+        const err = new Error('Automatic sync is not enabled for this organization.');
+        err.code = 'AUTOMATIC_SYNC_DISABLED';
+        throw err;
+      }
+    }
+
+    const updated = await emailConnectionsRepo.updateSyncMode(oauthConnectionId, syncMode);
+    if (!updated) {
+      const err = new Error('Email connection not found.');
+      err.code = 'CONNECTION_NOT_FOUND';
+      throw err;
+    }
+
+    return { syncMode: updated.sync_mode };
+  }
+
+  return { startConnection, handleCallback, getConnections, disconnect, updateSyncMode };
 }
 
 const defaultService = createEmailConnectionService();

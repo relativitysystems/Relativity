@@ -91,6 +91,38 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  // EM4 — member mailbox settings routes (§14.1, §31). Sync-mode's
+  // additional owns-this-connection gate (reusing canDisconnectConnection)
+  // and member-settings' self-service-only scope run only after clientAuth
+  // succeeds, so — same limitation this file's header comment already
+  // documents for disconnect's and PUT /policy|/settings's role gates —
+  // they aren't exercised here without a real authenticated session; that
+  // coverage lives in test/emailConnectionService.test.js instead.
+  await t.test('POST /api/integrations/email/connections/:id/sync-mode requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/sync-mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ syncMode: 'automatic' }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('GET /api/integrations/email/member-settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/member-settings`, { redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('PUT /api/integrations/email/member-settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/member-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searchEnabled: false }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);

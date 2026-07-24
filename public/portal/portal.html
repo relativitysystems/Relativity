@@ -150,6 +150,23 @@
                     </div>
                   </div>
 
+                  <!-- EM4 — member mailbox settings (§7, §13.1, §31): own search-contribution
+                       toggle and sync-mode selector. Shown only while connected. -->
+                  <div id="email-mailbox-settings-section" class="email-mailbox-settings-section" hidden>
+                    <label class="slack-collection-option">
+                      <input type="checkbox" id="email-search-enabled-toggle" />
+                      Include my mailbox in search
+                    </label>
+                    <label class="email-sync-mode-label">
+                      Sync mode
+                      <select id="email-sync-mode-select">
+                        <option value="manual_selected">Manual (Selected Emails)</option>
+                        <option value="automatic">Automatic</option>
+                      </select>
+                    </label>
+                    <span id="email-mailbox-settings-save-status" class="kb-upload-status" hidden></span>
+                  </div>
+
                   <!-- EM3 — organization policy summary, every active member (read-only unless owner/admin). -->
                   <div id="email-policy-summary-section" class="email-policy-summary-section" hidden>
                     <p class="slack-collections-label">Organization email policy</p>

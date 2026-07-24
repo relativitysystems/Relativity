@@ -1,9 +1,13 @@
 'use strict';
 
 // Gmail OAuth connection routes (EM2 — Architecture/architecture/
-// EMAIL_INGESTION.md §14.1). Thin Express adapter — all logic lives in
-// services/emailConnectionService.js so it stays unit-testable without an
-// HTTP layer. Mounted at /api/integrations/email in app.js.
+// EMAIL_INGESTION.md §14.1), extended in EM3 with organization policy
+// (/policy, /settings) and in EM4 with the member mailbox settings surface
+// (/connections/:id/sync-mode, /member-settings). Thin Express adapter —
+// all logic lives in services/emailConnectionService.js /
+// services/emailPolicyService.js / services/supabaseService.js so it stays
+// unit-testable without an HTTP layer. Mounted at /api/integrations/email
+// in app.js.
 //
 // clientId/memberId are ALWAYS resolved server-side by clientAuth from the
 // authenticated Supabase session — never accepted from the browser.
@@ -28,6 +32,7 @@ const emailConnectionService = require('../../services/emailConnectionService');
 const oauthConnectionsService = require('../../services/oauthConnectionsService');
 const gmailService = require('../../services/gmailService');
 const emailPolicyService = require('../../services/emailPolicyService');
+const supabaseService = require('../../services/supabaseService');
 const { REDIRECT, PROVIDER, canDisconnectConnection } = emailConnectionService;
 
 const OWNER_ADMIN = ['owner', 'admin'];
@@ -151,6 +156,75 @@ router.post('/connections/:id/disconnect', clientAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /api/integrations/email/connections/:id/disconnect error:', err.message);
     res.status(500).json({ error: 'Could not disconnect Gmail. Please try again.' });
+  }
+});
+
+/**
+ * POST /api/integrations/email/connections/:id/sync-mode
+ * Self-service only (EM4 — §14.1, §31) — the connection's own member, no
+ * owner/admin override, same authorization shape as disconnect above
+ * (reuses canDisconnectConnection since "do you own this connection" is
+ * identical in both cases). Body: { syncMode: 'manual_selected'|'automatic' }.
+ * `automatic` is rejected while the client's automatic_sync_enabled setting
+ * is off (§Manual vs Automatic Sync). `paused` is out of EM4's scope —
+ * reached only via a separate pause/resume control not built in this
+ * milestone.
+ */
+router.post('/connections/:id/sync-mode', clientAuth, async (req, res) => {
+  const { id } = req.params;
+  const { syncMode } = req.body;
+  if (!['manual_selected', 'automatic'].includes(syncMode)) {
+    return res.status(400).json({ error: 'syncMode must be "manual_selected" or "automatic"' });
+  }
+  try {
+    const connection = await oauthConnectionsService.getConnectionById(id);
+    if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const result = await emailConnectionService.updateSyncMode({
+      clientId: req.client.id,
+      oauthConnectionId: id,
+      syncMode,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.code === 'AUTOMATIC_SYNC_DISABLED') {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('POST /api/integrations/email/connections/:id/sync-mode error:', err.message);
+    res.status(500).json({ error: 'Could not update sync mode.' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/member-settings
+ * PUT /api/integrations/email/member-settings
+ * Self-service, own row only (EM4 — §7, §13.1, §31). Distinct from GET/PUT
+ * /settings above, which is the org-wide automatic-sync switch — this is
+ * the member's own `client_members.search_enabled` gate: off means nothing
+ * from this member's mailbox ever becomes searchable, regardless of sync
+ * mode or label (§Policy Evaluation Model). `req.member` is already loaded
+ * by clientAuth with `search_enabled` selected.
+ */
+router.get('/member-settings', clientAuth, async (req, res) => {
+  res.json({ searchEnabled: req.member.search_enabled !== false });
+});
+
+router.put('/member-settings', clientAuth, async (req, res) => {
+  const { searchEnabled } = req.body;
+  if (typeof searchEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'searchEnabled must be a boolean' });
+  }
+  try {
+    const updated = await supabaseService.updateClientMember(req.member.id, req.client.id, { search_enabled: searchEnabled });
+    res.json({ searchEnabled: updated.search_enabled });
+  } catch (err) {
+    console.error('PUT /api/integrations/email/member-settings error:', err.message);
+    res.status(500).json({ error: 'Could not save your settings.' });
   }
 });
 
