@@ -316,12 +316,27 @@
         </div>
         <form class="contact-form fade-in" id="contactForm" novalidate>
           <div class="form-row">
-            <input type="text" name="name" placeholder="Your name" required autocomplete="name">
-            <input type="email" name="email" placeholder="Email address" required autocomplete="email">
+            <div class="form-field">
+              <label for="name" class="field-label">Name</label>
+              <input type="text" id="name" name="name" placeholder="Your name" required autocomplete="name">
+            </div>
+            <div class="form-field">
+              <label for="email" class="field-label">Email</label>
+              <input type="email" id="email" name="email" placeholder="Email address" required autocomplete="email">
+            </div>
           </div>
-          <input type="tel" name="phone" placeholder="Phone number" required autocomplete="tel">
-          <input type="text" name="company" placeholder="Company (optional)" autocomplete="organization">
-          <textarea name="message" placeholder="What company knowledge would you like your team to search? SOPs, FAQs, policies, training docs, client notes, etc." rows="5" required></textarea>
+          <div class="form-field">
+            <label for="phone" class="field-label">Phone</label>
+            <input type="tel" id="phone" name="phone" placeholder="Phone number" required autocomplete="tel">
+          </div>
+          <div class="form-field">
+            <label for="company" class="field-label">Company <span class="field-optional">(optional)</span></label>
+            <input type="text" id="company" name="company" placeholder="Company (optional)" autocomplete="organization">
+          </div>
+          <div class="form-field">
+            <label for="message" class="field-label">Message</label>
+            <textarea id="message" name="message" placeholder="What company knowledge would you like your team to search? SOPs, FAQs, policies, training docs, client notes, etc." rows="5" required></textarea>
+          </div>
           <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off" aria-hidden="true">
           <button type="submit" class="btn btn-primary" id="submitBtn">Send Message</button>
           <p class="form-status" id="formStatus"></p>

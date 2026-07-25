@@ -23,16 +23,17 @@ mobileNav.querySelectorAll('a').forEach(link => {
 // === Scroll-triggered fade-ins ===
 const fadeEls = document.querySelectorAll('.fade-in');
 const ioOptions = { threshold: 0.1, rootMargin: '0px 0px -48px 0px' };
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const io = new IntersectionObserver((entries) => {
   for (const entry of entries) {
     if (entry.isIntersecting) {
-      // Stagger cards in a grid if siblings
+      // Stagger cards in a grid if siblings (skip the stagger under reduced motion)
       const parent = entry.target.parentElement;
       const siblings = [...parent.querySelectorAll('.fade-in')];
       const idx = siblings.indexOf(entry.target);
       const isGrid = parent.classList.contains('solution-points');
-      const delay = isGrid ? idx * 80 : 0;
+      const delay = (isGrid && !prefersReducedMotion) ? idx * 80 : 0;
       setTimeout(() => entry.target.classList.add('visible'), delay);
       io.unobserve(entry.target);
     }
