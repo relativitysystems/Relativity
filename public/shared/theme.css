@@ -51,7 +51,7 @@
   --badge-purple:  #7c3aed;
   --badge-blue:    #2563eb;
   --badge-teal:    #0d9488;
-  --badge-orange:  #fa4902;
+  --badge-orange:  #c2410c;
   --badge-emerald: #059669;
   --badge-slate:   #475569;
   --badge-indigo:  #4f46e5;
@@ -70,7 +70,10 @@ html[data-theme="dark"] {
   --text:          #ffffff;
   --text-primary:  #ffffff;
   --text-secondary:rgba(255, 255, 255, 0.55);
-  --text-muted:    rgba(255, 255, 255, 0.3);
+  /* 0.3 measured ~2.6:1 against #000 — fails WCAG AA (4.5:1) for muted text
+     that still carries real content (citations, labels, status text). 0.5
+     gets ~5.3:1 while staying visually distinct from --text-secondary. */
+  --text-muted:    rgba(255, 255, 255, 0.5);
 
   --success: #22c55e;
   --error:   #ef4444;
@@ -123,8 +126,8 @@ html[data-theme="dark"] .logo-img {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   transition: border-color 0.2s ease, color 0.2s ease;
   flex-shrink: 0;
@@ -141,3 +144,22 @@ html[data-theme="dark"] .logo-img {
 
 html[data-theme="dark"] .theme-toggle .icon-sun  { display: block; }
 html[data-theme="dark"] .theme-toggle .icon-moon { display: none;  }
+
+/* ── Reduced motion ──
+   Shared across every page that loads theme.css. Neutralizes hover
+   transitions and keyframe animations (spinners, pulses, shimmers,
+   toasts, drawers) for users who request reduced motion. Page-specific
+   effects (e.g. marketing's scroll fade-ins) still need their own
+   opacity/transform reset alongside this. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

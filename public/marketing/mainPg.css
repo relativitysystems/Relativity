@@ -8,24 +8,6 @@
 :root {
   --radius: 8px;
   --transition: 0.3s ease;
-
-  /* --badge-orange (#fa4902) is only ~3.1:1 against the light-mode --bg,
-     which fails WCAG AA (4.5:1) for the small label/eyebrow text that uses it.
-     --accent-text is a darker, same-hue variant that passes (~4.7:1) in light
-     mode; in dark mode the original accent already passes, so it's reused as-is. */
-  --accent-text: #c2410c;
-
-  /* --text-muted is too faint in dark mode (~2.6:1) for text that carries real
-     information (source citations, footer copy, mockup captions) rather than
-     pure decoration. --text-muted-readable targets ~4.5:1+ in both modes,
-     scoped to this page so the shared theme.css token (used by portal/admin)
-     is untouched. */
-  --text-muted-readable: var(--text-muted);
-}
-
-html[data-theme="dark"] {
-  --accent-text: var(--badge-orange);
-  --text-muted-readable: rgba(255, 255, 255, 0.5);
 }
 
 html {
@@ -66,7 +48,7 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent-text);
+  color: var(--badge-orange);
   margin-bottom: 18px;
   display: block;
 }
@@ -162,18 +144,10 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   transform: none;
 }
 
+/* The universal animation/transition reset lives in shared theme.css
+   (loaded on every page). This just adds the page-specific piece it
+   can't know about: skipping the scroll-triggered reveal itself. */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-
   .fade-in {
     opacity: 1;
     transform: none;
@@ -242,14 +216,6 @@ nav#nav.scrolled {
 nav#nav .nav-theme-toggle {
   margin-left: 16px;
   flex-shrink: 0;
-}
-
-/* .theme-toggle is 36x36 in the shared theme.css (used by portal/admin too);
-   bump to the 44x44 touch-target minimum on this page only, without touching
-   the shared file or the icon size inside it. */
-nav#nav .theme-toggle {
-  width: 44px;
-  height: 44px;
 }
 
 nav#nav .btn-outline {
@@ -323,7 +289,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-weight: 500;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--accent-text);
+  color: var(--badge-orange);
   margin-bottom: 24px;
   display: block;
 }
@@ -386,7 +352,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 
 .proof-cite {
   font-size: 0.78rem;
-  color: var(--text-muted-readable);
+  color: var(--text-muted);
   font-family: 'Space Grotesk', sans-serif;
   letter-spacing: 0.01em;
 }
@@ -503,7 +469,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 .mock-caption {
   margin-top: 16px;
   font-size: 0.82rem;
-  color: var(--text-muted-readable);
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -727,7 +693,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: var(--accent-text);
+  color: var(--badge-orange);
   margin-bottom: 14px;
 }
 
@@ -761,7 +727,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent-text);
+  color: var(--badge-orange);
   padding-top: 3px;
 }
 
@@ -854,7 +820,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--text-muted-readable);
+  color: var(--text-muted);
 }
 
 .field-optional {
@@ -879,7 +845,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 .contact-form input:focus,
 .contact-form textarea:focus {
   border-color: var(--border-hover);
-  outline: 2px solid var(--accent-text);
+  outline: 2px solid var(--badge-orange);
   outline-offset: 2px;
 }
 
@@ -948,7 +914,7 @@ footer {
 }
 
 .footer-copy {
-  color: var(--text-muted-readable);
+  color: var(--text-muted);
   font-size: 0.75rem;
   margin-top: 12px;
 }

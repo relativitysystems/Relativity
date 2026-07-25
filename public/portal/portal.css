@@ -54,8 +54,8 @@ body {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -705,6 +705,13 @@ body {
   box-shadow: var(--shadow-card);
 }
 
+/* .search-input itself is borderless/flush, so the visible focus
+   indicator lives on the pill it sits in instead. */
+.assistant-search:focus-within {
+  outline: 2px solid var(--badge-orange);
+  outline-offset: 2px;
+}
+
 .search-icon {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -755,8 +762,8 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   background: var(--surface-tint-4);
   color: var(--text-secondary);
   border: none;
@@ -776,7 +783,7 @@ body {
 }
 
 .mic-btn:focus-visible {
-  outline: 2px solid var(--border-hover);
+  outline: 2px solid var(--badge-orange);
   outline-offset: 2px;
 }
 
@@ -1082,7 +1089,7 @@ body {
   gap: 10px;
 }
 .kb-history-summary::-webkit-details-marker { display: none; }
-.kb-history-summary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--border-hover); }
+.kb-history-summary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--badge-orange); }
 
 .kb-history-summary-label {
   font-size: 0.68rem;
@@ -1184,7 +1191,7 @@ body {
   color: var(--text-muted);
   font-size: 1rem;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 4px 6px;
   border-radius: 4px;
   opacity: 0;
   transition: opacity var(--transition), color var(--transition);
@@ -1192,6 +1199,9 @@ body {
 }
 .kb-session-item:hover .btn-kb-session-delete { opacity: 1; }
 .btn-kb-session-delete:hover { color: var(--error); }
+/* Hover-reveal means keyboard-only users would otherwise never see these
+   controls exist; make focus reveal them the same way hover does. */
+.btn-kb-session-delete:focus-visible { opacity: 1; outline: 2px solid var(--badge-orange); outline-offset: 1px; }
 
 .btn-kb-session-rename {
   position: absolute;
@@ -1204,12 +1214,13 @@ body {
   color: var(--text-muted);
   font-size: 0.85rem;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 4px 6px;
   border-radius: 4px;
   opacity: 0;
   transition: opacity var(--transition), color var(--transition);
 }
 .kb-session-item:hover .btn-kb-session-rename { opacity: 1; }
+.btn-kb-session-rename:focus-visible { opacity: 1; outline: 2px solid var(--badge-orange); outline-offset: 1px; }
 .btn-kb-session-rename:hover { color: var(--text-primary); }
 
 .kb-history-footer {
@@ -1578,13 +1589,14 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
   padding: 10px 14px;
-  outline: none;
   box-sizing: border-box;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), outline-color var(--transition);
 }
 
 .form-input:focus {
   border-color: var(--border-hover);
+  outline: 2px solid var(--badge-orange);
+  outline-offset: 2px;
 }
 
 .form-input::placeholder {
@@ -1705,7 +1717,6 @@ select.form-input {
   .kb-messages { max-height: 50vh; }
   .kb-upload-row { flex-wrap: wrap; gap: 10px; }
   .search-btn { min-width: 52px; }
-  .mic-btn { width: 36px; height: 36px; }
   .toast-container { left: 16px; right: 16px; bottom: 16px; }
   .toast { max-width: none; }
   .team-table { min-width: 560px; }
@@ -2063,7 +2074,7 @@ select.form-input {
   flex-shrink: 0;
   font-size: 1rem;
   line-height: 1;
-  padding: 2px 7px;
+  padding: 6px 10px;
   transition: background var(--transition), color var(--transition);
 }
 .btn-kb-job-dismiss:hover { background: rgba(239, 68, 68, 0.08); color: var(--error); }
@@ -2185,7 +2196,7 @@ select.form-input {
   font-size: 0.82rem;
   cursor: pointer;
 }
-.team-role-select:focus { outline: none; border-color: var(--border-hover); }
+.team-role-select:focus { border-color: var(--border-hover); outline: 2px solid var(--badge-orange); outline-offset: 2px; }
 
 .team-actions-cell {
   white-space: nowrap;

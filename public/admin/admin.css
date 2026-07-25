@@ -171,7 +171,7 @@
   cursor: pointer;
   font-size: 0.65rem;
   line-height: 1;
-  padding: 3px 6px;
+  padding: 6px 8px;
   transition: background var(--transition), color var(--transition);
 }
 
@@ -367,7 +367,11 @@
   font-size: 0.78rem;
   padding: 4px 8px;
   cursor: pointer;
-  outline: none;
+}
+
+.issue-status-select:focus {
+  outline: 2px solid var(--badge-orange);
+  outline-offset: 2px;
 }
 
 .issue-status-select:disabled {
@@ -615,6 +619,11 @@
 }
 
 .crm-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -623,7 +632,6 @@
   flex-shrink: 0;
   font-size: 0.8rem;
   line-height: 1;
-  padding: 6px 10px;
   transition: background var(--transition), color var(--transition);
 }
 
