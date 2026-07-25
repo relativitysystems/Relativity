@@ -8,6 +8,24 @@
 :root {
   --radius: 8px;
   --transition: 0.3s ease;
+
+  /* --badge-orange (#fa4902) is only ~3.1:1 against the light-mode --bg,
+     which fails WCAG AA (4.5:1) for the small label/eyebrow text that uses it.
+     --accent-text is a darker, same-hue variant that passes (~4.7:1) in light
+     mode; in dark mode the original accent already passes, so it's reused as-is. */
+  --accent-text: #c2410c;
+
+  /* --text-muted is too faint in dark mode (~2.6:1) for text that carries real
+     information (source citations, footer copy, mockup captions) rather than
+     pure decoration. --text-muted-readable targets ~4.5:1+ in both modes,
+     scoped to this page so the shared theme.css token (used by portal/admin)
+     is untouched. */
+  --text-muted-readable: var(--text-muted);
+}
+
+html[data-theme="dark"] {
+  --accent-text: var(--badge-orange);
+  --text-muted-readable: rgba(255, 255, 255, 0.5);
 }
 
 html {
@@ -48,7 +66,7 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--badge-orange);
+  color: var(--accent-text);
   margin-bottom: 18px;
   display: block;
 }
@@ -144,6 +162,24 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   transform: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .fade-in {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* === Nav === */
 nav#nav {
   position: fixed;
@@ -208,6 +244,14 @@ nav#nav .nav-theme-toggle {
   flex-shrink: 0;
 }
 
+/* .theme-toggle is 36x36 in the shared theme.css (used by portal/admin too);
+   bump to the 44x44 touch-target minimum on this page only, without touching
+   the shared file or the icon size inside it. */
+nav#nav .theme-toggle {
+  width: 44px;
+  height: 44px;
+}
+
 nav#nav .btn-outline {
   margin-left: 12px;
   padding: 9px 20px;
@@ -220,8 +264,8 @@ nav#nav .btn-outline {
   flex-direction: column;
   justify-content: center;
   gap: 5px;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   background: none;
   border: none;
   cursor: pointer;
@@ -279,7 +323,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-weight: 500;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--badge-orange);
+  color: var(--accent-text);
   margin-bottom: 24px;
   display: block;
 }
@@ -342,7 +386,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 
 .proof-cite {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: var(--text-muted-readable);
   font-family: 'Space Grotesk', sans-serif;
   letter-spacing: 0.01em;
 }
@@ -459,7 +503,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 .mock-caption {
   margin-top: 16px;
   font-size: 0.82rem;
-  color: var(--text-muted);
+  color: var(--text-muted-readable);
   font-style: italic;
 }
 
@@ -683,7 +727,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: var(--badge-orange);
+  color: var(--accent-text);
   margin-bottom: 14px;
 }
 
@@ -717,7 +761,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--badge-orange);
+  color: var(--accent-text);
   padding-top: 3px;
 }
 
@@ -791,13 +835,31 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 .contact-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 18px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted-readable);
+}
+
+.field-optional {
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .contact-form input,
@@ -809,8 +871,7 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   color: var(--text);
   font-family: inherit;
   font-size: 0.875rem;
-  outline: none;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), outline-color var(--transition);
   width: 100%;
   resize: none;
 }
@@ -818,6 +879,8 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 .contact-form input:focus,
 .contact-form textarea:focus {
   border-color: var(--border-hover);
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
 .contact-form input::placeholder,
@@ -885,7 +948,7 @@ footer {
 }
 
 .footer-copy {
-  color: var(--text-muted);
+  color: var(--text-muted-readable);
   font-size: 0.75rem;
   margin-top: 12px;
 }
