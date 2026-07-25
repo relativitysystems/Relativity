@@ -32,6 +32,7 @@
 const express = require('express');
 const router = express.Router();
 const clientAuth = require('../../middleware/clientAuth');
+const requireSystemServiceRequest = require('../../middleware/requireSystemServiceRequest');
 const emailConnectionService = require('../../services/emailConnectionService');
 const oauthConnectionsService = require('../../services/oauthConnectionsService');
 const gmailService = require('../../services/gmailService');
@@ -55,6 +56,28 @@ function requireOwnerAdmin(req, res, next) {
   }
   next();
 }
+
+/**
+ * POST /api/integrations/email/sync/tick
+ * System-scoped (EM8 — §18.3, §31), NOT clientAuth — the only route in this
+ * file with a different auth shape entirely, deliberately kept apart from
+ * every self-service/owner-admin route below. The sole intended caller is
+ * AIKB's Inngest cron function, carrying zero client-specific data;
+ * requireSystemServiceRequest verifies the system-scoped envelope (no
+ * clientId anywhere, see services/serviceRequestAuth.js) before this
+ * handler ever runs. Fans out one incremental sync per due automatic-mode
+ * connection via emailSyncService.runTick, isolating per-connection
+ * failures so one broken connection never aborts the tick.
+ */
+router.post('/sync/tick', requireSystemServiceRequest, async (req, res) => {
+  try {
+    const result = await emailSyncService.runTick();
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/integrations/email/sync/tick error:', err.message);
+    res.status(500).json({ error: 'Could not run the sync tick.' });
+  }
+});
 
 /**
  * GET /api/integrations/email/:provider/start
@@ -203,6 +226,61 @@ router.post('/connections/:id/sync-mode', clientAuth, async (req, res) => {
     }
     console.error('POST /api/integrations/email/connections/:id/sync-mode error:', err.message);
     res.status(500).json({ error: 'Could not update sync mode.' });
+  }
+});
+
+/**
+ * POST /api/integrations/email/connections/:id/pause
+ * POST /api/integrations/email/connections/:id/resume
+ * Self-service only (EM8 — §14.1, §Lifecycle "Paused", §31) — same
+ * ownership shape as sync-mode/disconnect above (reuses
+ * canDisconnectConnection). The gap EM4's own record flagged (no
+ * pause/resume route existed anywhere) — see emailConnectionService.js's
+ * pauseConnection/resumeConnection for the pre_pause_sync_mode bookkeeping
+ * that lets /resume restore the member's actual prior mode rather than
+ * always defaulting to manual_selected.
+ */
+router.post('/connections/:id/pause', clientAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const connection = await oauthConnectionsService.getConnectionById(id);
+    if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const result = await emailConnectionService.pauseConnection({ clientId: req.client.id, oauthConnectionId: id });
+    res.json(result);
+  } catch (err) {
+    if (err.code === 'CONNECTION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    console.error('POST /api/integrations/email/connections/:id/pause error:', err.message);
+    res.status(500).json({ error: 'Could not pause this connection.' });
+  }
+});
+
+router.post('/connections/:id/resume', clientAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const connection = await oauthConnectionsService.getConnectionById(id);
+    if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const result = await emailConnectionService.resumeConnection({ clientId: req.client.id, oauthConnectionId: id });
+    res.json(result);
+  } catch (err) {
+    if (err.code === 'CONNECTION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Connection not found.' });
+    }
+    console.error('POST /api/integrations/email/connections/:id/resume error:', err.message);
+    res.status(500).json({ error: 'Could not resume this connection.' });
   }
 });
 

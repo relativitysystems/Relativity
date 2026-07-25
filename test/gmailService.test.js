@@ -660,7 +660,7 @@ test('getMailboxHistoryId requires accessToken', async () => {
   await assert.rejects(() => service.getMailboxHistoryId());
 });
 
-test('listHistory passes startHistoryId/labelId/pageToken and requests labelAdded+labelRemoved+messageDeleted history types', async () => {
+test('listHistory passes startHistoryId/labelId/pageToken and requests labelAdded+labelRemoved+messageDeleted history types by default (manual mode shape)', async () => {
   let capturedUrl;
   const httpClient = {
     get: async (url) => { capturedUrl = url; return { status: 200, data: { history: [], historyId: '999' } }; },
@@ -672,6 +672,22 @@ test('listHistory passes startHistoryId/labelId/pageToken and requests labelAdde
   assert.match(capturedUrl, /pageToken=p1/);
   const historyTypeMatches = capturedUrl.match(/historyTypes=/g) || [];
   assert.equal(historyTypeMatches.length, 3);
+  assert.match(capturedUrl, /historyTypes=labelAdded/);
+  assert.match(capturedUrl, /historyTypes=labelRemoved/);
+  assert.match(capturedUrl, /historyTypes=messageDeleted/);
+});
+
+test('listHistory (EM8, automatic mode): an explicit historyTypes override requests only that type, and omitting labelId leaves it out of the request entirely', async () => {
+  let capturedUrl;
+  const httpClient = {
+    get: async (url) => { capturedUrl = url; return { status: 200, data: { history: [], historyId: '999' } }; },
+  };
+  const service = createGmailService({ httpClient });
+  await service.listHistory({ accessToken: 'token', startHistoryId: '100', historyTypes: ['messageAdded'] });
+  const historyTypeMatches = capturedUrl.match(/historyTypes=/g) || [];
+  assert.equal(historyTypeMatches.length, 1);
+  assert.match(capturedUrl, /historyTypes=messageAdded/);
+  assert.doesNotMatch(capturedUrl, /labelId=/);
 });
 
 test('listHistory flattens labelsAdded/labelsRemoved/messagesDeleted into an ordered {type, messageId} change list', async () => {
@@ -697,6 +713,27 @@ test('listHistory flattens labelsAdded/labelsRemoved/messagesDeleted into an ord
   ]);
   assert.equal(result.historyId, '150');
   assert.equal(result.nextPageToken, null);
+});
+
+test('listHistory (EM8) flattens messagesAdded records into {type: messageAdded, messageId} — the automatic-mode signal', async () => {
+  const httpClient = {
+    get: async () => ({
+      status: 200,
+      data: {
+        historyId: '150',
+        history: [
+          { messagesAdded: [{ message: { id: 'm1' } }] },
+          { labelsAdded: [{ message: { id: 'm2' } }] }, // unrelated record type in the same page — still parsed independently
+        ],
+      },
+    }),
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.listHistory({ accessToken: 'token', startHistoryId: '100', historyTypes: ['messageAdded'] });
+  assert.deepEqual(result.changes, [
+    { type: 'messageAdded', messageId: 'm1' },
+    { type: 'labelAdded', messageId: 'm2' },
+  ]);
 });
 
 test('listHistory preserves record order across multiple history records for the same message (last-write-wins is the caller\'s job)', async () => {

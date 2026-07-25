@@ -11,14 +11,26 @@
 // whole label — falling back transparently to a bounded historical re-scan
 // when the cursor has expired (§18.4).
 //
-// EM6/EM7 scope is deliberately narrower than §17's own general text: this
-// file only ever compiles/reads the fixed `manual_selected` label query and
-// rejects a sync attempt on a connection whose sync_mode is `automatic` —
-// the milestones' own Backend lines (§31) scope both to "manual mode only."
-// Automatic-mode sync is EM8's responsibility, once the tick scheduler and
-// its own safeguards exist. This mirrors how EM3's deviation 6 and EM5's
-// deviation 3 each resolved an analogous §14.1-vs-detailed-section
-// inconsistency.
+// EM8 (§18.3) extends `syncConnection` to also support `automatic` mode —
+// both historical (already worked once `mode` stopped being hardcoded to
+// `manual_selected`, since `gmailService.compileSearchQuery` already had an
+// `automatic` branch from EM5) and incremental (Gmail History API scoped to
+// `historyTypes: ['messageAdded']` with no `labelId`, instead of manual
+// mode's label-scoped `labelAdded`/`labelRemoved`/`messageDeleted` — see
+// gmailService.js's `listHistory`). `runTick` (bottom of this file) is the
+// new tick-handler entry point that drives this same function for every due
+// automatic-mode connection, exactly the same code path `POST
+// /connections/:id/sync` already used for manual "Sync now" clicks (§18.3).
+//
+// Deliberately NOT included in this first EM8 pass: remote-deletion/
+// policy-change tombstone reconciliation for `automatic`-mode connections
+// (`reconcileRemovedLabelsFullList` remains manual-mode-only below — it's
+// keyed to the managed label, which automatic mode never uses as an
+// ingestion criterion, so running it against automatic-mode content would
+// tombstone messages that were never label-gated in the first place). A
+// real policy-change reconciliation pass for automatic mode is flagged as a
+// named follow-up, not silently absorbed — mirrors how EM6 shipped
+// historical-only before EM7 filled in incremental.
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig, limits, email: emailConfig } = require('../config');
@@ -27,6 +39,11 @@ const { ERROR_CODES: GMAIL_ERROR_CODES } = require('./gmailService');
 const defaultEmailPolicyService = require('./emailPolicyService');
 const defaultEmailNormalizationService = require('./emailNormalizationService');
 const defaultAikbService = require('./aikbService');
+// EM8 (§18.3) — runTick needs a valid Gmail access token per due connection,
+// the same refresh-if-expiring orchestration the /sync route already gets
+// via req-scoped emailConnectionService.getValidGmailAccessToken. No
+// circular dependency: emailConnectionService.js never requires this file.
+const defaultEmailConnectionService = require('./emailConnectionService');
 
 // Bounded per request (Vercel timeout — §17 item 3): one page of historical
 // import, or one page of history-diff processing, per POST /sync call. A
@@ -50,15 +67,44 @@ const ERROR_CODES = Object.freeze({
   SEARCH_DISABLED: 'SEARCH_DISABLED',
   SYNC_DISABLED: 'SYNC_DISABLED',
   SYNC_PAUSED: 'SYNC_PAUSED',
-  AUTOMATIC_SYNC_NOT_SUPPORTED: 'AUTOMATIC_SYNC_NOT_SUPPORTED',
   DOCUMENT_LIMIT_REACHED: 'DOCUMENT_LIMIT_REACHED',
   INVALID_RESUME: 'INVALID_RESUME',
 });
+
+// EM8 (§18.3) — how long after a completed automatic-mode sync before the
+// tick handler considers this connection due again. Also used by manual
+// "Sync now" clicks on an automatic-mode connection, per §15.1's "run_type
+// describes the fetch strategy, not the trigger source" — every completed
+// automatic-mode sync, however triggered, advances the same due timestamp.
+const TICK_INTERVAL_MS = emailConfig.tickIntervalMs;
+
+// EM8 (§18.3) — the tick handler's own per-request processing cap (Vercel
+// timeout, same reasoning as HISTORICAL_PAGE_SIZE) — a due connection
+// beyond this many simply waits for the next tick.
+const TICK_MAX_CONNECTIONS = emailConfig.tickMaxConnections;
+
+// A generous upper bound on how many automatic-mode connections
+// listDueAutomaticConnections ever fetches from the database before
+// filtering/capping in application code — not the per-tick processing cap
+// itself (TICK_MAX_CONNECTIONS is), just a safety valve against an
+// unbounded query at a client base size this codebase doesn't operate at
+// today (§29).
+const TICK_QUERY_SAFETY_LIMIT = 500;
 
 function syncError(code, message) {
   const err = new Error(message);
   err.code = code;
   return err;
+}
+
+// EM8 — advances next_sync_due_at on every `syncConnection` completion of an
+// automatic-mode connection (success, partial, or failed alike — a
+// persistently-failing connection must not be re-selected every single
+// tick, §31 EM8 Backend). `manual_selected`/`paused` connections never set
+// this at all — meaningless while sync_mode != 'automatic' (§13.1).
+function nextSyncDueAtPatch(mode) {
+  if (mode !== 'automatic') return {};
+  return { nextSyncDueAt: new Date(Date.now() + TICK_INTERVAL_MS).toISOString() };
 }
 
 // Thin, EM6/EM7-only data access for email_sync_runs/email_ingestion_events/
@@ -138,6 +184,7 @@ const defaultEmailSyncRepo = {
   async upsertSyncState(emailConnectionId, {
     lastSyncStartedAt, lastSyncCompletedAt, lastSyncStatus,
     providerCursor, cursorStatus, cursorObtainedAt,
+    nextSyncDueAt,
   }) {
     const payload = {
       email_connection_id: emailConnectionId,
@@ -149,6 +196,10 @@ const defaultEmailSyncRepo = {
     if (providerCursor !== undefined) payload.provider_cursor = providerCursor;
     if (cursorStatus !== undefined) payload.cursor_status = cursorStatus;
     if (cursorObtainedAt !== undefined) payload.cursor_obtained_at = cursorObtainedAt;
+    // EM8 — same "undefined means leave unchanged" conditional-write
+    // contract as the cursor fields above; only ever set for automatic-mode
+    // connections (nextSyncDueAtPatch), never touched for manual/paused.
+    if (nextSyncDueAt !== undefined) payload.next_sync_due_at = nextSyncDueAt;
 
     const { error } = await defaultDbClient
       .from('email_sync_state')
@@ -193,6 +244,56 @@ const defaultEmailSyncRepo = {
     if (error) throw new Error(`listRecentSyncRuns failed: ${error.message}`);
     return data || [];
   },
+
+  // EM8 (§18.3) — runTick's own fail-closed gate needs client_members.
+  // search_enabled the same way the /sync route reads it off req.member,
+  // but a tick has no HTTP session to read it from.
+  async getMemberSearchEnabled(memberId) {
+    const { data, error } = await defaultDbClient
+      .from('client_members')
+      .select('search_enabled')
+      .eq('id', memberId)
+      .maybeSingle();
+    if (error) throw new Error(`getMemberSearchEnabled failed: ${error.message}`);
+    return data ? data.search_enabled !== false : false;
+  },
+
+  // EM8 (§18.3) — the tick handler's three-way gate: sync_mode='automatic'
+  // AND sync_enabled AND email_organization_settings.automatic_sync_enabled
+  // AND due (next_sync_due_at unset or <= now). Two queries rather than one
+  // embedded join, to sidestep depending on Supabase/Postgrest's foreign-key
+  // embed inference for a cross-table condition this repo has no existing
+  // precedent for — simpler to read, and correct at this codebase's current
+  // scale (§29 "single-digit-to-low-dozens client base").
+  async listDueAutomaticConnections(maxConnections) {
+    const { data: settingsRows, error: settingsError } = await defaultDbClient
+      .from('email_organization_settings')
+      .select('client_id')
+      .eq('automatic_sync_enabled', true);
+    if (settingsError) throw new Error(`listDueAutomaticConnections (settings) failed: ${settingsError.message}`);
+    const eligibleClientIds = (settingsRows || []).map((r) => r.client_id);
+    if (eligibleClientIds.length === 0) return [];
+
+    const { data: connectionRows, error: connectionsError } = await defaultDbClient
+      .from('email_connections')
+      .select('*, email_sync_state(next_sync_due_at)')
+      .eq('sync_mode', 'automatic')
+      .eq('sync_enabled', true)
+      .in('client_id', eligibleClientIds)
+      .limit(TICK_QUERY_SAFETY_LIMIT);
+    if (connectionsError) throw new Error(`listDueAutomaticConnections failed: ${connectionsError.message}`);
+
+    const now = Date.now();
+    const due = (connectionRows || []).filter((row) => {
+      // Supabase embeds a to-one relation (email_sync_state has a UNIQUE
+      // FK to email_connections) as an object, but defend against an array
+      // shape too rather than assume the embed inference never changes.
+      const state = Array.isArray(row.email_sync_state) ? row.email_sync_state[0] : row.email_sync_state;
+      const dueAt = state && state.next_sync_due_at;
+      return !dueAt || new Date(dueAt).getTime() <= now;
+    });
+    return due.slice(0, maxConnections);
+  },
 };
 
 /**
@@ -210,12 +311,6 @@ function assertSyncAllowed({ memberSearchEnabled, syncEnabled, syncMode }) {
   }
   if (syncMode === 'paused') {
     throw syncError(ERROR_CODES.SYNC_PAUSED, 'This connection is paused.');
-  }
-  if (syncMode === 'automatic') {
-    throw syncError(
-      ERROR_CODES.AUTOMATIC_SYNC_NOT_SUPPORTED,
-      'Automatic-mode sync is not available yet. Switch to manual mode to sync now.'
-    );
   }
 }
 
@@ -520,7 +615,9 @@ async function runIncrementalPage(deps) {
   const historyResult = prefetched || await gmailService.listHistory({
     accessToken,
     startHistoryId,
-    labelId: emailConnectionRow.managed_label_id,
+    ...(mode === 'automatic'
+      ? { historyTypes: ['messageAdded'] }
+      : { labelId: emailConnectionRow.managed_label_id }),
     pageToken,
     maxResults: HISTORICAL_PAGE_SIZE,
   });
@@ -532,7 +629,10 @@ async function runIncrementalPage(deps) {
   const toRemoveLabelRemoved = [];
   const toRemoveDeleted = [];
   for (const [messageId, type] of finalActionByMessage.entries()) {
-    if (type === 'labelAdded') toIngest.push(messageId);
+    // 'messageAdded' only ever appears in automatic mode's unscoped diff
+    // (EM8 — no managed label involved, so there's no corresponding
+    // "removed" counterpart the way labelAdded/labelRemoved pair up).
+    if (type === 'labelAdded' || type === 'messageAdded') toIngest.push(messageId);
     else if (type === 'messageDeleted') toRemoveDeleted.push(messageId);
     else toRemoveLabelRemoved.push(messageId);
   }
@@ -584,6 +684,7 @@ function createEmailSyncService({
   emailPolicyService = defaultEmailPolicyService,
   emailNormalizationService = defaultEmailNormalizationService,
   aikbService = defaultAikbService,
+  emailConnectionService = defaultEmailConnectionService,
   emailSyncRepo = defaultEmailSyncRepo,
   maxDocuments = limits.maxDocuments,
 } = {}) {
@@ -626,6 +727,12 @@ function createEmailSyncService({
       syncMode: emailConnectionRow.sync_mode,
     });
 
+    // EM8 (§18.3) — assertSyncAllowed already rejected 'paused' above, so
+    // only 'manual_selected'/'automatic' ever reach here. Computed before
+    // the cursor/probe logic below since automatic mode's incremental path
+    // needs it (no managed-label requirement, different historyTypes).
+    const mode = emailConnectionRow.sync_mode === 'automatic' ? 'automatic' : 'manual_selected';
+
     let resolvedRunType;
     let prefetchedHistoryPage = null;
     let startHistoryId = null;
@@ -661,7 +768,11 @@ function createEmailSyncService({
       }
 
       const syncState = await emailSyncRepo.getSyncState(emailConnectionRow.id);
-      const hasValidCursor = syncState && syncState.cursor_status === 'valid' && syncState.provider_cursor && emailConnectionRow.managed_label_id;
+      // Automatic mode has no managed-label requirement (it never scopes by
+      // label at all, §16.1 item 3) — only manual mode's cursor validity
+      // additionally depends on a managed label existing to scope against.
+      const hasValidCursor = syncState && syncState.cursor_status === 'valid' && syncState.provider_cursor
+        && (mode === 'automatic' || emailConnectionRow.managed_label_id);
 
       if (hasValidCursor) {
         // Probe now, before creating a sync run, so a stale cursor can fall
@@ -671,7 +782,9 @@ function createEmailSyncService({
           prefetchedHistoryPage = await gmailService.listHistory({
             accessToken,
             startHistoryId: syncState.provider_cursor,
-            labelId: emailConnectionRow.managed_label_id,
+            ...(mode === 'automatic'
+              ? { historyTypes: ['messageAdded'] }
+              : { labelId: emailConnectionRow.managed_label_id }),
             maxResults: HISTORICAL_PAGE_SIZE,
           });
           resolvedRunType = 'incremental';
@@ -688,7 +801,6 @@ function createEmailSyncService({
       }
     }
 
-    const mode = 'manual_selected'; // EM6/EM7 scope — see file header.
     const { rules } = await emailPolicyService.getPolicy(clientId);
 
     const syncRun = await emailSyncRepo.createSyncRun({
@@ -736,7 +848,7 @@ function createEmailSyncService({
     const complete = runStatus === 'failed' || !pageOutcome.nextPageToken;
 
     let extraReconciled = [];
-    if (complete && runStatus !== 'failed' && resolvedRunType === 'historical') {
+    if (complete && runStatus !== 'failed' && resolvedRunType === 'historical' && mode === 'manual_selected') {
       extraReconciled = await reconcileRemovedLabelsFullList({
         gmailService, emailSyncRepo, aikbService, clientId, emailConnectionRow, accessToken, syncRunId: syncRun.id,
       });
@@ -769,12 +881,14 @@ function createEmailSyncService({
         lastSyncCompletedAt: new Date().toISOString(),
         lastSyncStatus: runStatus,
         ...(newCursor ? { providerCursor: newCursor, cursorStatus: 'valid', cursorObtainedAt: new Date().toISOString() } : {}),
+        ...nextSyncDueAtPatch(mode),
       });
     } else {
       await emailSyncRepo.upsertSyncState(emailConnectionRow.id, {
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: complete ? new Date().toISOString() : null,
         lastSyncStatus: runStatus,
+        ...nextSyncDueAtPatch(mode),
       });
     }
 
@@ -801,7 +915,66 @@ function createEmailSyncService({
     return emailSyncRepo.listRecentSyncRuns(emailConnectionId, limit);
   }
 
-  return { syncConnection, listSyncRuns };
+  /**
+   * POST /api/integrations/email/sync/tick's orchestration (EM8 — §18.3):
+   * runs exactly the same syncConnection() code path "Sync now" already
+   * uses, once per due automatic-mode connection, up to maxConnections.
+   * Per-connection failures are isolated — one broken connection (expired
+   * auth, a Gmail outage, whatever) never aborts the rest of the tick, the
+   * same "isolate, don't abort" discipline processOneCandidate already
+   * applies one layer down at the per-message level (§17 item 5).
+   * triggeredByMemberId is always null here — a tick-triggered run has no
+   * acting member, by construction.
+   */
+  async function runTick({ maxConnections = TICK_MAX_CONNECTIONS } = {}) {
+    const dueConnections = await emailSyncRepo.listDueAutomaticConnections(maxConnections);
+    const results = { processed: 0, succeeded: 0, failed: 0, connectionIds: [] };
+
+    for (const emailConnectionRow of dueConnections) {
+      results.processed++;
+      results.connectionIds.push(emailConnectionRow.id);
+      try {
+        const [memberSearchEnabled, accessToken] = await Promise.all([
+          emailSyncRepo.getMemberSearchEnabled(emailConnectionRow.member_id),
+          emailConnectionService.getValidGmailAccessToken(emailConnectionRow.oauth_connection_id),
+        ]);
+
+        const outcome = await syncConnection({
+          clientId: emailConnectionRow.client_id,
+          emailConnectionRow,
+          memberSearchEnabled,
+          accessToken,
+          triggeredByMemberId: null,
+        });
+        if (outcome.status === 'failed') results.failed++;
+        else results.succeeded++;
+      } catch (err) {
+        // A connection-level failure BEFORE syncConnection ever ran (token
+        // refresh, the member-search-enabled lookup) never reaches
+        // syncConnection's own next_sync_due_at bookkeeping — advance it
+        // here directly, or a persistently-broken connection (e.g. expired
+        // auth) would be re-selected and re-attempted on every single tick
+        // forever, never actually waiting out the interval like every other
+        // outcome does.
+        results.failed++;
+        console.error('[emailSyncService] runTick: connection failed, continuing with the rest of the tick:', emailConnectionRow.id, err.message);
+        try {
+          await emailSyncRepo.upsertSyncState(emailConnectionRow.id, {
+            lastSyncStartedAt: new Date().toISOString(),
+            lastSyncCompletedAt: new Date().toISOString(),
+            lastSyncStatus: 'failed',
+            ...nextSyncDueAtPatch('automatic'),
+          });
+        } catch (writeErr) {
+          console.error('[emailSyncService] runTick: could not advance next_sync_due_at after a connection-level failure (non-fatal):', emailConnectionRow.id, writeErr.message);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  return { syncConnection, listSyncRuns, runTick };
 }
 
 const defaultService = createEmailSyncService();
@@ -813,4 +986,5 @@ module.exports = {
   ERROR_CODES,
   HISTORICAL_PAGE_SIZE,
   RECONCILIATION_LIST_SIZE,
+  TICK_MAX_CONNECTIONS,
 };

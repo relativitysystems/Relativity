@@ -130,6 +130,52 @@ const defaultEmailConnectionsRepo = {
     if (error) throw new Error(`updateSyncMode failed: ${error.message}`);
     return data || null;
   },
+
+  // EM8 (§14.1 POST /connections/:id/pause) — remembers the mode the
+  // connection was actually in via pre_pause_sync_mode, so resumeConnection
+  // below can restore it exactly, per §Lifecycle: "/resume restores the
+  // member's prior mode."
+  async pauseConnection(oauthConnectionId, priorSyncMode) {
+    const { data, error } = await defaultDbClient
+      .from('email_connections')
+      .update({ sync_mode: 'paused', pre_pause_sync_mode: priorSyncMode, updated_at: new Date().toISOString() })
+      .eq('oauth_connection_id', oauthConnectionId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`pauseConnection failed: ${error.message}`);
+    return data || null;
+  },
+
+  // EM8 (§14.1 POST /connections/:id/resume) — restores sync_mode to
+  // restoredSyncMode and clears pre_pause_sync_mode (a resumed connection
+  // has nothing left to remember until it's paused again).
+  async resumeConnection(oauthConnectionId, restoredSyncMode) {
+    const { data, error } = await defaultDbClient
+      .from('email_connections')
+      .update({ sync_mode: restoredSyncMode, pre_pause_sync_mode: null, updated_at: new Date().toISOString() })
+      .eq('oauth_connection_id', oauthConnectionId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`resumeConnection failed: ${error.message}`);
+    return data || null;
+  },
+
+  // EM8 (§27, §7) — surfaced in the connection detail view only when
+  // sync_mode = 'automatic' (§13.1); meaningless/null otherwise. A separate,
+  // dedicated read rather than folded into getByOauthConnectionId, since
+  // that method's shape is relied on elsewhere (assertSyncAllowed and the
+  // sync pipeline) and this is purely a UI-facing lookup.
+  async getNextSyncDueAt(emailConnectionId) {
+    const { data, error } = await defaultDbClient
+      .from('email_sync_state')
+      .select('next_sync_due_at')
+      .eq('email_connection_id', emailConnectionId)
+      .maybeSingle();
+    if (error) throw new Error(`getNextSyncDueAt failed: ${error.message}`);
+    return data ? data.next_sync_due_at : null;
+  },
 };
 
 /**
@@ -150,7 +196,7 @@ function canDisconnectConnection({ connection, actingMemberId }) {
  * response shape — allowlists fields explicitly, same discipline as
  * mapSlackStatusResponse.
  */
-function mapGmailConnectionResponse(connectionRow, emailConnectionRow) {
+function mapGmailConnectionResponse(connectionRow, emailConnectionRow, nextSyncDueAt = null) {
   return {
     connectionId: connectionRow.id,
     memberId: connectionRow.connected_by_member_id,
@@ -160,6 +206,10 @@ function mapGmailConnectionResponse(connectionRow, emailConnectionRow) {
     syncMode: emailConnectionRow ? emailConnectionRow.sync_mode : null,
     syncEnabled: emailConnectionRow ? emailConnectionRow.sync_enabled : null,
     historicalImportStatus: emailConnectionRow ? emailConnectionRow.historical_import_status : null,
+    // EM8 (§27, §7) — meaningless while sync_mode != 'automatic'; the
+    // caller (getConnections) only ever looks this up for automatic-mode
+    // connections, so it's always null otherwise.
+    nextSyncDueAt: emailConnectionRow && emailConnectionRow.sync_mode === 'automatic' ? nextSyncDueAt : null,
     status: connectionRow.status,
     connectedAt: connectionRow.connected_at,
   };
@@ -326,7 +376,13 @@ function createEmailConnectionService({
     if (all && isOwnerAdmin) {
       const rows = await oauthConnectionsService.listActiveConnectionsForClient(clientId, PROVIDER);
       const connections = await Promise.all(
-        rows.map(async (row) => mapGmailConnectionResponse(row, await emailConnectionsRepo.getByOauthConnectionId(row.id)))
+        rows.map(async (row) => {
+          const emailConnectionRow = await emailConnectionsRepo.getByOauthConnectionId(row.id);
+          const nextSyncDueAt = emailConnectionRow && emailConnectionRow.sync_mode === 'automatic'
+            ? await emailConnectionsRepo.getNextSyncDueAt(emailConnectionRow.id)
+            : null;
+          return mapGmailConnectionResponse(row, emailConnectionRow, nextSyncDueAt);
+        })
       );
       return { connections };
     }
@@ -334,7 +390,10 @@ function createEmailConnectionService({
     const row = await oauthConnectionsService.getActiveConnectionForClientAndMember(clientId, PROVIDER, memberId);
     if (!row) return { connections: [] };
     const emailConnectionRow = await emailConnectionsRepo.getByOauthConnectionId(row.id);
-    return { connections: [mapGmailConnectionResponse(row, emailConnectionRow)] };
+    const nextSyncDueAt = emailConnectionRow && emailConnectionRow.sync_mode === 'automatic'
+      ? await emailConnectionsRepo.getNextSyncDueAt(emailConnectionRow.id)
+      : null;
+    return { connections: [mapGmailConnectionResponse(row, emailConnectionRow, nextSyncDueAt)] };
   }
 
   /**
@@ -410,6 +469,77 @@ function createEmailConnectionService({
       throw err;
     }
 
+    return { syncMode: updated.sync_mode };
+  }
+
+  /**
+   * EM8 (§14.1 POST /connections/:id/pause, §Lifecycle "Paused") —
+   * self-service only, same ownership shape as updateSyncMode above (the
+   * route enforces canDisconnectConnection before calling this). Records
+   * the connection's current sync_mode into pre_pause_sync_mode BEFORE
+   * overwriting it, so resumeConnection can restore the member's actual
+   * prior mode rather than defaulting to manual_selected. Idempotent: an
+   * already-paused connection is left untouched (never overwrites
+   * pre_pause_sync_mode with 'paused' itself).
+   */
+  async function pauseConnection({ clientId, oauthConnectionId }) {
+    if (!clientId) throw new Error('pauseConnection requires clientId');
+    if (!oauthConnectionId) throw new Error('pauseConnection requires oauthConnectionId');
+
+    const current = await emailConnectionsRepo.getByOauthConnectionId(oauthConnectionId);
+    if (!current) {
+      const err = new Error('Email connection not found.');
+      err.code = 'CONNECTION_NOT_FOUND';
+      throw err;
+    }
+    if (current.sync_mode === 'paused') {
+      return { syncMode: 'paused' };
+    }
+
+    const updated = await emailConnectionsRepo.pauseConnection(oauthConnectionId, current.sync_mode);
+    if (!updated) {
+      const err = new Error('Email connection not found.');
+      err.code = 'CONNECTION_NOT_FOUND';
+      throw err;
+    }
+    return { syncMode: updated.sync_mode };
+  }
+
+  /**
+   * EM8 (§14.1 POST /connections/:id/resume, §Lifecycle "Paused") —
+   * restores whatever sync_mode pauseConnection recorded, defaulting
+   * defensively to manual_selected if pre_pause_sync_mode is somehow unset
+   * (e.g. a connection paused before this migration existed). A no-op
+   * (returns the current mode unchanged) if the connection isn't paused —
+   * there's nothing to resume from. Deliberately does NOT re-check
+   * email_organization_settings.automatic_sync_enabled the way
+   * updateSyncMode's explicit automatic-mode switch does — that gate is
+   * scoped to a member actively choosing automatic mode, not to restoring
+   * a mode the connection already held before being paused; §Manual vs
+   * Automatic Sync's own "not silently reverted to manual_selected" framing
+   * for the org-wide toggle applies here identically.
+   */
+  async function resumeConnection({ clientId, oauthConnectionId }) {
+    if (!clientId) throw new Error('resumeConnection requires clientId');
+    if (!oauthConnectionId) throw new Error('resumeConnection requires oauthConnectionId');
+
+    const current = await emailConnectionsRepo.getByOauthConnectionId(oauthConnectionId);
+    if (!current) {
+      const err = new Error('Email connection not found.');
+      err.code = 'CONNECTION_NOT_FOUND';
+      throw err;
+    }
+    if (current.sync_mode !== 'paused') {
+      return { syncMode: current.sync_mode };
+    }
+
+    const restoredMode = SYNC_MODES.includes(current.pre_pause_sync_mode) ? current.pre_pause_sync_mode : 'manual_selected';
+    const updated = await emailConnectionsRepo.resumeConnection(oauthConnectionId, restoredMode);
+    if (!updated) {
+      const err = new Error('Email connection not found.');
+      err.code = 'CONNECTION_NOT_FOUND';
+      throw err;
+    }
     return { syncMode: updated.sync_mode };
   }
 
@@ -498,6 +628,8 @@ function createEmailConnectionService({
     getConnections,
     disconnect,
     updateSyncMode,
+    pauseConnection,
+    resumeConnection,
     getValidGmailAccessToken,
     getEmailConnectionRecord,
     ensureManagedLabel,

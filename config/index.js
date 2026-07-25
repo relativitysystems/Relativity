@@ -101,6 +101,16 @@ module.exports = {
     // EM5 (services/emailPreviewService.js) — one Gmail messages.get round
     // trip per candidate in the label-query dry-run preview.
     previewPageSize: parsePositiveInt('EMAIL_PREVIEW_PAGE_SIZE', process.env.EMAIL_PREVIEW_PAGE_SIZE, 10),
+    // EM8 (services/emailSyncService.js, §18.3) — how long after a completed
+    // automatic-mode sync before email_sync_state.next_sync_due_at makes the
+    // connection eligible again for the tick handler. Should roughly match
+    // AIKB's own EMAIL_SYNC_TICK_CRON_SCHEDULE cadence (documented, not
+    // enforced across the two repos/config systems).
+    tickIntervalMs: parsePositiveInt('EMAIL_SYNC_TICK_INTERVAL_MS', process.env.EMAIL_SYNC_TICK_INTERVAL_MS, 20 * 60 * 1000),
+    // EM8 — the tick handler's per-request processing cap (Vercel timeout,
+    // same reasoning as historicalSyncPageSize above) — connections beyond
+    // this many due ones simply wait for the next tick.
+    tickMaxConnections: parsePositiveInt('EMAIL_SYNC_TICK_MAX_CONNECTIONS', process.env.EMAIL_SYNC_TICK_MAX_CONNECTIONS, 10),
   },
   aikb: {
     apiBaseUrl: process.env.AIKB_API_BASE_URL,

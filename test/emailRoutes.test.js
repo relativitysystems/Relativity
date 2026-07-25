@@ -26,6 +26,7 @@ process.env.GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'https://rela
 process.env.GLOBAL_SUPABASE_URL = process.env.GLOBAL_SUPABASE_URL || 'https://example.supabase.co';
 process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY = process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || 'test-service-key';
 process.env.GLOBAL_SUPABASE_ANON_KEY = process.env.GLOBAL_SUPABASE_ANON_KEY || 'test-anon-key';
+process.env.SERVICE_REQUEST_SIGNING_SECRET = process.env.SERVICE_REQUEST_SIGNING_SECRET || 'test-service-request-secret';
 
 const app = require('../app');
 
@@ -39,6 +40,58 @@ test('Email integration routes — auth gating and safe callback redirects', asy
   const server = await startServer();
   const base = `http://127.0.0.1:${server.address().port}`;
   t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  // EM8 — POST /sync/tick (§18.3, §31). System-scoped, NOT clientAuth —
+  // mirrors test/slackEventsRoutes.test.js's own no-envelope/forged-
+  // signature pattern for POST /deliver exactly, since both routes are
+  // gated by the same HMAC service-request mechanism (services/
+  // serviceRequestAuth.js), just the system-scoped variant here. A
+  // successfully-authenticated call would reach emailSyncService.runTick,
+  // which hits the real Supabase client — outside this file's no-real-
+  // network-call convention, so (like every other route here) the actual
+  // fan-out/failure-isolation logic is covered via DI'd unit tests instead
+  // (test/emailSyncService.test.js's runTick suite).
+  await t.test('POST /api/integrations/email/sync/tick with no service-request envelope is rejected', async () => {
+    const res = await fetch(`${base}/api/integrations/email/sync/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('POST /api/integrations/email/sync/tick with a forged signature is rejected', async () => {
+    const res = await fetch(`${base}/api/integrations/email/sync/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId: 'x', issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(),
+        idempotencyKey: 'email-sync-tick:x', signature: 'forged', payload: {},
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
+  // A system envelope must never be accepted by a clientId-scoped route —
+  // confirms requireSystemServiceRequest and requireServiceRequest really
+  // are two separate, non-interchangeable gates, not one gate with an
+  // optional field.
+  await t.test('POST /api/integrations/email/sync/tick with a clientId-scoped (not system-scoped) envelope is rejected', async () => {
+    const { signServiceRequest } = require('../services/serviceRequestAuth');
+    const envelope = signServiceRequest({
+      clientId: 'client-1', idempotencyKey: 'email-sync-tick:x', payload: {},
+      secret: process.env.SERVICE_REQUEST_SIGNING_SECRET,
+    });
+    const res = await fetch(`${base}/api/integrations/email/sync/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...envelope, payload: {} }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
 
   await t.test('GET /api/integrations/email/gmail/start requires authentication', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/start`, { redirect: 'manual' });
@@ -105,6 +158,20 @@ test('Email integration routes — auth gating and safe callback redirects', asy
       body: JSON.stringify({ syncMode: 'automatic' }),
       redirect: 'manual',
     });
+    assert.equal(res.status, 401);
+  });
+
+  // EM8 — pause/resume (§14.1, §Lifecycle "Paused", §31). Same limitation
+  // as sync-mode above: the owns-this-connection gate runs only after
+  // clientAuth succeeds; see test/emailConnectionService.test.js for
+  // pauseConnection/resumeConnection's own DI-faked coverage.
+  await t.test('POST /api/integrations/email/connections/:id/pause requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/pause`, { method: 'POST', redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('POST /api/integrations/email/connections/:id/resume requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/connections/conn-1/resume`, { method: 'POST', redirect: 'manual' });
     assert.equal(res.status, 401);
   });
 

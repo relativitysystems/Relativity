@@ -578,13 +578,20 @@ function createGmailService({ httpClient = axios } = {}) {
   }
 
   /**
-   * `users.history.list` (EM7 — §18, §18.4): reads what changed for the
-   * managed label since `startHistoryId`, scoped via the `labelId` query
-   * param so this never sees unrelated mailbox activity (§18.2 — EM7 stays
-   * `manual_selected`-only, the label remains the only signal). Returns a
-   * flat, ORDER-PRESERVING list of `{type, messageId}` changes — callers
-   * reduce this to one final action per message (last-write-wins) rather
-   * than this function pre-grouping into added/removed sets, since a
+   * `users.history.list` (EM7 — §18, §18.4; EM8 — §18.3 extends this to
+   * automatic mode): reads what changed since `startHistoryId`. Two shapes,
+   * selected by the caller via `historyTypes`/`labelId`, never decided in
+   * here:
+   *   - manual mode (default `historyTypes`, `labelId` set): scoped to the
+   *     managed label so this never sees unrelated mailbox activity (§18.2)
+   *     — `labelAdded`/`labelRemoved`/`messageDeleted`.
+   *   - automatic mode (`historyTypes: ['messageAdded']`, no `labelId`):
+   *     unscoped — any new message anywhere in the mailbox, since automatic
+   *     mode has no label to scope by and relies on organization policy
+   *     alone (§16.1 item 3).
+   * Returns a flat, ORDER-PRESERVING list of `{type, messageId}` changes —
+   * callers reduce this to one final action per message (last-write-wins)
+   * rather than this function pre-grouping into added/removed sets, since a
    * message can legitimately be labeled and then unlabeled again within the
    * same page and only the net effect matters (§24.2).
    *
@@ -593,14 +600,19 @@ function createGmailService({ httpClient = axios } = {}) {
    * treat this as "fall back to a bounded historical re-scan," never a
    * generic failure (§18.4).
    */
-  async function listHistory({ accessToken, startHistoryId, labelId, pageToken, maxResults = 50 }) {
+  async function listHistory({ accessToken, startHistoryId, labelId, historyTypes, pageToken, maxResults = 50 }) {
     if (!accessToken) throw new Error('listHistory requires accessToken');
     if (!startHistoryId) throw new Error('listHistory requires startHistoryId');
 
+    // historyTypes defaults to the manual-mode shape (label-scoped
+    // added/removed + deletions, §18.2). EM8's automatic mode passes
+    // ['messageAdded'] instead — no managed label is relevant to automatic
+    // mode (§16.1 item 3), so the signal it needs is "any new message
+    // arrived in the mailbox," not "a label changed" — and correspondingly
+    // never sets labelId (the caller simply omits it).
+    const types = (historyTypes && historyTypes.length) ? historyTypes : ['labelAdded', 'labelRemoved', 'messageDeleted'];
     const params = new URLSearchParams({ startHistoryId: String(startHistoryId), maxResults: String(maxResults) });
-    params.append('historyTypes', 'labelAdded');
-    params.append('historyTypes', 'labelRemoved');
-    params.append('historyTypes', 'messageDeleted');
+    for (const type of types) params.append('historyTypes', type);
     if (labelId) params.set('labelId', labelId);
     if (pageToken) params.set('pageToken', pageToken);
 
@@ -634,6 +646,14 @@ function createGmailService({ httpClient = axios } = {}) {
       for (const entry of record.messagesDeleted || []) {
         const messageId = entry.message && entry.message.id;
         if (messageId) changes.push({ type: 'messageDeleted', messageId });
+      }
+      // Automatic mode only (EM8) — a brand-new message anywhere in the
+      // mailbox, unscoped by any label. Gmail's response field is the
+      // plural `messagesAdded`, mirroring `messagesDeleted` above; the
+      // singular `messageAdded` is only the historyTypes request-param value.
+      for (const entry of record.messagesAdded || []) {
+        const messageId = entry.message && entry.message.id;
+        if (messageId) changes.push({ type: 'messageAdded', messageId });
       }
     }
 
