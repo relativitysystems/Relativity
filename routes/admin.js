@@ -151,6 +151,23 @@ router.delete('/clients/:clientId', adminAuth, async (req, res) => {
   }
 });
 
+// EM9 (EMAIL_INGESTION.md §24.5, §27, §31) — every member's email
+// connection for this client, not just the caller's own (the portal's own
+// GET /api/integrations/email/connections?all=true is owner/admin-scoped to
+// a single client's session; this is Relativity-staff-only, across every
+// client). Flags stillConnectedAfterOffboarding so an offboarded member's
+// mailbox that was never actually disconnected doesn't silently disappear
+// from view.
+router.get('/clients/:clientId/email-connections', adminAuth, async (req, res) => {
+  try {
+    const connections = await supabaseService.getEmailConnectionsForClient(req.params.clientId);
+    res.json({ connections });
+  } catch (err) {
+    console.error('admin/clients/:clientId/email-connections error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/clients/:clientId/aikb-health', adminAuth, async (req, res) => {
   const { clientId } = req.params;
   const [statsR, issueR] = await Promise.allSettled([

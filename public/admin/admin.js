@@ -230,7 +230,7 @@
     return `
       <tr class="client-row">
         <td class="expand-cell">
-          <button class="btn-expand" data-target="${membersRowId}" aria-expanded="false" title="Show team members">▶</button>
+          <button class="btn-expand" data-target="${membersRowId}" data-client-id="${esc(c.id)}" aria-expanded="false" title="Show team members">▶</button>
         </td>
         <td>
           <div class="client-name">${esc(c.name)}</div>
@@ -250,8 +250,60 @@
         <td><button class="btn-delete" data-id="${esc(c.id)}" data-name="${esc(c.name)}">Delete</button></td>
       </tr>
       <tr id="${membersRowId}" class="members-row" hidden>
-        <td colspan="14">${renderMembersPanel(c.teamMembers || [])}</td>
+        <td colspan="14">
+          ${renderMembersPanel(c.teamMembers || [])}
+          <div id="email-connections-${esc(c.id)}" class="email-connections-panel" data-loaded="false"></div>
+        </td>
       </tr>
+    `;
+  }
+
+  // EM9 (EMAIL_INGESTION.md §24.5, §27, §31) — every member's Gmail
+  // connection for this client, including offboarded members whose
+  // connection was never actually disconnected (stillConnectedAfterOffboarding)
+  // so that gap is an explicit, visible row rather than a silent one.
+  function renderEmailConnectionsPanel(connections) {
+    if (!connections.length) {
+      return `<div class="members-panel"><p class="members-empty">No email connections.</p></div>`;
+    }
+
+    const memberStatusBadge = (status) => {
+      const cls = { active: 'badge--active', pending: 'badge--pending' }[status] || 'badge--closed_lost';
+      return `<span class="badge ${cls}">${esc(status || 'unknown')}</span>`;
+    };
+
+    const rows = connections.map(conn => `
+      <tr class="${conn.stillConnectedAfterOffboarding ? 'row--flagged' : ''}">
+        <td class="client-email">${esc(conn.mailbox_address)}</td>
+        <td class="client-email">${esc(conn.member_email || '—')}</td>
+        <td>${memberStatusBadge(conn.member_status)}</td>
+        <td>${esc(conn.sync_mode)}</td>
+        <td>${conn.sync_enabled ? 'yes' : 'no'}</td>
+        <td>${esc(conn.oauth_status || '—')}</td>
+        <td>${conn.stillConnectedAfterOffboarding
+          ? '<span class="badge badge--pending">Still connected — offboarded</span>'
+          : ''}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="members-panel">
+        <h4 class="members-panel-title">Email connections</h4>
+        <table class="members-table">
+          <thead>
+            <tr>
+              <th>Mailbox</th>
+              <th>Member</th>
+              <th>Member status</th>
+              <th>Sync mode</th>
+              <th>Sync enabled</th>
+              <th>OAuth status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -334,6 +386,25 @@
         targetRow.hidden = !nowOpen;
         expandBtn.textContent = nowOpen ? '▼' : '▶';
         expandBtn.setAttribute('aria-expanded', String(nowOpen));
+
+        // EM9 — lazy-load this client's email connections the first time
+        // the row is expanded (not pre-fetched for every client up front,
+        // matching this list's existing "fetch once, cache in the DOM"
+        // shape rather than a new global loading pattern).
+        const clientId = expandBtn.dataset.clientId;
+        const panel = document.getElementById(`email-connections-${clientId}`);
+        if (nowOpen && panel && panel.dataset.loaded !== 'true') {
+          panel.dataset.loaded = 'true';
+          panel.innerHTML = `<div class="members-panel"><p class="members-empty">Loading email connections…</p></div>`;
+          try {
+            const res = await adminFetch(`/admin/clients/${clientId}/email-connections`);
+            const body = await res.json();
+            panel.innerHTML = renderEmailConnectionsPanel(body.connections || []);
+          } catch {
+            panel.dataset.loaded = 'false';
+            panel.innerHTML = `<div class="members-panel"><p class="members-empty">Could not load email connections.</p></div>`;
+          }
+        }
       }
     }
   });

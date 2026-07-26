@@ -86,12 +86,18 @@ async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fil
   }
 }
 
-async function listDocuments(clientId) {
-  const envelope = signedEnvelope(clientId, {});
+// EM9 (EMAIL_INGESTION.md §24.1, §24.5) — filters is optional and additive;
+// every existing caller (countActiveDocuments, tombstoneMessages,
+// getClientDocumentStats, etc.) passes none and is unaffected. Used by
+// emailConnectionService.js's disconnect-with-cleanup path to enumerate
+// only the documents a specific offboarded/disconnecting member contributed
+// (contributingMemberId), rather than every document for the client.
+async function listDocuments(clientId, filters = {}) {
+  const envelope = signedEnvelope(clientId, filters);
   try {
     const res = await axios.get(`${aikbConfig.apiBaseUrl}/api/knowledge/documents/${clientId}`, {
       headers: aikbHeaders(),
-      data: { ...envelope, payload: {} },
+      data: { ...envelope, payload: filters },
     });
     return res.data;
   } catch (err) {

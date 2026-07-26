@@ -22,15 +22,25 @@
 // automatic-mode connection, exactly the same code path `POST
 // /connections/:id/sync` already used for manual "Sync now" clicks (§18.3).
 //
-// Deliberately NOT included in this first EM8 pass: remote-deletion/
-// policy-change tombstone reconciliation for `automatic`-mode connections
+// Deliberately NOT included in EM8: remote-deletion/policy-change tombstone
+// reconciliation for `automatic`-mode connections
 // (`reconcileRemovedLabelsFullList` remains manual-mode-only below — it's
 // keyed to the managed label, which automatic mode never uses as an
 // ingestion criterion, so running it against automatic-mode content would
-// tombstone messages that were never label-gated in the first place). A
-// real policy-change reconciliation pass for automatic mode is flagged as a
-// named follow-up, not silently absorbed — mirrors how EM6 shipped
-// historical-only before EM7 filled in incremental.
+// tombstone messages that were never label-gated in the first place). EM6
+// shipped historical-only before EM7 filled in incremental, the same shape.
+//
+// EM9 (§24.5, §28.1) fills in the policy-change half of that gap for BOTH
+// modes: `reconcilePolicyChanges` re-evaluates every previously-ingested
+// message against the CURRENT organization policy (independent of label
+// state) and tombstones anything that no longer matches, recorded as
+// `tombstoned_policy_change` — orthogonal to `reconcileRemovedLabelsFullList`
+// above, which only ever reconciles label withdrawal in manual mode.
+// Remote-deletion reconciliation for automatic-mode connections remains an
+// explicit, named follow-up (unchanged from EM8's own note) — automatic
+// mode has no per-message label to diff a "still present" list against, so
+// closing that gap needs its own mechanism, not something EM9's
+// policy-only reconciliation happens to cover.
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig, limits, email: emailConfig } = require('../config');
@@ -484,7 +494,7 @@ async function processOneCandidate(deps, { messageId, counts, events, imported, 
  * full-list reconciliation and the incremental per-page diff handling.
  * Best-effort per message: one delete failure doesn't block the rest.
  */
-async function tombstoneMessages({ aikbService, emailSyncRepo, clientId, emailConnectionRow, messageIds, syncRunId, reason }) {
+async function tombstoneMessages({ aikbService, emailSyncRepo, clientId, emailConnectionRow, messageIds, syncRunId, reason, outcome = 'tombstoned_label_removed' }) {
   if (!messageIds || messageIds.length === 0) return [];
 
   const documents = await aikbService.listDocuments(clientId);
@@ -507,7 +517,7 @@ async function tombstoneMessages({ aikbService, emailSyncRepo, clientId, emailCo
         sync_run_id: syncRunId,
         email_connection_id: emailConnectionRow.id,
         provider_message_id: messageId,
-        outcome: 'tombstoned_label_removed',
+        outcome,
         matched_rule_id: null,
         reason,
         ingested_document_id: documentId,
@@ -557,6 +567,93 @@ async function reconcileRemovedLabelsFullList({ gmailService, emailSyncRepo, aik
     });
   } catch (err) {
     console.error('[emailSyncService] full-list label reconciliation failed (non-fatal):', err.message);
+    return [];
+  }
+}
+
+/**
+ * EM9 (§24.5, §28.1's "Label reconciliation after policy changes" case) —
+ * re-evaluates every message this connection has previously ingested
+ * against the CURRENT organization policy (not against label state, which
+ * reconcileRemovedLabelsFullList above already handles) and tombstones any
+ * that no longer pass — e.g. an owner/admin edits the policy (PUT replaces
+ * the whole rule set) so a rule that used to match a category of email no
+ * longer does; the Gmail label is still present, so this is a distinct
+ * event from §24.2's label-withdrawal path, recorded as
+ * 'tombstoned_policy_change' rather than 'tombstoned_label_removed' (§13.1,
+ * the EM9 migration's widened outcome CHECK). Unlike
+ * reconcileRemovedLabelsFullList, this runs for BOTH sync modes and BOTH
+ * run types — a policy change must retroactively affect every connection
+ * it touches, not just the one whose sync happened to run right after the
+ * edit (§31 EM9 acceptance criteria), and manual mode's label gate is
+ * orthogonal to organization policy, not a substitute reconciliation target
+ * for it.
+ *
+ * Bounded to POLICY_RECONCILIATION_LIST_SIZE previously-ingested messages
+ * per sync (oldest-message-id order is not guaranteed — this is a
+ * best-effort MVP bound, the same documented tradeoff
+ * RECONCILIATION_LIST_SIZE already accepts elsewhere in this file): each
+ * candidate needs its own Gmail metadata re-fetch (no cheaper bulk API
+ * exists for "re-check policy," unlike label presence, which Gmail can list
+ * in one query), so this is deliberately capped rather than unbounded.
+ * Best-effort and non-fatal: a re-fetch failure for one message is skipped,
+ * not retried in this same pass, and never fails the sync run that
+ * triggered it — a later sync gets another chance.
+ */
+const POLICY_RECONCILIATION_LIST_SIZE = 500;
+
+async function reconcilePolicyChanges({ gmailService, emailPolicyService, emailSyncRepo, aikbService, clientId, emailConnectionRow, accessToken, mode, rules, syncRunId, excludeMessageIds = new Set() }) {
+  try {
+    const previouslyIngested = await emailSyncRepo.getPreviouslyIngestedMessageIds(emailConnectionRow.id);
+    if (previouslyIngested.length === 0) return [];
+    // A message the label-removal pass (reconcileRemovedLabelsFullList)
+    // already tombstoned this same sync is skipped here — both passes
+    // independently query "should this still be here," and a message can
+    // legitimately fail both checks at once (label removed AND no longer
+    // policy-eligible); tombstoning it twice would mean a second, redundant
+    // AIKB delete call against an already-deleted document and two
+    // conflicting event rows for the same message in the same run.
+    const candidates = previouslyIngested
+      .filter((messageId) => !excludeMessageIds.has(messageId))
+      .slice(0, POLICY_RECONCILIATION_LIST_SIZE);
+
+    const labels = await gmailService.listLabels(accessToken);
+    const labelNameById = new Map(labels.map((l) => [l.id, l.name]));
+
+    const noLongerEligible = [];
+    for (const messageId of candidates) {
+      let meta;
+      try {
+        meta = await gmailService.getMessageMetadata({ accessToken, messageId });
+      } catch (err) {
+        continue; // gone / transient failure — leave it for a future pass, don't fail the sync
+      }
+
+      const hasLabel = Boolean(emailConnectionRow.managed_label_id) && meta.labelIds.includes(emailConnectionRow.managed_label_id);
+      const labelsOrFolders = meta.labelIds.map((id) => labelNameById.get(id)).filter(Boolean);
+      const message = {
+        provider: 'gmail',
+        fromAddress: meta.fromAddress,
+        toAddresses: [],
+        ccAddresses: [],
+        subject: meta.subject,
+        isSent: meta.isSent,
+        labelsOrFolders,
+      };
+
+      const decision = emailPolicyService.evaluateMessageAgainstPolicy({ rules, mode, message, hasLabel });
+      if (!decision.eligible) noLongerEligible.push(messageId);
+    }
+    if (noLongerEligible.length === 0) return [];
+
+    return await tombstoneMessages({
+      aikbService, emailSyncRepo, clientId, emailConnectionRow, syncRunId,
+      messageIds: noLongerEligible,
+      reason: 'No longer matches organization policy.',
+      outcome: 'tombstoned_policy_change',
+    });
+  } catch (err) {
+    console.error('[emailSyncService] policy-change reconciliation failed (non-fatal):', err.message);
     return [];
   }
 }
@@ -853,6 +950,22 @@ function createEmailSyncService({
         gmailService, emailSyncRepo, aikbService, clientId, emailConnectionRow, accessToken, syncRunId: syncRun.id,
       });
     }
+    // EM9 (§24.5, §28.1) — policy-change reconciliation runs for both modes
+    // and both run types (unlike the label-removal pass above), only gated
+    // on the run having completed successfully — see reconcilePolicyChanges'
+    // own doc comment for why this can't be scoped to manual/historical only.
+    // excludeMessageIds prevents a double-tombstone of anything the
+    // label-removal pass above already handled this same sync.
+    if (complete && runStatus !== 'failed') {
+      const alreadyReconciledIds = new Set(extraReconciled.map((r) => r.messageId));
+      extraReconciled = [
+        ...extraReconciled,
+        ...(await reconcilePolicyChanges({
+          gmailService, emailPolicyService, emailSyncRepo, aikbService, clientId, emailConnectionRow, accessToken, mode, rules, syncRunId: syncRun.id,
+          excludeMessageIds: alreadyReconciledIds,
+        })),
+      ];
+    }
     const reconciled = [...pageOutcome.reconciled, ...extraReconciled];
 
     await emailSyncRepo.recordEvents(pageOutcome.events);
@@ -986,5 +1099,6 @@ module.exports = {
   ERROR_CODES,
   HISTORICAL_PAGE_SIZE,
   RECONCILIATION_LIST_SIZE,
+  POLICY_RECONCILIATION_LIST_SIZE,
   TICK_MAX_CONNECTIONS,
 };

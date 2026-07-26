@@ -497,6 +497,45 @@ async function updateClientMember(memberId, clientId, updates) {
   if (updates.search_enabled !== undefined) allowed.search_enabled = updates.search_enabled;
   allowed.updated_at = new Date().toISOString();
 
+  // EM9 (EMAIL_INGESTION.md §24.5, §25, §30 item 12) — a transition to
+  // disabled/revoked is an offboarding event and must force every one of
+  // this member's email connections to sync_enabled=false in the SAME
+  // atomic write, not a follow-up call: two separate Supabase calls here
+  // would leave the exact race window §25 flags (a sync starting between
+  // the status write and the sync_enabled flip). offboard_client_member
+  // (20260725_email_ingestion_em9.sql) does both inside one PL/pgSQL
+  // transaction, mirroring replace_active_oauth_connection's existing
+  // atomicity pattern. A status change to 'active'/'invited', or an update
+  // that doesn't touch status at all, is not an offboarding event and takes
+  // the plain single-table path below unchanged.
+  if (updates.status === 'disabled' || updates.status === 'revoked') {
+    const { data: offboarded, error: offboardError } = await supabase.rpc('offboard_client_member', {
+      p_member_id: memberId,
+      p_client_id: clientId,
+      p_status: updates.status,
+    });
+    if (offboardError) throw new Error(`updateClientMember (offboard) failed: ${offboardError.message}`);
+
+    // The RPC only ever writes status/updated_at on client_members. Any
+    // other field in this same call (role, full_name, ...) has no
+    // atomicity requirement with the offboarding cascade — apply it as a
+    // second, ordinary single-table write, same as any other update.
+    const otherUpdates = { ...allowed };
+    delete otherUpdates.status;
+    delete otherUpdates.updated_at;
+    if (Object.keys(otherUpdates).length === 0) return offboarded;
+
+    const { data, error } = await supabase
+      .from('client_members')
+      .update({ ...otherUpdates, updated_at: new Date().toISOString() })
+      .eq('id', memberId)
+      .eq('client_id', clientId)
+      .select()
+      .single();
+    if (error) throw new Error(`updateClientMember failed: ${error.message}`);
+    return data;
+  }
+
   const { data, error } = await supabase
     .from('client_members')
     .update(allowed)
@@ -839,10 +878,62 @@ async function upsertOwnerMember(clientId, authUserId, email) {
   if (error) throw new Error(`upsertOwnerMember failed: ${error.message}`);
 }
 
+// EM9 (EMAIL_INGESTION.md §24.5, §27, §31) — the internal admin console's
+// per-client email-connections view: every member's connection, joined
+// (plain queries, not an embedded join — same tradeoff as
+// listDueAutomaticConnections/getDocumentsByClient elsewhere in this
+// feature) against client_members and oauth_connections. Offboarding
+// (offboard_client_member, §24.5 item 1) always forces sync_enabled=false,
+// so that column is never a useful "did this get cleaned up" signal for an
+// offboarded member — the real gap being surfaced here is whether the
+// underlying OAuth connection was ever actually disconnected
+// (oauth_connections.status='active' means it wasn't, §24.5 item 3's
+// "disconnect without cleanup leaves content in place" precedent, and
+// disconnect was never called at all here). This is the admin's tool for
+// noticing that an offboarded member's mailbox is still shown as
+// OAuth-connected, not merely for confirming sync stopped.
+async function getEmailConnectionsForClient(clientId) {
+  const { data: connections, error: connectionsError } = await supabase
+    .from('email_connections')
+    .select('id, client_id, member_id, oauth_connection_id, provider, mailbox_address, display_name, sync_mode, sync_enabled, historical_import_status, created_at, updated_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: true });
+  if (connectionsError) throw new Error(`getEmailConnectionsForClient failed: ${connectionsError.message}`);
+  if (!connections || connections.length === 0) return [];
+
+  const memberIds = Array.from(new Set(connections.map((c) => c.member_id)));
+  const oauthConnectionIds = Array.from(new Set(connections.map((c) => c.oauth_connection_id)));
+
+  const [{ data: members, error: membersError }, { data: oauthRows, error: oauthError }] = await Promise.all([
+    supabase.from('client_members').select('id, email, full_name, status').in('id', memberIds),
+    supabase.from('oauth_connections').select('id, status').in('id', oauthConnectionIds),
+  ]);
+  if (membersError) throw new Error(`getEmailConnectionsForClient (members) failed: ${membersError.message}`);
+  if (oauthError) throw new Error(`getEmailConnectionsForClient (oauth_connections) failed: ${oauthError.message}`);
+
+  const memberById = new Map((members || []).map((m) => [m.id, m]));
+  const oauthStatusById = new Map((oauthRows || []).map((o) => [o.id, o.status]));
+
+  return connections.map((c) => {
+    const member = memberById.get(c.member_id) || null;
+    const oauthStatus = oauthStatusById.get(c.oauth_connection_id) || null;
+    const memberOffboarded = Boolean(member) && ['disabled', 'revoked'].includes(member.status);
+    return {
+      ...c,
+      member_email: member ? member.email : null,
+      member_full_name: member ? member.full_name : null,
+      member_status: member ? member.status : null,
+      oauth_status: oauthStatus,
+      stillConnectedAfterOffboarding: memberOffboarded && oauthStatus === 'active',
+    };
+  });
+}
+
 module.exports = {
   upsertToken,
   getToken,
   getClientById,
+  getEmailConnectionsForClient,
   getClientByAuthUserId,
   getClientConnectionStatus,
   updateClientSlackChannel,

@@ -248,6 +248,21 @@
   border-top: none;
 }
 
+.members-panel-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin: 16px 0 8px;
+}
+
+/* EM9 (EMAIL_INGESTION.md §24.5, §27) — an offboarded member's email
+   connection that was never actually disconnected (stillConnectedAfterOffboarding). */
+.row--flagged td {
+  background: rgba(234, 179, 8, 0.08);
+}
+
 /* ---- Member role badges ---- */
 .badge--role-owner {
   background: rgba(139, 92, 246, 0.12);

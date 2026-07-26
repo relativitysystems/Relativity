@@ -30,6 +30,8 @@ function makeFakes(overrides = {}) {
     refreshAccessToken: [],
     getDecryptedCredentialForConnection: [],
     updateCredentialForConnection: [],
+    listDocuments: [],
+    deleteDocumentById: [],
   };
 
   // In-memory model of oauth_connections rows, keyed by connectionId, so
@@ -237,8 +239,24 @@ function makeFakes(overrides = {}) {
     },
   };
 
+  // EM9 — disconnect-with-cleanup's only real dependency: listDocuments
+  // (contributingMemberId-filtered) + deleteDocumentById, mirroring
+  // emailSyncService.test.js's fixtureAikbService shape.
+  const aikbService = {
+    listDocuments: async (clientId, filters) => {
+      calls.listDocuments.push({ clientId, filters });
+      if (overrides.listDocuments) return overrides.listDocuments(clientId, filters);
+      return { documents: [] };
+    },
+    deleteDocumentById: async (clientId, documentId) => {
+      calls.deleteDocumentById.push({ clientId, documentId });
+      if (overrides.deleteDocumentById) return overrides.deleteDocumentById(clientId, documentId);
+      return undefined;
+    },
+  };
+
   const service = createEmailConnectionService({
-    oauthStateService, gmailService, oauthConnectionsService, supabaseService, emailConnectionsRepo, emailPolicyService,
+    oauthStateService, gmailService, oauthConnectionsService, supabaseService, emailConnectionsRepo, emailPolicyService, aikbService,
   });
   return { service, calls, connectionsStore };
 }
@@ -685,6 +703,59 @@ test('disconnect is tenant-scoped — a connectionId belonging to a different cl
   assert.deepEqual(result, { disconnected: true });
   assert.equal(calls.revokeToken.length, 0);
   assert.equal(calls.markConnectionRevokedForMember.length, 0);
+});
+
+// ─────────────────────────────────────────────
+// disconnect — cleanupIngestedContent (EM9 — §24, §14.1)
+// ─────────────────────────────────────────────
+
+test('disconnect without cleanupIngestedContent never calls AIKB listDocuments/deleteDocumentById', async () => {
+  const { service, calls } = makeFakes({
+    getConnectionById: async () => ({ id: 'conn-1', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' }),
+  });
+  const result = await service.disconnect({ clientId: 'client-a', connectionId: 'conn-1' });
+  assert.deepEqual(result, { disconnected: true });
+  assert.equal(calls.listDocuments.length, 0);
+  assert.equal(calls.deleteDocumentById.length, 0);
+});
+
+test('disconnect with cleanupIngestedContent:true enumerates documents filtered by the connection\'s member and deletes each one', async () => {
+  const docs = [{ id: 'doc-1' }, { id: 'doc-2' }];
+  const { service, calls } = makeFakes({
+    getConnectionById: async () => ({ id: 'conn-1', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' }),
+    listDocuments: async () => ({ documents: docs }),
+  });
+  const result = await service.disconnect({ clientId: 'client-a', connectionId: 'conn-1', cleanupIngestedContent: true });
+
+  assert.equal(calls.listDocuments.length, 1);
+  assert.deepEqual(calls.listDocuments[0], { clientId: 'client-a', filters: { contributingMemberId: 'member-a' } });
+  assert.equal(calls.deleteDocumentById.length, 2);
+  assert.deepEqual(calls.deleteDocumentById.map((c) => c.documentId).sort(), ['doc-1', 'doc-2']);
+  assert.deepEqual(result.cleanup, { requested: 2, deleted: 2, failed: 0 });
+});
+
+test('disconnect cleanup is best-effort: one delete failure is counted, not thrown, and the rest still proceed', async () => {
+  const docs = [{ id: 'doc-1' }, { id: 'doc-2' }];
+  const { service } = makeFakes({
+    getConnectionById: async () => ({ id: 'conn-1', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' }),
+    listDocuments: async () => ({ documents: docs }),
+    deleteDocumentById: async (clientId, documentId) => {
+      if (documentId === 'doc-1') throw new Error('simulated AIKB delete failure');
+    },
+  });
+  const result = await service.disconnect({ clientId: 'client-a', connectionId: 'conn-1', cleanupIngestedContent: true });
+  assert.deepEqual(result.cleanup, { requested: 2, deleted: 1, failed: 1 });
+  // The connection itself is still disconnected regardless of cleanup outcome.
+  assert.equal(result.disconnected, true);
+});
+
+test('disconnect cleanup with zero contributed documents is a safe no-op', async () => {
+  const { service } = makeFakes({
+    getConnectionById: async () => ({ id: 'conn-1', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' }),
+    listDocuments: async () => ({ documents: [] }),
+  });
+  const result = await service.disconnect({ clientId: 'client-a', connectionId: 'conn-1', cleanupIngestedContent: true });
+  assert.deepEqual(result.cleanup, { requested: 0, deleted: 0, failed: 0 });
 });
 
 // ─────────────────────────────────────────────

@@ -17,17 +17,18 @@
 // for services/emailPreviewService.js's dry-run preview to call — still no
 // ingestion (EM6) or real sync run here.
 //
-// Disconnect is self-service ONLY in EM2 — a member may disconnect only
+// Disconnect was self-service ONLY in EM2 — a member could disconnect only
 // their own connection, with no owner/admin override, even though §14.1's
-// general route table describes the eventual full-feature shape as
-// "connection's own member or owner/admin." For a consent-sensitive
-// feature like a personal mailbox connection, that administrative override
-// is deliberately deferred to EM9 (member offboarding and policy
-// reconciliation) rather than built now — see the EM2 Implementation
-// Record in EMAIL_INGESTION.md for the full reasoning. updateSyncMode
-// (EM4) follows the identical self-service-only shape — the route enforces
-// canDisconnectConnection's own-connection check before calling it, no
-// owner/admin override here either.
+// general route table always described the eventual full-feature shape as
+// "connection's own member or owner/admin." That administrative override,
+// plus the cleanupIngestedContent body param, is EM9's (member offboarding
+// and policy reconciliation) — see disconnect() below and the EM9
+// Implementation Record in EMAIL_INGESTION.md. canDisconnectConnection
+// itself is UNCHANGED by EM9 — it still expresses only "is this your own
+// connection," since updateSyncMode/pauseConnection/resumeConnection/sync/
+// preview all reuse it for their own self-service-only shape, which EM9
+// does not touch; the owner/admin override lives only in the disconnect
+// route's own authorization check, not in this shared predicate.
 
 const { createClient } = require('@supabase/supabase-js');
 const { supabase: supabaseConfig } = require('../config');
@@ -36,6 +37,7 @@ const defaultGmailService = require('./gmailService');
 const defaultOauthConnectionsService = require('./oauthConnectionsService');
 const defaultSupabaseService = require('./supabaseService');
 const defaultEmailPolicyService = require('./emailPolicyService');
+const defaultAikbService = require('./aikbService');
 
 const SYNC_MODES = ['manual_selected', 'automatic'];
 
@@ -216,6 +218,35 @@ function mapGmailConnectionResponse(connectionRow, emailConnectionRow, nextSyncD
 }
 
 /**
+ * EM9 (§24.1, §24.5) — disconnect-with-cleanup: enumerate every AIKB
+ * document this member contributed (contributingMemberId-filtered, §13.2 —
+ * the AIKB documents listing now supports this filter) and tombstone each
+ * via the existing per-document delete path. A loop over individual
+ * deletes, not a dedicated bulk-delete endpoint — the exact MVP tradeoff
+ * §24.1 accepts. Best-effort per document: one failure doesn't block the
+ * rest, mirroring emailSyncService.js's tombstoneMessages discipline.
+ */
+async function cleanupMemberContent({ aikbService, clientId, memberId }) {
+  const result = await aikbService.listDocuments(clientId, { contributingMemberId: memberId });
+  const docs = result.documents || (Array.isArray(result) ? result : []);
+
+  let deleted = 0;
+  let failed = 0;
+  for (const doc of docs) {
+    const documentId = doc.id || doc.documentId || doc.document_id;
+    if (!documentId) continue;
+    try {
+      await aikbService.deleteDocumentById(clientId, documentId);
+      deleted++;
+    } catch (err) {
+      failed++;
+      console.error('[gmail oauth] disconnect-cleanup delete failed:', documentId, err.message);
+    }
+  }
+  return { requested: docs.length, deleted, failed };
+}
+
+/**
  * @param {object} [deps] — injected for testing; each defaults to the real singleton service.
  */
 function createEmailConnectionService({
@@ -225,6 +256,7 @@ function createEmailConnectionService({
   supabaseService = defaultSupabaseService,
   emailConnectionsRepo = defaultEmailConnectionsRepo,
   emailPolicyService = defaultEmailPolicyService,
+  aikbService = defaultAikbService,
 } = {}) {
   /**
    * GET /:provider/start — self-service: any active member whose role isn't
@@ -398,13 +430,23 @@ function createEmailConnectionService({
 
   /**
    * POST /connections/:id/disconnect — the route loads the connection first
-   * and enforces canDisconnectConnection (self-service only in EM2) before
-   * ever calling this; this function re-fetches by id itself rather than
-   * trusting a caller-supplied row, and only ever revokes the specific
-   * member's connection it was given — never every gmail connection for the
-   * client. Idempotent, mirrors slackIntegrationService.js's disconnect.
+   * and enforces authorization (self-service, OR — as of EM9 — owner/admin,
+   * per §14.1's route table) before ever calling this; this function
+   * re-fetches by id itself rather than trusting a caller-supplied row, and
+   * only ever revokes the specific member's connection it was given — never
+   * every gmail connection for the client. Idempotent, mirrors
+   * slackIntegrationService.js's disconnect.
+   *
+   * `cleanupIngestedContent` (EM9 — §24, §14.1) is the other half of §14.1's
+   * route-table note that both the owner/admin override AND this body param
+   * belong to EM9, not EM2: when true, every AIKB document this connection's
+   * member contributed is enumerated and deleted (cleanupMemberContent
+   * above) as part of the same call — best-effort, never fails the
+   * disconnect itself if cleanup partially fails (matches §24.1's own
+   * "disconnect always succeeds locally" framing; a cleanup failure is
+   * reported back in the response, not thrown).
    */
-  async function disconnect({ clientId, connectionId }) {
+  async function disconnect({ clientId, connectionId, cleanupIngestedContent = false }) {
     if (!clientId) throw new Error('disconnect requires clientId');
     if (!connectionId) throw new Error('disconnect requires connectionId');
 
@@ -430,7 +472,21 @@ function createEmailConnectionService({
     }
 
     await oauthConnectionsService.markConnectionRevokedForMember(clientId, PROVIDER, connection.connected_by_member_id);
-    return { disconnected: true };
+
+    if (!cleanupIngestedContent) {
+      return { disconnected: true };
+    }
+
+    let cleanup;
+    try {
+      cleanup = await cleanupMemberContent({ aikbService, clientId, memberId: connection.connected_by_member_id });
+    } catch (err) {
+      // The connection is already revoked above — a cleanup failure must
+      // never be reported as a failed disconnect, only as a failed cleanup.
+      console.error('[gmail oauth] disconnect-cleanup error (non-fatal to disconnect itself):', err.message);
+      cleanup = { requested: 0, deleted: 0, failed: 0, error: err.message };
+    }
+    return { disconnected: true, cleanup };
   }
 
   /**

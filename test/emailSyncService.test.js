@@ -51,6 +51,12 @@ const DEFAULT_FIXTURE_HISTORY_ID = 'history-default';
 function fixtureGmailService({
   pages = [], labels = LABELS, bodies = {}, calls = {},
   mailboxHistoryId = DEFAULT_FIXTURE_HISTORY_ID, historyPages = [],
+  // EM9 (§24.5, §28.1) — reconcilePolicyChanges re-fetches metadata for
+  // previously-ingested messages independent of any current page's
+  // candidates; extraMessages lets a test give one of those messages a
+  // resolvable metadata fixture without it also appearing as a "new"
+  // candidate in listMessageIdsByQuery/history.list.
+  extraMessages = [],
 } = {}) {
   let pageCall = 0;
   let historyPageCall = 0;
@@ -65,7 +71,11 @@ function fixtureGmailService({
     },
     listLabels: async () => labels,
     getMessageMetadata: async ({ messageId }) => {
-      const all = pages.flatMap((p) => p.messages);
+      // extraMessages takes priority — a page entry added only to satisfy a
+      // reconciliation pass's own listMessageIdsByQuery call (e.g. "still
+      // under the label") may carry nothing but an id, and must never shadow
+      // a fuller extraMessages fixture for the same messageId.
+      const all = extraMessages.concat(pages.flatMap((p) => p.messages));
       const m = all.find((x) => x.id === messageId);
       if (!m) throw new Error(`fixture: no metadata for ${messageId}`);
       return {
@@ -186,10 +196,10 @@ function fixtureEmailSyncRepo({
 
 function makeService({
   pages, rules, labels, gmailCalls, bodies, documents, failIngestFor, aikbCalls, previouslyIngested, maxDocuments,
-  historyPages, mailboxHistoryId, initialSyncState,
+  historyPages, mailboxHistoryId, initialSyncState, extraMessages,
 } = {}) {
   const emailSyncRepo = fixtureEmailSyncRepo({ previouslyIngested, initialSyncState });
-  const gmailService = fixtureGmailService({ pages, labels, bodies, calls: gmailCalls || {}, historyPages, mailboxHistoryId });
+  const gmailService = fixtureGmailService({ pages, labels, bodies, calls: gmailCalls || {}, historyPages, mailboxHistoryId, extraMessages });
   const aikbService = fixtureAikbService({ documents, failIngestFor, calls: aikbCalls || {} });
   const service = createEmailSyncService({
     gmailService,
@@ -563,6 +573,144 @@ test('reconciliation does not run on an incomplete (paginated) sync — only onc
   const { service } = makeService({ pages, rules: [ALLOW_FINANCE], documents, previouslyIngested: ['old-msg'] });
   const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
   assert.equal(result.complete, false);
+  assert.equal(result.reconciled.length, 0);
+});
+
+// ─────────────────────────────────────────────
+// EM9 — policy-change reconciliation (§24.5, §28.1's "Label reconciliation
+// after policy changes" case): a previously-ingested message, still
+// labeled, whose organization then edits policy so it no longer matches.
+// ─────────────────────────────────────────────
+
+test('policy-change reconciliation: a previously-ingested message that now matches a deny rule is tombstoned as tombstoned_policy_change, label still present', async () => {
+  // Two pages: the first is the main historical scan (nothing new); the
+  // second is reconcileRemovedLabelsFullList's own "what's currently under
+  // the label" query — 'old-msg' is reported there too, so the label-removal
+  // pass correctly sees it as still labeled and does NOT also tombstone it,
+  // isolating this test to the policy-reconciliation path alone.
+  const pages = [
+    { messages: [], nextPageToken: null },
+    { messages: [{ id: 'old-msg' }], nextPageToken: null },
+  ];
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'old-msg', status: 'indexed' }];
+  const extraMessages = [{
+    id: 'old-msg', subject: 'Payroll run', fromAddress: 'hr@client.com',
+    labelIds: [MANAGED_LABEL_ID, 'Label_payroll'],
+  }];
+  const { service, emailSyncRepo } = makeService({
+    pages, rules: [ALLOW_FINANCE, DENY_PAYROLL], documents, previouslyIngested: ['old-msg'], extraMessages,
+  });
+
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+
+  assert.equal(result.complete, true);
+  assert.equal(result.reconciled.length, 1);
+  assert.equal(result.reconciled[0].messageId, 'old-msg');
+  assert.equal(result.reconciled[0].documentId, 'doc-old');
+  const event = emailSyncRepo._events.find((e) => e.provider_message_id === 'old-msg');
+  assert.equal(event.outcome, 'tombstoned_policy_change');
+  assert.equal(event.ingested_document_id, 'doc-old');
+});
+
+test('policy-change reconciliation: a previously-ingested message that no longer matches any allow rule is tombstoned', async () => {
+  const pages = [
+    { messages: [], nextPageToken: null },
+    { messages: [{ id: 'old-msg' }], nextPageToken: null }, // still under the label — see the deny-rule test above for why this second page matters
+  ];
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'old-msg', status: 'indexed' }];
+  const extraMessages = [{
+    id: 'old-msg', subject: 'Random newsletter', fromAddress: 'news@vendor.com',
+    labelIds: [MANAGED_LABEL_ID], // still labeled — the allow rule for 'finance' was removed, not the label
+  }];
+  // Rule set no longer includes ALLOW_FINANCE at all (simulates a PUT
+  // /policy replace that dropped it) — 'old-msg' never matched anything
+  // else, so it now falls through to excluded_no_matching_rule.
+  const { service, emailSyncRepo } = makeService({
+    pages, rules: [], documents, previouslyIngested: ['old-msg'], extraMessages,
+  });
+
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+
+  assert.equal(result.reconciled.length, 1);
+  assert.equal(result.reconciled[0].messageId, 'old-msg');
+  const event = emailSyncRepo._events.find((e) => e.provider_message_id === 'old-msg');
+  assert.equal(event.outcome, 'tombstoned_policy_change');
+});
+
+test('policy-change reconciliation: a previously-ingested message that STILL matches policy is left alone', async () => {
+  const pages = [
+    { messages: [], nextPageToken: null },
+    { messages: [{ id: 'keep-msg' }], nextPageToken: null }, // still under the label
+  ];
+  const documents = [{ id: 'doc-keep', source_provider: 'gmail', source_file_id: 'keep-msg', status: 'indexed' }];
+  const extraMessages = [{
+    id: 'keep-msg', subject: 'Finance update', fromAddress: 'finance@client.com',
+    labelIds: [MANAGED_LABEL_ID, 'Label_finance'],
+  }];
+  const { service } = makeService({
+    pages, rules: [ALLOW_FINANCE], documents, previouslyIngested: ['keep-msg'], extraMessages,
+  });
+
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.reconciled.length, 0);
+});
+
+test('policy-change reconciliation runs for automatic-mode connections too, unlike label-removal reconciliation', async () => {
+  const pages = [{ messages: [], nextPageToken: null }];
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'old-msg', status: 'indexed' }];
+  const extraMessages = [{
+    id: 'old-msg', subject: 'Payroll run', fromAddress: 'hr@client.com',
+    labelIds: ['Label_payroll'], // automatic mode never consults the label at all
+  }];
+  const { service } = makeService({
+    pages, rules: [ALLOW_FINANCE, DENY_PAYROLL], documents, previouslyIngested: ['old-msg'], extraMessages,
+  });
+
+  const result = await service.syncConnection({
+    clientId: 'client-a', emailConnectionRow: fixtureConnection({ sync_mode: 'automatic' }), memberSearchEnabled: true, accessToken: 't',
+  });
+
+  assert.equal(result.reconciled.length, 1);
+  assert.equal(result.reconciled[0].messageId, 'old-msg');
+});
+
+test('policy-change reconciliation: a re-fetch failure for one candidate is skipped, not thrown — the sync still completes', async () => {
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'gone-msg', status: 'indexed' }];
+  // Custom gmailService (not fixtureGmailService) for precise control: the
+  // label-removal pass's "what's currently under the label" query reports
+  // 'gone-msg' as still present (so THAT pass doesn't also tombstone it —
+  // isolating this test to the policy path), while getMessageMetadata
+  // — the call reconcilePolicyChanges actually needs to exercise — always
+  // throws, simulating a real re-fetch failure reconcilePolicyChanges must
+  // swallow per-message rather than letting it fail the whole sync.
+  let listCall = 0;
+  const gmailService = {
+    compileSearchQuery,
+    // First call is the main historical scan (nothing new); the second is
+    // reconcileRemovedLabelsFullList's own "currently under the label" query.
+    listMessageIdsByQuery: async () => {
+      listCall++;
+      return listCall === 1 ? { messageIds: [], nextPageToken: null } : { messageIds: ['gone-msg'], nextPageToken: null };
+    },
+    listLabels: async () => LABELS,
+    getMessageMetadata: async () => { throw new Error('simulated Gmail fetch failure'); },
+    getMessageBody: async () => { throw new Error('not used in this test'); },
+    getMailboxHistoryId: async () => ({ historyId: DEFAULT_FIXTURE_HISTORY_ID }),
+    listHistory: async () => { throw new Error('not used in this test'); },
+  };
+  const emailSyncRepo = fixtureEmailSyncRepo({ previouslyIngested: ['gone-msg'] });
+  const aikbService = fixtureAikbService({ documents });
+  const service = createEmailSyncService({
+    gmailService,
+    emailPolicyService: fixtureEmailPolicyService([ALLOW_FINANCE]),
+    emailNormalizationService: { normalizeEmailBody },
+    aikbService,
+    emailSyncRepo,
+    maxDocuments: 50,
+  });
+
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.status, 'completed');
   assert.equal(result.reconciled.length, 0);
 });
 

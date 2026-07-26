@@ -163,24 +163,34 @@ router.get('/connections', clientAuth, async (req, res) => {
 
 /**
  * POST /api/integrations/email/connections/:id/disconnect
- * Self-service only in EM2 — callable ONLY by the connection's own member.
- * Owners/admins get no override here, deliberately (see the file-header
- * comment and the EM2 Implementation Record). The ownership check happens
- * here, inline, after loading the target row — it can't be a pre-route
- * middleware since it needs connected_by_member_id first.
+ * Self-service (the connection's own member) OR — as of EM9 — owner/admin,
+ * matching §14.1's route table (the EM2 Implementation Record flagged the
+ * owner/admin branch and the cleanupIngestedContent body param as
+ * deliberately out of scope until this milestone). The ownership-or-admin
+ * check happens here, inline, after loading the target row — it can't be a
+ * pre-route middleware since it needs connected_by_member_id first. Body:
+ * optional `{cleanupIngestedContent: boolean}` (§24) — when true, every
+ * document this member contributed is enumerated and deleted as part of
+ * the same call (services/emailConnectionService.js#cleanupMemberContent).
  */
 router.post('/connections/:id/disconnect', clientAuth, async (req, res) => {
   const { id } = req.params;
+  const { cleanupIngestedContent } = req.body || {};
   try {
     const connection = await oauthConnectionsService.getConnectionById(id);
     if (!connection || connection.client_id !== req.client.id || connection.provider !== PROVIDER) {
       return res.status(404).json({ error: 'Connection not found.' });
     }
-    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id })) {
+    const isOwnerAdmin = OWNER_ADMIN.includes(req.member.role);
+    if (!canDisconnectConnection({ connection, actingMemberId: req.member.id }) && !isOwnerAdmin) {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
-    const result = await emailConnectionService.disconnect({ clientId: req.client.id, connectionId: id });
+    const result = await emailConnectionService.disconnect({
+      clientId: req.client.id,
+      connectionId: id,
+      cleanupIngestedContent: cleanupIngestedContent === true,
+    });
     res.json(result);
   } catch (err) {
     console.error('POST /api/integrations/email/connections/:id/disconnect error:', err.message);
