@@ -61,24 +61,6 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
   line-height: 1.75;
 }
 
-/* === Long-form prose === */
-.prose {
-  max-width: 680px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.prose p {
-  font-size: 1.05rem;
-  line-height: 1.85;
-  color: var(--text-secondary);
-}
-
-.prose + .prose {
-  margin-top: 22px;
-}
-
 /* === Buttons === */
 .btn {
   display: inline-block;
@@ -390,38 +372,118 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   margin-top: 4px;
 }
 
-/* Philosophy — a distinct chapter break via background tint, not a border/box */
-.philosophy {
-  background: var(--surface);
-  padding: 130px 0;
+/* ============================================================
+   COMPANY KNOWLEDGE SOURCES — icon grid converging into one layer
+   ============================================================ */
+.sources-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
 }
 
-.philosophy-statement {
-  max-width: 760px;
+.sources-grid li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 18px;
+  color: var(--text-secondary);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.sources-grid li:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-tint-2);
+}
+
+.sources-grid li span {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sources-connector {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0;
+  color: var(--text-muted);
+}
+
+.sources-target {
+  max-width: 640px;
   margin: 0 auto;
   text-align: center;
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 500;
-  font-size: clamp(1.4rem, 2.4vw, 1.85rem);
-  line-height: 1.6;
-  letter-spacing: -0.01em;
-  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 36px 32px;
 }
 
-/* Problem — lead statement, prominent but subordinate to the hero h1 */
-.problem-lead {
+.sources-target__label {
+  display: block;
   font-family: 'Space Grotesk', sans-serif;
-  font-weight: 500;
-  font-size: clamp(1.3rem, 2.2vw, 1.6rem);
-  line-height: 1.5;
+  font-weight: 600;
+  font-size: 1.15rem;
   letter-spacing: -0.01em;
   color: var(--text);
-  max-width: 680px;
-  margin-bottom: 28px;
+  margin-bottom: 12px;
+}
+
+.sources-target__desc {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.sources-target__status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+.sources-target__status strong {
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 /* ============================================================
-   FEATURE CHAPTER ("Built for how company knowledge actually works")
+   BUSINESS OUTCOMES — short icon/text value grid
+   ============================================================ */
+.outcomes-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 36px 28px;
+}
+
+.outcomes-grid li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--badge-orange);
+}
+
+.outcomes-grid h3 {
+  color: var(--text);
+}
+
+.outcomes-grid p {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   FEATURE CHAPTER ("The Product" — product experience)
    Large editorial rows, alternating text/visual — no card grids.
    ============================================================ */
 .feature-row {
@@ -533,49 +595,6 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   margin-top: 10px;
 }
 
-/* Google Drive import mockup */
-.mock-import__action {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: fit-content;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 22px;
-}
-
-.mock-import__list {
-  list-style: none;
-  border-top: 1px solid var(--border);
-}
-
-.mock-import__list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.88rem;
-}
-
-.mock-import__name {
-  color: var(--text);
-}
-
-.mock-import__status {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--success);
-  flex-shrink: 0;
-}
-
 /* Collections mockup */
 .mock-collections__list {
   list-style: none;
@@ -616,59 +635,8 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   color: var(--text);
 }
 
-/* Onboarding mockup */
-.mock-onboarding__list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.mock-onboarding__list li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-}
-
-.mock-onboarding__list li.is-done {
-  color: var(--text);
-}
-
-.mock-onboarding__list li.is-next {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.mock-onboarding__check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--success);
-  color: #fff;
-  font-size: 0.7rem;
-  flex-shrink: 0;
-}
-
-.mock-onboarding__arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid var(--border-hover);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
 /* ============================================================
-   WORKFLOW ("How Relativity works today") — connected step row
+   WORKFLOW ("How Relativity Works") — connected step row
    ============================================================ */
 .workflow-steps {
   display: flex;
@@ -706,35 +674,6 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   line-height: 1.6;
   color: var(--text-secondary);
   padding-bottom: 28px;
-}
-
-/* Growing With Your Business — editorial label/text rows, no cards */
-.growing-block {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 40px;
-  padding: 32px 0;
-  border-top: 1px solid var(--border);
-  max-width: 820px;
-}
-
-.growing-block:last-child {
-  padding-bottom: 0;
-}
-
-.growing-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--badge-orange);
-  padding-top: 3px;
-}
-
-.growing-block p {
-  font-size: 1.05rem;
-  line-height: 1.8;
-  color: var(--text-secondary);
 }
 
 /* === CTA Banner === */
@@ -971,9 +910,8 @@ footer {
     border-bottom: none;
   }
 
-  .growing-block {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .sources-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   }
 
   .cta-inner {
@@ -1087,5 +1025,9 @@ footer {
 
   .proof-panel {
     padding: 22px 20px 20px;
+  }
+
+  .sources-target {
+    padding: 28px 20px;
   }
 }

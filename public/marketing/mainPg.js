@@ -32,7 +32,7 @@ const io = new IntersectionObserver((entries) => {
       const parent = entry.target.parentElement;
       const siblings = [...parent.querySelectorAll('.fade-in')];
       const idx = siblings.indexOf(entry.target);
-      const isGrid = parent.classList.contains('solution-points');
+      const isGrid = parent.classList.contains('sources-grid') || parent.classList.contains('outcomes-grid');
       const delay = (isGrid && !prefersReducedMotion) ? idx * 80 : 0;
       setTimeout(() => entry.target.classList.add('visible'), delay);
       io.unobserve(entry.target);
