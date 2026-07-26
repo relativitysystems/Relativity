@@ -1856,26 +1856,7 @@
     wrap.appendChild(bubble);
 
     if (role === 'assistant' && shouldShowSourcesBox(content, sources)) {
-      const srcBox = document.createElement('div');
-      srcBox.className = 'kb-message-sources';
-      const label = document.createElement('span');
-      label.className = 'kb-message-sources-label';
-      label.textContent = 'Sources';
-      srcBox.appendChild(label);
-      const ul = document.createElement('ul');
-      sources.forEach(s => {
-        const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
-        let display = name;
-        if (s && s.pages && s.pages.length > 0) {
-          const prefix = s.pages.length === 1 ? 'p.' : 'pp.';
-          display = `${name} — ${prefix} ${s.pages.join(', ')}`;
-        }
-        const li = document.createElement('li');
-        li.textContent = display;
-        ul.appendChild(li);
-      });
-      srcBox.appendChild(ul);
-      wrap.appendChild(srcBox);
+      wrap.appendChild(buildSourcesBox(sources));
     }
 
     kbMessages.appendChild(wrap);
@@ -1955,10 +1936,73 @@
     kbMessages.scrollTop = kbMessages.scrollHeight;
   }
 
-  function shouldShowSourcesBox(answerText, sources) {
-    if (!sources || sources.length === 0) return false;
-    if (/Source:/i.test(answerText)) return false;
-    return true;
+  // EM10 (EMAIL_INGESTION.md §23) — the pure shaping logic (grouping,
+  // suppression rules, date formatting) lives in portalCitations.js, loaded
+  // as a separate <script> before this file (portal.html) so it's directly
+  // unit-testable via node:test without a DOM, mirroring portalCache.js's
+  // existing split. Only the DOM-building below stays in this file.
+  const { shouldShowSourcesBox, isEmailSource, formatCitationDate, groupSourcesForDisplay } = PortalCitations;
+
+  function renderEmailCitationLine(s) {
+    const li = document.createElement('li');
+    const subject = s.subject || '(no subject)';
+    const from = s.from || 'unknown sender';
+    const date = formatCitationDate(s.sentAt);
+    li.appendChild(document.createTextNode(`Email — "${subject}" from ${from}${date ? `, ${date}` : ''}`));
+    if (s.deepLinkUrl) {
+      li.appendChild(document.createTextNode(' — '));
+      const link = document.createElement('a');
+      link.href = s.deepLinkUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.className = 'kb-message-sources-link';
+      link.textContent = 'Open in Gmail';
+      li.appendChild(link);
+    }
+    return li;
+  }
+
+  function buildSourcesBox(sources) {
+    const srcBox = document.createElement('div');
+    srcBox.className = 'kb-message-sources';
+    const label = document.createElement('span');
+    label.className = 'kb-message-sources-label';
+    label.textContent = 'Sources';
+    srcBox.appendChild(label);
+
+    const ul = document.createElement('ul');
+    groupSourcesForDisplay(sources).forEach(group => {
+      if (isEmailSource(group[0])) {
+        if (group.length > 1) {
+          const heading = document.createElement('li');
+          heading.className = 'kb-message-sources-thread-heading';
+          heading.textContent = `${group.length} messages in this thread matched`;
+          ul.appendChild(heading);
+          const nested = document.createElement('ul');
+          nested.className = 'kb-message-sources-thread-list';
+          group.forEach(s => nested.appendChild(renderEmailCitationLine(s)));
+          const nestedWrap = document.createElement('li');
+          nestedWrap.appendChild(nested);
+          ul.appendChild(nestedWrap);
+        } else {
+          ul.appendChild(renderEmailCitationLine(group[0]));
+        }
+        return;
+      }
+
+      const s = group[0];
+      const name = typeof s === 'string' ? s : (s.fileName || s.file_name || s.name || String(s));
+      let display = name;
+      if (s && s.pages && s.pages.length > 0) {
+        const prefix = s.pages.length === 1 ? 'p.' : 'pp.';
+        display = `${name} — ${prefix} ${s.pages.join(', ')}`;
+      }
+      const li = document.createElement('li');
+      li.textContent = display;
+      ul.appendChild(li);
+    });
+    srcBox.appendChild(ul);
+    return srcBox;
   }
 
   function renderDocRow(doc) {

@@ -16,6 +16,37 @@ test('renders an answer with sources in the exact expected shape', () => {
   assert.equal(text, 'The PTO policy allows 15 days.\n\nSources:\n• PTO Policy.pdf\n• Handbook.pdf');
 });
 
+// EM10 (EMAIL_INGESTION.md §23) — runKnowledgeQuery.js's email-sourced
+// citation shape ({documentId, fileName, title, subject, from, sentAt,
+// deepLinkUrl}) is deliberately given a `title` field specifically so this
+// file's existing `source.title || source.fileName` fallback (line 36
+// below) keeps rendering it correctly for Slack, without this file needing
+// its own email-aware branch.
+test('renders an email-sourced citation via its title field (EM10 shape), not fileName', () => {
+  const lines = formatCitations([{
+    documentId: 'doc-email-1',
+    fileName: 'Q3 Renewal Terms.txt',
+    title: '"Q3 Renewal Terms" from Jane Doe',
+    subject: 'Q3 Renewal Terms',
+    from: 'Jane Doe',
+    sentAt: '2026-07-20T12:00:00Z',
+    deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/msg-1',
+  }]);
+  assert.deepEqual(lines, ['"Q3 Renewal Terms" from Jane Doe']);
+});
+
+test('a mixed set (plain document + email-sourced) renders both correctly in one Slack message', () => {
+  const text = formatSlackMessage({
+    answer: 'Renewal terms are net-30.',
+    sources: [
+      { fileName: 'Handbook.pdf' },
+      { fileName: 'Q3 Renewal Terms.txt', title: '"Q3 Renewal Terms" from Jane Doe', subject: 'Q3 Renewal Terms' },
+    ],
+    isKnowledgeGap: false,
+  });
+  assert.equal(text, 'Renewal terms are net-30.\n\nSources:\n• Handbook.pdf\n• "Q3 Renewal Terms" from Jane Doe');
+});
+
 test('deduplicates repeated citation titles (case-insensitive)', () => {
   const lines = formatCitations([
     { fileName: 'PTO Policy.pdf' },
