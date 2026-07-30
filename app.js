@@ -11,6 +11,7 @@ const teamRoutes = require('./routes/team');
 const collectionsRoutes = require('./routes/collections');
 const slackIntegrationRoutes = require('./routes/integrations/slack');
 const emailIntegrationRoutes = require('./routes/integrations/email');
+const toolExecutionRoutes = require('./routes/toolExecution');
 
 const app = express();
 
@@ -49,6 +50,10 @@ app.use('/api', teamRoutes);
 app.use('/api', collectionsRoutes);
 app.use('/api/integrations/slack', slackIntegrationRoutes);
 app.use('/api/integrations/email', emailIntegrationRoutes);
+// EL3 (Architecture/architecture/LIVE_EMAIL_LOOKUP.md) — the AIKB -> Relativity
+// signed tool-execution callback. A new top-level namespace, not under
+// /api/integrations/*, since a tool call isn't scoped to one provider.
+app.use('/api/tools', toolExecutionRoutes);
 app.use('/admin', adminRoutes);
 
 module.exports = app;
