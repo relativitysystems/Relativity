@@ -111,6 +111,18 @@ module.exports = {
     // same reasoning as historicalSyncPageSize above) — connections beyond
     // this many due ones simply wait for the next tick.
     tickMaxConnections: parsePositiveInt('EMAIL_SYNC_TICK_MAX_CONNECTIONS', process.env.EMAIL_SYNC_TICK_MAX_CONNECTIONS, 10),
+    // EL2 (Architecture/architecture/LIVE_EMAIL_LOOKUP.md §4) — hard,
+    // server-side caps for the read-only search_email_messages/
+    // get_email_content tools, enforced by
+    // services/emailToolValidation.js. These are ceilings, not
+    // model-adjustable defaults: a tool-call argument requesting more than
+    // the max is rejected, never silently clamped past it.
+    liveLookup: {
+      maxResultsPerSearch: parsePositiveInt('EMAIL_LIVE_LOOKUP_MAX_RESULTS', process.env.EMAIL_LIVE_LOOKUP_MAX_RESULTS, 25),
+      defaultResultsPerSearch: parsePositiveInt('EMAIL_LIVE_LOOKUP_DEFAULT_RESULTS', process.env.EMAIL_LIVE_LOOKUP_DEFAULT_RESULTS, 10),
+      maxMessagesPerThread: parsePositiveInt('EMAIL_LIVE_LOOKUP_MAX_THREAD_MESSAGES', process.env.EMAIL_LIVE_LOOKUP_MAX_THREAD_MESSAGES, 20),
+      defaultMessagesPerThread: parsePositiveInt('EMAIL_LIVE_LOOKUP_DEFAULT_THREAD_MESSAGES', process.env.EMAIL_LIVE_LOOKUP_DEFAULT_THREAD_MESSAGES, 5),
+    },
   },
   aikb: {
     apiBaseUrl: process.env.AIKB_API_BASE_URL,
