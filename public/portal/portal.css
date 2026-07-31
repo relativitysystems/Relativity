@@ -1331,6 +1331,46 @@ body {
   margin: 2px 0 0 12px;
 }
 
+/* EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — mode selector row, sibling to the
+   existing "Search scope" collections filter above the chat container. */
+.kb-email-lookup-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+}
+.kb-email-lookup-mode-select {
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+/* EL6 (§6.3) — a visually distinct "Live sources" box, deliberately never
+   merged with .kb-message-sources above: a live result is fresher and can
+   change or disappear (a message could be deleted, a label removed) in a
+   way a durable ingested citation structurally is not. */
+.kb-message-live-sources {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: var(--surface-tint-1);
+  border-left: 2px solid var(--badge-orange, #ff8a3d);
+  margin-top: 4px;
+}
+.kb-message-live-sources .kb-message-sources-label { color: var(--badge-orange, #ff8a3d); }
+
+.kb-live-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--badge-orange, #ff8a3d);
+  margin-right: 5px;
+}
+
 /* ---- Knowledge gap card ---- */
 .kb-gap-card {
   max-width: 85%;
@@ -1798,6 +1838,16 @@ select.form-input {
 
 .loading-dots span:nth-child(2) { animation-delay: 0.18s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+/* EL6 (§2.1) — static "Searching connected email…" hint, shown alongside
+   the loading dots whenever the active mode could plausibly trigger a
+   live lookup. */
+.kb-loading-live-email-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
 
 @keyframes loading-dot-pulse {
   0%, 70%, 100% { transform: scale(0.7); opacity: 0.4; }

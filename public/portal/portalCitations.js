@@ -8,9 +8,26 @@
 
   // A source object is email-shaped if it carries `subject` — the field
   // only ever present on the email branch of runKnowledgeQuery.js's
-  // sourceMap (EMAIL_INGESTION.md §23); a plain document source never has it.
+  // sourceMap (EMAIL_INGESTION.md §23), or on a live source (§6.2, EL6);
+  // a plain document source never has it.
   function isEmailSource(s) {
     return !!(s && typeof s === 'object' && 'subject' in s);
+  }
+
+  // EL6 (LIVE_EMAIL_LOOKUP.md §6.2) — `live: true` is the one field only
+  // ever present on a live_email_message/live_email_thread source, never on
+  // a stored ingested_email/knowledge_document one. Used to render live
+  // results in their own visually distinct group (§6.3), never merged into
+  // the durable "Sources" box.
+  function isLiveSource(s) {
+    return !!(s && s.live === true);
+  }
+
+  // Stored email sources use `sentAt`; live sources (§6.2) use `receivedAt`
+  // — same concept, different field name since they come from different
+  // pipelines. A citation line never needs to know which kind it's showing.
+  function citationDate(s) {
+    return s && (s.sentAt || s.receivedAt);
   }
 
   function formatCitationDate(isoString) {
@@ -63,6 +80,8 @@
 
   var PortalCitations = {
     isEmailSource: isEmailSource,
+    isLiveSource: isLiveSource,
+    citationDate: citationDate,
     formatCitationDate: formatCitationDate,
     shouldShowSourcesBox: shouldShowSourcesBox,
     groupSourcesForDisplay: groupSourcesForDisplay,

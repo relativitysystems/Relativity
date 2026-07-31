@@ -250,6 +250,20 @@
             </div>
           </details>
 
+          <!-- EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — MVP three-way mode selector.
+               Silently harmless when the member has no connected/consented
+               Gmail mailbox: emailLookupAvailable is computed server-side
+               regardless of the selected mode, so Live email/Automatic are
+               inert (never actually offer the tools) until that's true. -->
+          <div class="kb-email-lookup-mode-row" id="kb-email-lookup-mode-row" hidden>
+            <label class="kb-history-summary-label" for="kb-email-lookup-mode">Email search</label>
+            <select id="kb-email-lookup-mode" class="kb-email-lookup-mode-select">
+              <option value="automatic">Automatic</option>
+              <option value="company_knowledge">Company knowledge only</option>
+              <option value="live_email">Live email</option>
+            </select>
+          </div>
+
           <div class="kb-chat-container">
 
             <!-- Chat messages -->
@@ -464,6 +478,22 @@
                 <tr><td colspan="3" class="team-empty-state">Loading collections…</td></tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- EL6 (LIVE_EMAIL_LOOKUP.md §2.3) — one-time live-email-search
+               consent modal. Lives here (Documents section markup) purely
+               for DOM placement convenience — it's a page-level overlay,
+               triggered from the Knowledge Base tab's mode selector/first
+               live-lookup attempt, not scoped to any one tab. -->
+          <div id="live-lookup-consent-modal" class="team-invite-modal" hidden>
+            <div class="team-invite-modal-inner">
+              <h3 class="team-modal-title">Search your email?</h3>
+              <p class="section-desc">Relativity can search your connected mailbox when a question requires current email information. Live results are used only to answer your request and are not added to the company knowledge base unless you explicitly save them.</p>
+              <div class="team-modal-actions">
+                <button type="button" id="live-lookup-consent-decline" class="btn-team-cancel">Not now</button>
+                <button type="button" id="live-lookup-consent-accept" class="btn-team-invite-submit">Allow</button>
+              </div>
+            </div>
           </div>
 
           <!-- Create/rename modal -->

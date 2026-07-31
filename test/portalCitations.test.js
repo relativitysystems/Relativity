@@ -4,10 +4,13 @@ const assert = require('node:assert/strict');
 // Pure, DOM-free logic — no jsdom or browser stub needed, mirroring
 // test/portalCache.test.js's dual-mode require pattern.
 const PortalCitations = require('../public/portal/portalCitations.js');
-const { isEmailSource, formatCitationDate, shouldShowSourcesBox, groupSourcesForDisplay } = PortalCitations;
+const { isEmailSource, isLiveSource, citationDate, formatCitationDate, shouldShowSourcesBox, groupSourcesForDisplay } = PortalCitations;
 
 const DOC_SOURCE = { fileName: 'Handbook.pdf', documentId: 'doc-1', pages: [2] };
 const EMAIL_SOURCE = { documentId: 'doc-email-1', fileName: 'Renewal.txt', title: '"Renewal" from Jane', subject: 'Renewal', from: 'Jane Doe', sentAt: '2026-07-20T12:00:00Z', deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/msg-1' };
+// EL6 (§6.2) — a live_email_message source, as returned by AIKB's
+// liveSourcesFromSearchMatches/liveSourcesFromContentMessages.
+const LIVE_SOURCE = { type: 'live_email_message', subject: 'Renewal terms', from: 'jane@acme.example.com', receivedAt: '2026-07-29T14:02:00Z', providerMessageId: 'gmail-msg-id', providerThreadId: 'gmail-thread-id', deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/gmail-msg-id', live: true };
 
 // ─────────────────────────────────────────────
 // isEmailSource
@@ -111,4 +114,37 @@ test('groupSourcesForDisplay: a mixed set (plain doc + threaded email pair + sta
   const t1b = { subject: 'B', providerThreadId: 'thread-1', documentId: 'doc-t1b' };
   const groups = groupSourcesForDisplay([doc, t1a, solo, t1b]);
   assert.deepEqual(groups, [[doc], [t1a, t1b], [solo]]);
+});
+
+// ─────────────────────────────────────────────
+// isLiveSource / citationDate (EL6 — §6.2, §6.3)
+// ─────────────────────────────────────────────
+
+test('isLiveSource is true only for a source explicitly carrying live:true', () => {
+  assert.equal(isLiveSource(LIVE_SOURCE), true);
+  assert.equal(isLiveSource(EMAIL_SOURCE), false);
+  assert.equal(isLiveSource(DOC_SOURCE), false);
+  assert.equal(isLiveSource(null), false);
+});
+
+test('isLiveSource is also true for the same-shaped live_email_thread type', () => {
+  assert.equal(isLiveSource({ ...LIVE_SOURCE, type: 'live_email_thread' }), true);
+});
+
+test('citationDate reads sentAt for a stored email source and receivedAt for a live one', () => {
+  assert.equal(citationDate(EMAIL_SOURCE), '2026-07-20T12:00:00Z');
+  assert.equal(citationDate(LIVE_SOURCE), '2026-07-29T14:02:00Z');
+});
+
+test('citationDate returns a falsy value, never throws, for a plain doc source or null', () => {
+  assert.equal(citationDate(DOC_SOURCE), undefined);
+  assert.equal(citationDate(null), null);
+});
+
+test('groupSourcesForDisplay threads a live source together with its live_email_thread siblings by providerThreadId, same as stored email threading', () => {
+  const m1 = { ...LIVE_SOURCE, providerMessageId: 'm1' };
+  const m2 = { ...LIVE_SOURCE, providerMessageId: 'm2', subject: 'Re: Renewal terms' };
+  const groups = groupSourcesForDisplay([m1, m2]);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0], [m1, m2]);
 });

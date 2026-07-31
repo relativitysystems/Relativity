@@ -1002,6 +1002,11 @@
   const kbCollectionsFilterDetails = document.getElementById('kb-collections-filter');
   const kbCollectionsFilterList    = document.getElementById('kb-collections-filter-list');
   const kbCollectionsFilterLabel   = document.getElementById('kb-collections-filter-label');
+  const kbEmailLookupModeRow    = document.getElementById('kb-email-lookup-mode-row');
+  const kbEmailLookupModeSelect = document.getElementById('kb-email-lookup-mode');
+  const liveLookupConsentModal   = document.getElementById('live-lookup-consent-modal');
+  const liveLookupConsentAccept  = document.getElementById('live-lookup-consent-accept');
+  const liveLookupConsentDecline = document.getElementById('live-lookup-consent-decline');
 
   let _pickerConfig       = null;
   let _gapiPickerLoaded   = false;
@@ -1855,8 +1860,20 @@
     bubble.textContent = content;
     wrap.appendChild(bubble);
 
-    if (role === 'assistant' && shouldShowSourcesBox(content, sources)) {
-      wrap.appendChild(buildSourcesBox(sources));
+    if (role === 'assistant') {
+      // EL6 (§6.3) — live sources are split out and always shown in their
+      // own box when present; shouldShowSourcesBox's inline-"Source:"-line
+      // suppression only ever applied to the stored/durable case.
+      const allSources = sources || [];
+      const liveSources = allSources.filter(isLiveSource);
+      const storedSources = allSources.filter(s => !isLiveSource(s));
+
+      if (shouldShowSourcesBox(content, storedSources)) {
+        wrap.appendChild(buildSourcesBox(storedSources));
+      }
+      if (liveSources.length > 0) {
+        wrap.appendChild(buildLiveSourcesBox(liveSources));
+      }
     }
 
     kbMessages.appendChild(wrap);
@@ -1941,13 +1958,22 @@
   // as a separate <script> before this file (portal.html) so it's directly
   // unit-testable via node:test without a DOM, mirroring portalCache.js's
   // existing split. Only the DOM-building below stays in this file.
-  const { shouldShowSourcesBox, isEmailSource, formatCitationDate, groupSourcesForDisplay } = PortalCitations;
+  const { shouldShowSourcesBox, isEmailSource, isLiveSource, citationDate, formatCitationDate, groupSourcesForDisplay } = PortalCitations;
 
+  // EL6 (§6.2, §6.3) — `live` adds the small "🔴 Live" badge and reads
+  // citationDate (sentAt for stored, receivedAt for live) instead of
+  // sentAt directly, so this one function renders both citation kinds.
   function renderEmailCitationLine(s) {
     const li = document.createElement('li');
+    if (isLiveSource(s)) {
+      const badge = document.createElement('span');
+      badge.className = 'kb-live-badge';
+      badge.textContent = '🔴 Live';
+      li.appendChild(badge);
+    }
     const subject = s.subject || '(no subject)';
     const from = s.from || 'unknown sender';
-    const date = formatCitationDate(s.sentAt);
+    const date = formatCitationDate(citationDate(s));
     li.appendChild(document.createTextNode(`Email — "${subject}" from ${from}${date ? `, ${date}` : ''}`));
     if (s.deepLinkUrl) {
       li.appendChild(document.createTextNode(' — '));
@@ -1960,6 +1986,39 @@
       li.appendChild(link);
     }
     return li;
+  }
+
+  // EL6 (§6.3) — "Live sources" get their own visually distinct box,
+  // deliberately never merged into buildSourcesBox's "Sources" list below —
+  // a live result is fresher and can change or disappear, unlike a durable
+  // ingested citation.
+  function buildLiveSourcesBox(liveSources) {
+    const box = document.createElement('div');
+    box.className = 'kb-message-live-sources';
+    const label = document.createElement('span');
+    label.className = 'kb-message-sources-label';
+    label.textContent = 'Live sources';
+    box.appendChild(label);
+
+    const ul = document.createElement('ul');
+    groupSourcesForDisplay(liveSources).forEach(group => {
+      if (group.length > 1) {
+        const heading = document.createElement('li');
+        heading.className = 'kb-message-sources-thread-heading';
+        heading.textContent = `${group.length} messages in this thread matched`;
+        ul.appendChild(heading);
+        const nested = document.createElement('ul');
+        nested.className = 'kb-message-sources-thread-list';
+        group.forEach(s => nested.appendChild(renderEmailCitationLine(s)));
+        const nestedWrap = document.createElement('li');
+        nestedWrap.appendChild(nested);
+        ul.appendChild(nestedWrap);
+      } else {
+        ul.appendChild(renderEmailCitationLine(group[0]));
+      }
+    });
+    box.appendChild(ul);
+    return box;
   }
 
   function buildSourcesBox(sources) {
@@ -2812,6 +2871,102 @@
 
   loadKbCollectionsFilter();
 
+  // EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — the portal's three-way mode selector.
+  // localStorage-persisted per client, same convention as kbAllowedCollectionIds
+  // above (a shared browser session already implies a shared logged-in
+  // member in this portal's auth model, matching that existing precedent).
+  const KB_EMAIL_LOOKUP_MODE_KEY = `kbEmailLookupMode:${clientId}`;
+  let kbEmailLookupMode = (() => {
+    try {
+      const raw = localStorage.getItem(KB_EMAIL_LOOKUP_MODE_KEY);
+      return ['company_knowledge', 'live_email', 'automatic'].includes(raw) ? raw : 'automatic';
+    } catch {
+      return 'automatic';
+    }
+  })();
+  let liveLookupConsentedAt = null;
+  let hasActiveGmailConnection = false;
+
+  function openLiveLookupConsentModal() {
+    if (liveLookupConsentModal) liveLookupConsentModal.hidden = false;
+  }
+  function closeLiveLookupConsentModal() {
+    if (liveLookupConsentModal) liveLookupConsentModal.hidden = true;
+  }
+
+  if (liveLookupConsentAccept) {
+    liveLookupConsentAccept.addEventListener('click', async () => {
+      liveLookupConsentAccept.disabled = true;
+      try {
+        const res = await fetch('/api/integrations/email/live-lookup-settings', {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ consent: true }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) liveLookupConsentedAt = body.consentedAt || new Date().toISOString();
+      } catch { /* consent modal simply reappears next attempt — server stays fail-closed either way */ }
+      liveLookupConsentAccept.disabled = false;
+      closeLiveLookupConsentModal();
+    });
+  }
+  if (liveLookupConsentDecline) {
+    liveLookupConsentDecline.addEventListener('click', () => closeLiveLookupConsentModal());
+  }
+  if (liveLookupConsentModal) {
+    liveLookupConsentModal.addEventListener('click', (e) => { if (e.target === liveLookupConsentModal) closeLiveLookupConsentModal(); });
+  }
+
+  // §2.3 — trigger: the first time Automatic/Live email mode would actually
+  // attempt a mailbox search for this member. Approximated here as "the
+  // first time a mode allowing live lookup is active and a question is
+  // about to be sent," not a deeper per-question intent check the portal
+  // has no way to run client-side — the server-side consent gate
+  // (services/emailLiveLookupService.js) is what's actually authoritative
+  // regardless of whether this modal was ever shown.
+  function maybeShowLiveLookupConsentModal() {
+    if (kbEmailLookupMode === 'company_knowledge') return;
+    if (!hasActiveGmailConnection) return;
+    if (liveLookupConsentedAt) return;
+    openLiveLookupConsentModal();
+  }
+
+  async function loadEmailLookupUI() {
+    if (!kbEmailLookupModeRow) return;
+    try {
+      const [connRes, settingsRes] = await Promise.all([
+        fetch('/api/integrations/email/connections', { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch('/api/integrations/email/live-lookup-settings', { headers: { Authorization: `Bearer ${accessToken}` } }),
+      ]);
+      if (connRes.ok) {
+        const { connections } = await connRes.json();
+        hasActiveGmailConnection = Array.isArray(connections) && connections.length > 0;
+      }
+      if (settingsRes.ok) {
+        const body = await settingsRes.json();
+        liveLookupConsentedAt = body.consentedAt || null;
+      }
+      // Not gated on hasActiveGmailConnection: §2.1's "silently inert"
+      // behavior for a disconnected mailbox is already correct without
+      // hiding the control (Automatic/Live email simply never actually
+      // offer the tools — the server-side emailLookupAvailable check
+      // handles that uniformly, same as it does for a not-yet-consented
+      // member).
+      kbEmailLookupModeRow.hidden = false;
+      if (kbEmailLookupModeSelect) kbEmailLookupModeSelect.value = kbEmailLookupMode;
+    } catch { /* leave the row hidden — chat still works in the unrestricted default */ }
+  }
+
+  if (kbEmailLookupModeSelect) {
+    kbEmailLookupModeSelect.addEventListener('change', () => {
+      kbEmailLookupMode = kbEmailLookupModeSelect.value;
+      try { localStorage.setItem(KB_EMAIL_LOOKUP_MODE_KEY, kbEmailLookupMode); } catch { /* selection just won't persist across reloads */ }
+      maybeShowLiveLookupConsentModal();
+    });
+  }
+
+  loadEmailLookupUI();
+
   async function askQuestion() {
     const query = kbQueryInput.value.trim();
     if (!query) return;
@@ -2824,7 +2979,9 @@
     kbMicBtn.disabled = true;
 
     appendMessage('user', query, []);
-    const loadingBubble = appendLoadingBubble();
+    const showLiveEmailHint = kbEmailLookupMode !== 'company_knowledge' && hasActiveGmailConnection;
+    const loadingBubble = appendLoadingBubble(showLiveEmailHint);
+    maybeShowLiveLookupConsentModal();
 
     try {
       const res = await fetch('/api/knowledge/query', {
@@ -2837,6 +2994,7 @@
           query,
           sessionId: currentSessionId,
           ...(kbAllowedCollectionIds ? { collectionIds: kbAllowedCollectionIds } : {}),
+          emailLookupMode: kbEmailLookupMode,
         }),
       });
 
@@ -2958,12 +3116,23 @@
     }, 4000);
   }
 
-  function appendLoadingBubble() {
+  // EL6 (§2.1) — `showLiveEmailHint` adds a static "Searching connected
+  // email…" line alongside the existing loading-dots bubble. Static, not a
+  // real tool-call-in-flight signal (§2.4's documented MVP limitation —
+  // /query is a single non-streaming response, so there is no mid-request
+  // event to key a real "tool_call_started" state off of).
+  function appendLoadingBubble(showLiveEmailHint) {
     const wrap = document.createElement('div');
     wrap.className = 'kb-message kb-message--assistant';
     const bubble = document.createElement('div');
     bubble.className = 'kb-message-bubble';
     bubble.innerHTML = '<span class="loading-dots"><span></span><span></span><span></span></span>';
+    if (showLiveEmailHint) {
+      const hint = document.createElement('span');
+      hint.className = 'kb-loading-live-email-hint';
+      hint.textContent = 'Searching connected email…';
+      bubble.appendChild(hint);
+    }
     wrap.appendChild(bubble);
     kbMessages.appendChild(wrap);
     kbMessages.scrollTop = kbMessages.scrollHeight;
