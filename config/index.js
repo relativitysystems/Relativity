@@ -134,6 +134,13 @@ module.exports = {
       // emailPolicyService.js's own DEFAULT_MAX_HISTORICAL_DAYS (90),
       // duplicated rather than imported since config/ has no service deps.
       defaultMaxHistoricalDays: 90,
+      // EL9 (§8.3, §7) — the per-connection tool-call budget
+      // (services/emailLiveLookupService.js's in-memory sliding window).
+      // Shared across search_email_messages/get_email_content — a cost/
+      // abuse backstop, not a business limit; both are generous enough
+      // that a real user should never hit them in normal use.
+      rateLimitWindowMs: parsePositiveInt('EMAIL_LIVE_LOOKUP_RATE_LIMIT_WINDOW_MS', process.env.EMAIL_LIVE_LOOKUP_RATE_LIMIT_WINDOW_MS, 5 * 60 * 1000),
+      rateLimitMaxCallsPerWindow: parsePositiveInt('EMAIL_LIVE_LOOKUP_RATE_LIMIT_MAX_CALLS', process.env.EMAIL_LIVE_LOOKUP_RATE_LIMIT_MAX_CALLS, 20),
     },
   },
   aikb: {

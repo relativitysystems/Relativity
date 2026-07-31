@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createEmailLiveLookupService, compileLiveSearchQuery, computeMaxHistoricalDays } = require('../services/emailLiveLookupService');
+const { createEmailLiveLookupService, createInMemoryCallBudget, compileLiveSearchQuery, computeMaxHistoricalDays } = require('../services/emailLiveLookupService');
 const { normalizeEmailBody } = require('../services/emailNormalizationService');
 
 /**
@@ -91,8 +91,19 @@ function fixtureAuditRepo() {
   return { events, recordEvent: async (event) => { events.push(event); } };
 }
 
+// EL9 — every test EXCEPT the dedicated budget-enforcement tests below gets
+// a fresh, effectively-unlimited budget by default (a brand-new Map per
+// makeService() call, never the module's real defaultCallBudget singleton
+// — sharing that across ~40 tests in one process would eventually trip the
+// real default limit and fail unrelated tests). Budget tests override this
+// explicitly with a real createInMemoryCallBudget at a tiny limit.
+function fixtureCallBudget() {
+  return createInMemoryCallBudget({ windowMs: 5 * 60 * 1000, maxCalls: 100000 });
+}
+
 function makeService(overrides = {}) {
   const auditRepo = overrides.auditRepo || fixtureAuditRepo();
+  const callBudget = overrides.callBudget || fixtureCallBudget();
   const service = createEmailLiveLookupService({
     gmailService: fixtureGmailService(overrides.gmailService),
     oauthConnectionsService: fixtureOauthConnectionsService(overrides.oauthConnectionsService),
@@ -101,6 +112,7 @@ function makeService(overrides = {}) {
     emailNormalizationService: { normalizeEmailBody },
     supabaseService: fixtureSupabaseService(overrides.supabaseService),
     auditRepo,
+    callBudget,
   });
   service._auditEvents = auditRepo.events;
   return service;
@@ -524,4 +536,122 @@ test('security: the audit row itself never contains the access token or message 
   const event = service._auditEvents[0];
   assert.equal(JSON.stringify(event).includes('valid-token'), false, 'the access token (fixtureEmailConnectionService default) must never be audited');
   assertNoForbiddenKeys(event);
+});
+
+// ─────────────────────────────────────────────
+// EL9 (§8.3, §7) — per-connection call-rate budget
+// ─────────────────────────────────────────────
+
+test('createInMemoryCallBudget: allows calls up to maxCalls, then rejects — a rejected call is not itself recorded', () => {
+  const budget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 2, now: () => 1000 });
+  assert.equal(budget.checkAndRecord('conn-a'), true);
+  assert.equal(budget.checkAndRecord('conn-a'), true);
+  assert.equal(budget.checkAndRecord('conn-a'), false);
+  assert.equal(budget.checkAndRecord('conn-a'), false, 'still rejected — a rejected attempt does not consume a slot, but also does not free one up');
+});
+
+test('createInMemoryCallBudget: different connections have fully independent budgets', () => {
+  const budget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 1, now: () => 1000 });
+  assert.equal(budget.checkAndRecord('conn-a'), true);
+  assert.equal(budget.checkAndRecord('conn-a'), false);
+  assert.equal(budget.checkAndRecord('conn-b'), true, 'conn-b\'s budget is untouched by conn-a exhausting its own');
+});
+
+test('createInMemoryCallBudget: the window slides — calls older than windowMs no longer count against the cap', () => {
+  let nowMs = 1000;
+  const budget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 1, now: () => nowMs });
+  assert.equal(budget.checkAndRecord('conn-a'), true);
+  assert.equal(budget.checkAndRecord('conn-a'), false);
+  nowMs += 60001; // just past the window
+  assert.equal(budget.checkAndRecord('conn-a'), true, 'the earlier call has aged out of the window');
+});
+
+test('search: exceeding the per-connection budget returns a distinct rate_limited error, never a silent empty result', async () => {
+  const exhaustedBudget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 0, now: () => 1000 });
+  const service = makeService({ callBudget: exhaustedBudget });
+  const result = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assert.deepEqual(result, { status: 'error', reason: 'rate_limited' });
+});
+
+test('get_email_content: exceeding the per-connection budget returns a distinct rate_limited error', async () => {
+  const exhaustedBudget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 0, now: () => 1000 });
+  const service = makeService({ callBudget: exhaustedBudget });
+  const result = await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: CONTENT_ARGS_BY_MESSAGE });
+  assert.deepEqual(result, { status: 'error', reason: 'rate_limited' });
+});
+
+test('search and get_email_content share ONE budget per connection, not two independent ones', async () => {
+  const sharedBudget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 1, now: () => 1000 });
+  const service = makeService({
+    callBudget: sharedBudget,
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: [], nextPageToken: null }),
+      getMessageMetadata: async ({ messageId }) => ({ messageId, threadId: 't1', subject: 'hi', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x' }),
+      getMessageBody: async ({ messageId }) => ({ messageId, html: null, text: 'body' }),
+    },
+  });
+  const first = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assert.equal(first.status, 'ok');
+  const second = await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: CONTENT_ARGS_BY_MESSAGE });
+  assert.deepEqual(second, { status: 'error', reason: 'rate_limited' });
+});
+
+test('a rate-limited rejection writes NO audit row — nothing was attempted against Gmail, same convention as an authorization gate rejection', async () => {
+  const exhaustedBudget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 0, now: () => 1000 });
+  const service = makeService({ callBudget: exhaustedBudget });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assert.equal(service._auditEvents.length, 0);
+});
+
+test('a rate-limit rejection never even reaches Gmail — listMessageIdsQuery is never called', async () => {
+  let gmailCalled = false;
+  const exhaustedBudget = createInMemoryCallBudget({ windowMs: 60000, maxCalls: 0, now: () => 1000 });
+  const service = makeService({
+    callBudget: exhaustedBudget,
+    gmailService: { listMessageIdsByQuery: async () => { gmailCalled = true; return { messageIds: [], nextPageToken: null }; } },
+  });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assert.equal(gmailCalled, false);
+});
+
+// ─────────────────────────────────────────────
+// EL9 security requirement: "audit rows must never contain a message body
+// or full subject — a dedicated test asserting this, mirroring the
+// platform's existing discipline for email_ingestion_events.reason."
+// ─────────────────────────────────────────────
+
+test('security (EL9): an audit row for get_email_content never contains the message body, even though the tool call itself fetched one', async () => {
+  const longBody = 'The full confidential message body text that must never be audited. '.repeat(20);
+  const service = makeService({
+    gmailService: {
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'A fairly identifying full subject line', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x',
+      }),
+      getMessageBody: async ({ messageId }) => ({ messageId, html: null, text: longBody }),
+    },
+  });
+  await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: CONTENT_ARGS_BY_MESSAGE });
+
+  const event = service._auditEvents[0];
+  const serialized = JSON.stringify(event);
+  assert.equal(serialized.includes('confidential message body'), false);
+  assert.equal(serialized.includes('A fairly identifying full subject line'), false);
+  // The audit row's own allowed field set — never a body/subject field of any name.
+  assert.deepEqual(Object.keys(event).sort(), ['email_connection_id', 'origin', 'origin_metadata', 'outcome', 'provider_latency_ms', 'provider_message_id', 'reason', 'result_count', 'tool_name'].sort());
+});
+
+test('security (EL9): an audit row for search_email_messages never contains any candidate\'s subject or snippet text', async () => {
+  const service = makeService({
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: ['m1'], nextPageToken: null }),
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'The quarterly financial forecast is attached', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'Here is the confidential snippet preview text',
+      }),
+    },
+  });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+
+  const serialized = JSON.stringify(service._auditEvents[0]);
+  assert.equal(serialized.includes('quarterly financial forecast'), false);
+  assert.equal(serialized.includes('confidential snippet'), false);
 });

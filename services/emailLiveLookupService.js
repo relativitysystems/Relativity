@@ -71,23 +71,67 @@ async function recordAuditEventBestEffort({ auditRepo, emailConnectionId, outcom
   }
 }
 
+// EL9 (§8.3, §7 — "a per-connection tool-call budget... provides a partial
+// backstop" against the platform-wide "no general-purpose rate limiter
+// exists today" gap, SECURITY.md). One shared budget per connection across
+// BOTH tools (search_email_messages and get_email_content count against
+// the same window) — a per-connection abuse/cost backstop, not a hard
+// business limit. In-memory, sliding-window, matching this codebase's own
+// existing rate-limiter posture exactly (middleware/rateLimiters.js's
+// express-rate-limit MemoryStore, backlog H6's own explicit "adequate for
+// this app's current single-instance deployment" precedent) — a Redis-
+// backed shared store is out of scope here for the identical reason it's
+// out of scope there.
+function createInMemoryCallBudget({ windowMs, maxCalls, now = Date.now }) {
+  const callTimestampsByConnectionId = new Map();
+  return {
+    /**
+     * Returns true and records the call if the connection is under budget;
+     * returns false (and does NOT record) if it would exceed the window's
+     * cap — a rejected attempt never itself consumes a slot, so a burst of
+     * rejected calls can't extend how long a connection stays capped.
+     */
+    checkAndRecord(connectionId) {
+      const nowMs = now();
+      const windowStart = nowMs - windowMs;
+      const recent = (callTimestampsByConnectionId.get(connectionId) || []).filter((t) => t > windowStart);
+      if (recent.length >= maxCalls) {
+        callTimestampsByConnectionId.set(connectionId, recent);
+        return false;
+      }
+      recent.push(nowMs);
+      callTimestampsByConnectionId.set(connectionId, recent);
+      return true;
+    },
+  };
+}
+
+const defaultCallBudget = createInMemoryCallBudget({
+  windowMs: emailConfig.liveLookup.rateLimitWindowMs,
+  maxCalls: emailConfig.liveLookup.rateLimitMaxCallsPerWindow,
+});
+
 const PROVIDER = 'gmail';
 
 // §9's named result-shape reasons this file is able to distinguish today.
-// `rate_limited` and a message-level `not_found` are explicitly NOT
-// modeled here — gmailService.js's HTTP_ERROR doesn't currently propagate
-// the real HTTP status code, so this file cannot tell a 429 apart from any
-// other failed call. Every unclassified provider failure collapses to
+// A message-level `not_found` is explicitly NOT modeled — gmailService.js's
+// HTTP_ERROR doesn't currently propagate the real HTTP status code, so this
+// file cannot tell a 429 (Gmail's own rate limit) apart from any other
+// failed call; every unclassified provider failure collapses to
 // `provider_timeout`, per §9's own precedent for "AIKB->Relativity
 // signed-request failure": "treated as provider_timeout-equivalent... the
-// call itself didn't complete." Distinguishing rate_limited is a named,
-// deliberate gap, not an oversight — revisit once gmailService surfaces
-// the status code.
+// call itself didn't complete." A Gmail-originated `rate_limited` is a
+// named, deliberate gap, not an oversight — revisit once gmailService
+// surfaces the status code. `rate_limited` itself IS reachable, though: EL9
+// (§7's "Rate limits: a per-connection tool-call budget, §8") uses it for
+// Relativity's OWN per-connection budget below, independent of whatever
+// Gmail's real rate limit is doing.
 const REASONS = Object.freeze({
   NOT_CONNECTED: 'not_connected',
   NOT_PERMITTED: 'not_permitted',
   AUTH_EXPIRED: 'auth_expired',
   PROVIDER_TIMEOUT: 'provider_timeout',
+  RATE_LIMITED: 'rate_limited',
 });
 
 function unavailable(reason) {
@@ -331,10 +375,19 @@ function capBody({ messageId, threadId, subject, fromAddress, date, body }) {
  * other origin_metadata use in this codebase already follows.
  */
 async function searchEmailMessages({ deps, clientId, requestingMemberId, args, origin, originMetadata }) {
-  const { gmailService, auditRepo } = deps;
+  const { gmailService, auditRepo, callBudget } = deps;
 
   const auth = await resolveAuthorizedMailbox({ deps, clientId, requestingMemberId });
   if (!auth.ok) return auth.result;
+
+  // EL9 (§7, §8.3) — checked only after authorization succeeds: budget
+  // tracks a legitimate user's own usage, not an anti-abuse gate against
+  // unauthorized access (the 9-gate chain above already fully covers
+  // that). No audit row on rejection, same convention as every other gate
+  // rejection — nothing was attempted against Gmail.
+  if (!callBudget.checkAndRecord(auth.emailConnectionRow.id)) {
+    return toolError(REASONS.RATE_LIMITED);
+  }
 
   const startedAt = Date.now();
   const maxHistoricalDays = computeMaxHistoricalDays(auth.rules);
@@ -414,10 +467,15 @@ async function searchEmailMessages({ deps, clientId, requestingMemberId, args, o
  * inside gmailService, never resolves.
  */
 async function getEmailContent({ deps, clientId, requestingMemberId, args, origin, originMetadata }) {
-  const { gmailService, emailNormalizationService, auditRepo } = deps;
+  const { gmailService, emailNormalizationService, auditRepo, callBudget } = deps;
 
   const auth = await resolveAuthorizedMailbox({ deps, clientId, requestingMemberId });
   if (!auth.ok) return auth.result;
+
+  // EL9 (§7, §8.3) — one shared budget across both tools per connection.
+  if (!callBudget.checkAndRecord(auth.emailConnectionRow.id)) {
+    return toolError(REASONS.RATE_LIMITED);
+  }
 
   const startedAt = Date.now();
   const requestedId = args.threadId || args.messageId;
@@ -507,8 +565,9 @@ function createEmailLiveLookupService({
   emailNormalizationService = defaultEmailNormalizationService,
   supabaseService = defaultSupabaseService,
   auditRepo = defaultAuditRepo,
+  callBudget = defaultCallBudget,
 } = {}) {
-  const deps = { gmailService, oauthConnectionsService, emailConnectionService, emailPolicyService, emailNormalizationService, supabaseService, auditRepo };
+  const deps = { gmailService, oauthConnectionsService, emailConnectionService, emailPolicyService, emailNormalizationService, supabaseService, auditRepo, callBudget };
 
   return {
     searchEmailMessages: (params) => searchEmailMessages({ deps, ...params }),
@@ -522,6 +581,7 @@ const defaultService = createEmailLiveLookupService();
 module.exports = {
   ...defaultService,
   createEmailLiveLookupService,
+  createInMemoryCallBudget,
   REASONS,
   compileLiveSearchQuery,
   computeMaxHistoricalDays,
