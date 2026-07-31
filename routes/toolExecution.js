@@ -16,9 +16,14 @@
 // explicit named reason" design.
 //
 // requestingMemberId/origin/originMetadata (the full payload shape S1.1
-// step 7 specifies) are accepted here but not yet used for anything —
-// no authorization gate beyond signature verification exists this
-// milestone; that's EL4.
+// step 7 specifies) are read here and passed through — EL4 is what
+// actually authorizes against requestingMemberId (services/
+// emailLiveLookupService.js's 8-gate chain); origin/originMetadata remain
+// unused pending EL9's audit logging.
+//
+// clientId is read from req.serviceRequest (the verified, envelope-bound
+// field), never from req.servicePayload — the same discipline every other
+// signed route in this file's neighborhood follows.
 
 const express = require('express');
 const requireServiceRequest = require('../middleware/requireServiceRequest');
@@ -27,8 +32,9 @@ const toolExecutionService = require('../services/toolExecutionService');
 const router = express.Router();
 
 router.post('/execute', requireServiceRequest, async (req, res) => {
-  const { toolName, args } = req.servicePayload || {};
-  const result = await toolExecutionService.executeTool({ toolName, args });
+  const { toolName, args, requestingMemberId } = req.servicePayload || {};
+  const { clientId } = req.serviceRequest;
+  const result = await toolExecutionService.executeTool({ toolName, args, clientId, requestingMemberId });
   return res.status(200).json(result);
 });
 

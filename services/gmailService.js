@@ -513,6 +513,12 @@ function createGmailService({ httpClient = axios } = {}) {
       date: headers.date,
       labelIds,
       isSent: labelIds.includes('SENT'),
+      // EL4 — Gmail's message resource always carries a server-generated
+      // snippet field (every format except format=raw), previously unread
+      // by any caller. search_email_messages (services/emailLiveLookupService.js)
+      // uses this as the result preview so it never needs a separate
+      // format=full fetch just to show a snippet.
+      snippet: (response.data && response.data.snippet) || '',
     };
   }
 
@@ -547,6 +553,59 @@ function createGmailService({ httpClient = axios } = {}) {
 
     const { html, text } = extractBodyParts(response.data && response.data.payload);
     return { messageId, html, text };
+  }
+
+  /**
+   * `users.threads.get?format=full` (EL4 — Architecture/architecture/
+   * LIVE_EMAIL_LOOKUP.md §4.3) — the one genuinely new Gmail-facing call
+   * this milestone adds: get_email_content's threadId branch needs every
+   * message in a thread, and Gmail's `q` search syntax has no `threadId:`
+   * operator to fetch that via listMessageIdsByQuery. threads.get returns
+   * every message's full payload in a single response, so this is one API
+   * call, not N. Reuses parseMessageHeaders/extractBodyParts unchanged —
+   * no new HTML/MIME-parsing logic, only a new endpoint around the same
+   * per-message shape getMessageMetadata+getMessageBody already produce
+   * separately.
+   */
+  async function getThread({ accessToken, threadId }) {
+    if (!accessToken) throw new Error('getThread requires accessToken');
+    if (!threadId) throw new Error('getThread requires threadId');
+
+    let response;
+    try {
+      response = await httpClient.get(`${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=full`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: GMAIL_API_TIMEOUT_MS,
+      });
+    } catch {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail threads.get request failed');
+    }
+    if (response && response.status === 404) {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail thread not found');
+    }
+    if (!response || response.status < 200 || response.status >= 300) {
+      throw gmailError(ERROR_CODES.HTTP_ERROR, 'Gmail threads.get returned an unsuccessful HTTP status');
+    }
+
+    const rawMessages = Array.isArray(response.data && response.data.messages) ? response.data.messages : [];
+    const messages = rawMessages.map((m) => {
+      const headers = parseMessageHeaders(m.payload && m.payload.headers);
+      const labelIds = Array.isArray(m.labelIds) ? m.labelIds : [];
+      const { html, text } = extractBodyParts(m.payload);
+      return {
+        messageId: m.id,
+        threadId,
+        subject: headers.subject,
+        fromAddress: headers.fromAddress,
+        date: headers.date,
+        labelIds,
+        isSent: labelIds.includes('SENT'),
+        html,
+        text,
+      };
+    });
+
+    return { threadId, messages };
   }
 
   /**
@@ -676,6 +735,7 @@ function createGmailService({ httpClient = axios } = {}) {
     listMessageIdsByQuery,
     getMessageMetadata,
     getMessageBody,
+    getThread,
     getMailboxHistoryId,
     listHistory,
   };

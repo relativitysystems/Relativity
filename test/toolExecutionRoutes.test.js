@@ -111,7 +111,7 @@ test('POST /api/tools/execute — auth gating and the noop tool round trip', asy
   });
 
   await t.test('a correctly signed but unrecognized tool name returns a 200 with a named error reason, not an HTTP error', async () => {
-    const body = signedBody({ toolName: 'search_email_messages', args: {} });
+    const body = signedBody({ toolName: 'delete_email', args: {} });
     const res = await fetch(`${base}/api/tools/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -121,6 +121,26 @@ test('POST /api/tools/execute — auth gating and the noop tool round trip', asy
     assert.equal(res.status, 200);
     const json = await res.json();
     assert.deepEqual(json, { status: 'error', reason: 'unknown_tool' });
+  });
+
+  // EL4 — search_email_messages/get_email_content are now real, recognized
+  // tools (services/emailLiveLookupService.js), not unknown_tool anymore.
+  // A signed call missing requestingMemberId (which this route's caller,
+  // AIKB, always supplies in practice) is a validation_error, not a 500 —
+  // the full authorized-mailbox path is covered by
+  // test/emailLiveLookupService.test.js and toolExecutionService's own
+  // dispatch logic, not re-exercised at the HTTP layer here.
+  await t.test('a real tool name with no requestingMemberId in the payload is a named validation_error, not unknown_tool', async () => {
+    const body = signedBody({ toolName: 'search_email_messages', args: {} });
+    const res = await fetch(`${base}/api/tools/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.deepEqual(json, { status: 'error', reason: 'validation_error' });
   });
 
   await t.test('a noop call with no args echoes null, not undefined/an error', async () => {

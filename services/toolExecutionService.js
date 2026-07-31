@@ -1,32 +1,62 @@
 'use strict';
 
-// Tool dispatch for POST /api/tools/execute (EL3 —
+// Tool dispatch for POST /api/tools/execute (EL3/EL4 —
 // Architecture/architecture/LIVE_EMAIL_LOOKUP.md §1.1 step 7-9, ADR-010).
-// This milestone proves the AIKB -> Relativity signed-envelope plumbing
-// end to end using one hardcoded 'noop' tool — it does not implement any
-// real tool. EL4 replaces the unknown_tool branch below with real
-// dispatch to search_email_messages/get_email_content (see
-// aikb/services/emailToolSchemas.js and
-// services/emailToolValidation.js for those tools' contracts, landed in
-// EL2, not yet wired to anything).
+// EL3 proved the AIKB -> Relativity signed-envelope plumbing end to end
+// using one hardcoded 'noop' tool. EL4 replaces the unknown_tool branch
+// with real dispatch to search_email_messages/get_email_content, backed by
+// services/emailLiveLookupService.js and validated against the schemas
+// landed in EL2 (services/emailToolValidation.js).
 //
-// 'noop' is an EL3-only sentinel, not one of EL2's real TOOL_NAMES —
-// it exists purely to prove the request/response round trip works
-// before any Gmail-calling code exists.
+// 'noop' is kept as an EL3-only sentinel, still useful as a lightweight
+// envelope round-trip check independent of any real tool's behavior.
+
+const { TOOL_NAMES, validateSearchEmailMessagesArgs, validateGetEmailContentArgs } = require('./emailToolValidation');
+const defaultEmailLiveLookupService = require('./emailLiveLookupService');
 
 /**
+ * Never throws for a business-level outcome — unrecognized tool, invalid
+ * arguments, unauthorized mailbox, or a provider failure are all
+ * represented as a named {status, reason} result (§9), not an exception.
+ * Only a genuine bug (an unexpected exception from a dependency) propagates
+ * to the route, which is untouched from EL3 and still returns a plain 200
+ * for anything this function returns.
+ *
  * @param {object} params
  * @param {string} params.toolName
  * @param {object} [params.args]
- * @returns {Promise<object>} a result shape the caller can trust regardless
- *   of toolName — never throws for an unrecognized tool, since that's a
- *   normal, expected outcome this milestone (nothing beyond 'noop' is
- *   implemented yet), not a server error.
+ * @param {string} [params.clientId] - from req.serviceRequest (the signed
+ *   envelope's own bound field), never from the payload body.
+ * @param {string} [params.requestingMemberId] - from req.servicePayload.
+ * @param {object} [deps] - injected for testing; defaults to the real singleton service.
+ * @returns {Promise<object>}
  */
-async function executeTool({ toolName, args }) {
+async function executeTool({ toolName, args, clientId, requestingMemberId }, deps = {}) {
+  const emailLiveLookupService = deps.emailLiveLookupService || defaultEmailLiveLookupService;
+
   if (toolName === 'noop') {
     return { status: 'ok', toolName: 'noop', echoedArgs: args || null };
   }
+
+  if (toolName === TOOL_NAMES.SEARCH_EMAIL_MESSAGES || toolName === TOOL_NAMES.GET_EMAIL_CONTENT) {
+    if (!clientId || !requestingMemberId) {
+      return { status: 'error', reason: 'validation_error' };
+    }
+
+    let validated;
+    try {
+      validated = toolName === TOOL_NAMES.SEARCH_EMAIL_MESSAGES
+        ? validateSearchEmailMessagesArgs(args)
+        : validateGetEmailContentArgs(args);
+    } catch {
+      return { status: 'error', reason: 'validation_error' };
+    }
+
+    return toolName === TOOL_NAMES.SEARCH_EMAIL_MESSAGES
+      ? emailLiveLookupService.searchEmailMessages({ clientId, requestingMemberId, args: validated })
+      : emailLiveLookupService.getEmailContent({ clientId, requestingMemberId, args: validated });
+  }
+
   return { status: 'error', reason: 'unknown_tool' };
 }
 

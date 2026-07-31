@@ -404,11 +404,11 @@ test('replacePolicy fails closed if the insert half fails after delete succeeds'
   assert.equal(read.rules.length, 0);
 });
 
-test('getSettings defaults automaticSyncEnabled to false when no row exists (fail-closed)', async () => {
+test('getSettings defaults automaticSyncEnabled and liveLookupEnabled to false when no row exists (fail-closed)', async () => {
   const client = createFakeSupabaseClient();
   const service = createEmailPolicyService(client);
   const settings = await service.getSettings('client-a');
-  assert.deepEqual(settings, { automaticSyncEnabled: false, updatedByMemberId: null, updatedAt: null });
+  assert.deepEqual(settings, { automaticSyncEnabled: false, liveLookupEnabled: false, updatedByMemberId: null, updatedAt: null });
 });
 
 test('updateSettings persists and getSettings reads back true', async () => {

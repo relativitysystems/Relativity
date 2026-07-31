@@ -93,6 +93,11 @@ function mapRuleRowToApi(row) {
 function mapSettingsRowToApi(row) {
   return {
     automaticSyncEnabled: row ? row.automatic_sync_enabled : false,
+    // EL4 (Architecture/architecture/LIVE_EMAIL_LOOKUP.md §7) — a separate,
+    // independent org-wide switch from automaticSyncEnabled; read-only here,
+    // no write path yet (updateSettings below is unchanged) since the
+    // settings UI/route for this flag is EL6's scope, not EL4's.
+    liveLookupEnabled: row ? row.live_lookup_enabled : false,
     updatedByMemberId: row ? row.updated_by_member_id : null,
     updatedAt: row ? row.updated_at : null,
   };

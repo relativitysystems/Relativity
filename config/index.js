@@ -122,6 +122,18 @@ module.exports = {
       defaultResultsPerSearch: parsePositiveInt('EMAIL_LIVE_LOOKUP_DEFAULT_RESULTS', process.env.EMAIL_LIVE_LOOKUP_DEFAULT_RESULTS, 10),
       maxMessagesPerThread: parsePositiveInt('EMAIL_LIVE_LOOKUP_MAX_THREAD_MESSAGES', process.env.EMAIL_LIVE_LOOKUP_MAX_THREAD_MESSAGES, 20),
       defaultMessagesPerThread: parsePositiveInt('EMAIL_LIVE_LOOKUP_DEFAULT_THREAD_MESSAGES', process.env.EMAIL_LIVE_LOOKUP_DEFAULT_THREAD_MESSAGES, 5),
+      // EL4 (§4, §7, §9) — hard, server-side content-size and timeout caps
+      // for search_email_messages/get_email_content, enforced by
+      // services/emailLiveLookupService.js. Not model-adjustable.
+      snippetMaxChars: parsePositiveInt('EMAIL_LIVE_LOOKUP_SNIPPET_MAX_CHARS', process.env.EMAIL_LIVE_LOOKUP_SNIPPET_MAX_CHARS, 200),
+      bodyMaxChars: parsePositiveInt('EMAIL_LIVE_LOOKUP_BODY_MAX_CHARS', process.env.EMAIL_LIVE_LOOKUP_BODY_MAX_CHARS, 3000),
+      searchTimeoutMs: parsePositiveInt('EMAIL_LIVE_LOOKUP_SEARCH_TIMEOUT_MS', process.env.EMAIL_LIVE_LOOKUP_SEARCH_TIMEOUT_MS, 8000),
+      contentTimeoutMs: parsePositiveInt('EMAIL_LIVE_LOOKUP_CONTENT_TIMEOUT_MS', process.env.EMAIL_LIVE_LOOKUP_CONTENT_TIMEOUT_MS, 10000),
+      // Fallback org-wide max-historical-days bound when a client has no
+      // enabled organization policy rules yet — mirrors
+      // emailPolicyService.js's own DEFAULT_MAX_HISTORICAL_DAYS (90),
+      // duplicated rather than imported since config/ has no service deps.
+      defaultMaxHistoricalDays: 90,
     },
   },
   aikb: {
