@@ -547,24 +547,70 @@ router.get('/settings', clientAuth, async (req, res) => {
 
 /**
  * PUT /api/integrations/email/settings
- * owner/admin only (§14.1). Body: { automaticSyncEnabled }. Toggles the
- * org-wide automatic-sync switch (§13.1).
+ * owner/admin only (§14.1). Body: { automaticSyncEnabled, liveLookupEnabled? }.
+ * Toggles the org-wide automatic-sync switch (§13.1) and, as of EL6, the
+ * independent org-wide live-lookup switch (§2.1) — liveLookupEnabled is
+ * optional; omitting it leaves the stored value untouched.
  */
 router.put('/settings', clientAuth, requireOwnerAdmin, async (req, res) => {
-  const { automaticSyncEnabled } = req.body;
+  const { automaticSyncEnabled, liveLookupEnabled } = req.body;
   if (typeof automaticSyncEnabled !== 'boolean') {
     return res.status(400).json({ error: 'automaticSyncEnabled must be a boolean' });
+  }
+  if (liveLookupEnabled !== undefined && typeof liveLookupEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'liveLookupEnabled must be a boolean when provided' });
   }
   try {
     const result = await emailPolicyService.updateSettings({
       clientId: req.client.id,
       automaticSyncEnabled,
+      liveLookupEnabled,
       updatedByMemberId: req.member.id,
     });
     res.json(result);
   } catch (err) {
     console.error('PUT /api/integrations/email/settings error:', err.message);
     res.status(500).json({ error: 'Could not save email settings.' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/live-lookup-settings
+ * PUT /api/integrations/email/live-lookup-settings
+ * Self-service, own row only (EL6 — LIVE_EMAIL_LOOKUP.md §2.3, §7). This is
+ * the member's own one-time product consent for LIVE, per-question mailbox
+ * use — explicitly separate from Gmail's OAuth scope grant (already given
+ * at connect time) and from search_enabled (which gates ingestion
+ * contribution, not live lookup). `consentedAt: null` blocks tool-offering
+ * and is what the portal's consent modal gates on (§2.3's fail-closed
+ * pattern, matching every other email-feature gate in this codebase).
+ *
+ * PUT also flips the member's own Gmail connection's live_lookup_enabled
+ * flag in the same call (§2.3's "Revocation" toggle IS the consent record —
+ * one user-facing on/off, not two independently-tracked switches) — a no-op
+ * if the member has no active connection yet.
+ */
+router.get('/live-lookup-settings', clientAuth, async (req, res) => {
+  res.json({ consentedAt: req.member.live_lookup_consented_at || null });
+});
+
+router.put('/live-lookup-settings', clientAuth, async (req, res) => {
+  const { consent } = req.body;
+  if (typeof consent !== 'boolean') {
+    return res.status(400).json({ error: 'consent must be a boolean' });
+  }
+  try {
+    const consentedAt = consent ? new Date().toISOString() : null;
+    const updated = await supabaseService.updateClientMember(req.member.id, req.client.id, { live_lookup_consented_at: consentedAt });
+    await emailConnectionService.setLiveLookupEnabledForOwnConnection({
+      clientId: req.client.id,
+      memberId: req.member.id,
+      enabled: consent,
+    });
+    res.json({ consentedAt: updated.live_lookup_consented_at || null });
+  } catch (err) {
+    console.error('PUT /api/integrations/email/live-lookup-settings error:', err.message);
+    res.status(500).json({ error: 'Could not save your live email search setting.' });
   }
 });
 

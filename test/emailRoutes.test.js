@@ -190,6 +190,26 @@ test('Email integration routes — auth gating and safe callback redirects', asy
     assert.equal(res.status, 401);
   });
 
+  // EL6 — the member's own live-lookup consent record (§2.3, §7). Same
+  // limitation as member-settings above (no real authenticated-session
+  // route test without mocking Supabase auth) — the gate logic itself
+  // (an un-consented member's questions never reach tool-offering) is
+  // covered at the service layer in test/emailLiveLookupService.test.js.
+  await t.test('GET /api/integrations/email/live-lookup-settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/live-lookup-settings`, { redirect: 'manual' });
+    assert.equal(res.status, 401);
+  });
+
+  await t.test('PUT /api/integrations/email/live-lookup-settings requires authentication', async () => {
+    const res = await fetch(`${base}/api/integrations/email/live-lookup-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ consent: true }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 401);
+  });
+
   // EM5 — label-query dry-run preview (§14.1, §17, §31). Same limitation as
   // sync-mode/disconnect above: the owns-this-connection gate and the live
   // Gmail-call path (getValidGmailAccessToken/ensureManagedLabel/buildPreview)

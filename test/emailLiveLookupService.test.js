@@ -20,7 +20,15 @@ const MEMBER_B = 'member-b';
 const CONNECTION_A_ID = 'conn-a';
 
 function fixtureMember(overrides = {}) {
-  return { id: MEMBER_A, client_id: CLIENT_ID, role: 'member', status: 'active', search_enabled: true, ...overrides };
+  return {
+    id: MEMBER_A, client_id: CLIENT_ID, role: 'member', status: 'active', search_enabled: true,
+    // EL6 (§2.3) — consented by default so every pre-existing EL4 test
+    // (written before this gate existed) keeps exercising what it actually
+    // means to test, rather than tripping on the new gate; dedicated gate
+    // tests below override this explicitly.
+    live_lookup_consented_at: '2026-07-30T00:00:00Z',
+    ...overrides,
+  };
 }
 
 function fixtureEmailConnectionRow(overrides = {}) {
@@ -91,8 +99,14 @@ const SEARCH_ARGS = { maxResults: 10 };
 const CONTENT_ARGS_BY_MESSAGE = { messageId: 'msg-1', threadId: null, maxMessagesInThread: 5 };
 
 // ─────────────────────────────────────────────
-// The 8-gate authorization chain — every rejection case
+// The authorization gate chain — every rejection case
 // ─────────────────────────────────────────────
+
+test('gate: no consent (live_lookup_consented_at null) -> not_permitted, even with an active, live-lookup-enabled connection', async () => {
+  const service = makeService({ supabaseService: { member: fixtureMember({ live_lookup_consented_at: null }) } });
+  const result = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assert.deepEqual(result, { status: 'unavailable', reason: 'not_permitted' });
+});
 
 test('gate: unknown member -> not_permitted', async () => {
   const service = makeService({ supabaseService: { member: fixtureMember({ id: 'ghost' }) } });

@@ -291,23 +291,32 @@ function createEmailPolicyService(client) {
     return mapSettingsRowToApi(data);
   }
 
-  async function updateSettings({ clientId, automaticSyncEnabled, updatedByMemberId }) {
+  // EL6 — liveLookupEnabled is optional and independent of
+  // automaticSyncEnabled (still required, unchanged from before this
+  // milestone — every existing caller keeps working with no change).
+  // Omitting liveLookupEnabled leaves the stored value untouched (Supabase
+  // upsert only overwrites columns present in the payload); passing it
+  // explicitly (including `false`) always writes it.
+  async function updateSettings({ clientId, automaticSyncEnabled, liveLookupEnabled, updatedByMemberId }) {
     if (!clientId) throw new Error('updateSettings requires clientId');
     if (typeof automaticSyncEnabled !== 'boolean') {
       throw new Error('updateSettings requires a boolean automaticSyncEnabled');
     }
+    if (liveLookupEnabled !== undefined && typeof liveLookupEnabled !== 'boolean') {
+      throw new Error('updateSettings: liveLookupEnabled must be a boolean when provided');
+    }
+
+    const payload = {
+      client_id: clientId,
+      automatic_sync_enabled: automaticSyncEnabled,
+      updated_by_member_id: updatedByMemberId || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (liveLookupEnabled !== undefined) payload.live_lookup_enabled = liveLookupEnabled;
 
     const { data, error } = await client
       .from('email_organization_settings')
-      .upsert(
-        {
-          client_id: clientId,
-          automatic_sync_enabled: automaticSyncEnabled,
-          updated_by_member_id: updatedByMemberId || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'client_id' }
-      )
+      .upsert(payload, { onConflict: 'client_id' })
       .select('*')
       .maybeSingle();
     if (error) throw new Error(`updateSettings failed: ${error.message}`);

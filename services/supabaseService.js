@@ -419,7 +419,12 @@ async function getClientMemberByAuthUserId(authUserId, clientId) {
 async function getClientMemberById(memberId, clientId) {
   const { data, error } = await supabase
     .from('client_members')
-    .select('id, client_id, email, role, status, full_name')
+    // EL6 fix: search_enabled/live_lookup_consented_at were missing here —
+    // emailLiveLookupService.js's authorization gates read both off this
+    // exact query's result, so their absence meant those gates silently
+    // never fired (member.search_enabled/live_lookup_consented_at were
+    // always undefined, not the real column value) since EL4 shipped.
+    .select('id, client_id, email, role, status, full_name, search_enabled, live_lookup_consented_at')
     .eq('id', memberId)
     .eq('client_id', clientId)
     .single();
@@ -495,6 +500,12 @@ async function updateClientMember(memberId, clientId, updates) {
   // /member-settings always passes req.member.id as memberId, never another
   // member's, so no additional role check is needed here.
   if (updates.search_enabled !== undefined) allowed.search_enabled = updates.search_enabled;
+  // live_lookup_consented_at (EL6 — LIVE_EMAIL_LOOKUP.md §2.3): self-service,
+  // own row only, same shape as search_enabled above — routes/integrations/
+  // email.js's PUT /live-lookup-settings always passes req.member.id.
+  // Explicitly allows null (revocation, §2.3's "Revocation" — never omitted
+  // just because it's falsy).
+  if (updates.live_lookup_consented_at !== undefined) allowed.live_lookup_consented_at = updates.live_lookup_consented_at;
   allowed.updated_at = new Date().toISOString();
 
   // EM9 (EMAIL_INGESTION.md §24.5, §25, §30 item 12) — a transition to

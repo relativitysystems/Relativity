@@ -117,6 +117,21 @@ const defaultEmailConnectionsRepo = {
     return data || null;
   },
 
+  // EL6 (LIVE_EMAIL_LOOKUP.md §2.3) — the per-mailbox half of the consent
+  // toggle; setLiveLookupEnabledForOwnConnection below is what actually
+  // keeps this in sync with client_members.live_lookup_consented_at.
+  async updateLiveLookupEnabled(oauthConnectionId, enabled) {
+    const { data, error } = await defaultDbClient
+      .from('email_connections')
+      .update({ live_lookup_enabled: enabled, updated_at: new Date().toISOString() })
+      .eq('oauth_connection_id', oauthConnectionId)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(`updateLiveLookupEnabled failed: ${error.message}`);
+    return data || null;
+  },
+
   // EM4 (§14.1 POST /connections/:id/sync-mode) — :id in the route is always
   // the oauth_connections row's id (mapGmailConnectionResponse's
   // connectionId), never email_connections.id, matching disconnect's
@@ -678,6 +693,28 @@ function createEmailConnectionService({
     return labelId;
   }
 
+  /**
+   * EL6 (LIVE_EMAIL_LOOKUP.md §2.3) — the per-mailbox half of the consent
+   * toggle: PUT /live-lookup-settings sets this in the SAME request as
+   * client_members.live_lookup_consented_at, so "consented" and "this
+   * mailbox is live-lookup-active" never drift apart for the common case of
+   * a member with exactly one Gmail connection. A no-op, not an error, when
+   * the member has no active connection yet — the consent record itself
+   * (client_members.live_lookup_consented_at) is what's authoritative when
+   * a mailbox connects later; emailLiveLookupService's own gate chain
+   * re-checks the connection's flag independently regardless.
+   */
+  async function setLiveLookupEnabledForOwnConnection({ clientId, memberId, enabled }) {
+    if (!clientId) throw new Error('setLiveLookupEnabledForOwnConnection requires clientId');
+    if (!memberId) throw new Error('setLiveLookupEnabledForOwnConnection requires memberId');
+
+    const connection = await oauthConnectionsService.getActiveConnectionForClientAndMember(clientId, PROVIDER, memberId);
+    if (!connection) return { updated: false };
+
+    await emailConnectionsRepo.updateLiveLookupEnabled(connection.id, enabled);
+    return { updated: true };
+  }
+
   return {
     startConnection,
     handleCallback,
@@ -689,6 +726,7 @@ function createEmailConnectionService({
     getValidGmailAccessToken,
     getEmailConnectionRecord,
     ensureManagedLabel,
+    setLiveLookupEnabledForOwnConnection,
   };
 }
 

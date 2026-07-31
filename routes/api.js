@@ -7,6 +7,7 @@ const AdmZip = require('adm-zip');
 const clientAuth = require('../middleware/clientAuth');
 const googleDriveImportService = require('../services/googleDriveImportService');
 const aikbService = require('../services/aikbService');
+const emailLiveLookupService = require('../services/emailLiveLookupService');
 const supabaseService = require('../services/supabaseService');
 const openaiService = require('../services/openaiService');
 const config = require('../config');
@@ -470,17 +471,34 @@ router.get('/knowledge/usage', clientAuth, async (req, res) => {
   }
 });
 
+// EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — the portal's three-way mode selector.
+// 'company_knowledge' suppresses tool-offering entirely (never even checks
+// availability); 'live_email' forces the gate open regardless of AIKB's own
+// classifier signal (still subject to every authorization gate);
+// 'automatic' (default) is the ordinary two-stage gate (§1.3 Option C).
+const EMAIL_LOOKUP_MODES = ['company_knowledge', 'live_email', 'automatic'];
+
 router.post('/knowledge/query', clientAuth, async (req, res) => {
-  const { query, sessionId, collectionIds } = req.body;
+  const { query, sessionId, collectionIds, emailLookupMode } = req.body;
   if (!query || typeof query !== 'string' || !query.trim()) {
     return res.status(400).json({ error: 'query is required' });
   }
+  const mode = EMAIL_LOOKUP_MODES.includes(emailLookupMode) ? emailLookupMode : 'automatic';
   try {
     // Backlog M10: optional, mirrors Slack's existing allowedCollectionIds
     // scoping (services/slackCollectionAccessService.js) — omitted/not an
     // array means unrestricted, unchanged from before this existed.
     const allowedCollectionIds = Array.isArray(collectionIds) ? collectionIds : null;
-    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null, req.headers.authorization, allowedCollectionIds);
+
+    // EL6 — a cheap, DB-only check (no Gmail call) run on every question;
+    // 'company_knowledge' mode skips it entirely rather than compute a flag
+    // that's about to be ignored anyway.
+    const emailLookupAvailable = mode === 'company_knowledge'
+      ? false
+      : await emailLiveLookupService.isLiveLookupAvailable({ clientId: req.client.id, requestingMemberId: req.member.id });
+    const forceLiveLookup = mode === 'live_email' && emailLookupAvailable;
+
+    const data = await aikbService.queryKnowledge(req.client.id, query.trim(), sessionId || null, req.headers.authorization, allowedCollectionIds, { emailLookupAvailable, forceLiveLookup });
     // Record which member owns this session in the local mapping table
     const returnedSessionId = data.sessionId || data.session_id;
     if (returnedSessionId && req.member?.id) {

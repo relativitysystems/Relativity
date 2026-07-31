@@ -86,7 +86,7 @@ function classifyGmailError() {
 }
 
 /**
- * The 8-gate authorization chain (§1.1 step 8, §7): resolves the requesting
+ * The authorization gate chain (§1.1 step 8, §7): resolves the requesting
  * member's own Gmail connection and re-verifies every condition
  * independently of whatever ingestion already decided — a stale/cached
  * result is never trusted (§7: "every request re-verifies").
@@ -95,11 +95,13 @@ function classifyGmailError() {
  *   1. member exists, status = 'active'
  *   2. member.role != 'viewer'
  *   3. member.search_enabled = true
- *   4. an active oauth_connections row exists for this member+provider
- *   5. its email_connections row exists
- *   6. org email_organization_settings.live_lookup_enabled = true
- *   7. mailbox email_connections.live_lookup_enabled = true
- *   8. a valid (or silently refreshable) Gmail access token
+ *   4. member.live_lookup_consented_at is set (EL6, §2.3 — the member's own
+ *      one-time product consent, distinct from Gmail's OAuth scope grant)
+ *   5. an active oauth_connections row exists for this member+provider
+ *   6. its email_connections row exists
+ *   7. org email_organization_settings.live_lookup_enabled = true
+ *   8. mailbox email_connections.live_lookup_enabled = true
+ *   9. a valid (or silently refreshable) Gmail access token
  *
  * @returns {Promise<{ok:true, accessToken:string, connectionRow:object, emailConnectionRow:object, rules:object[]}|{ok:false, result:object}>}
  */
@@ -108,6 +110,13 @@ async function resolveAuthorizedMailbox({ deps, clientId, requestingMemberId }) 
 
   const member = await supabaseService.getClientMemberById(requestingMemberId, clientId);
   if (!member || member.status !== 'active' || member.role === 'viewer' || member.search_enabled === false) {
+    return { ok: false, result: unavailable(REASONS.NOT_PERMITTED) };
+  }
+  // EL6 (§2.3) — the member's own one-time product consent for live,
+  // per-question mailbox use. Explicitly separate from Gmail's OAuth scope
+  // grant and from search_enabled above; re-verified on every request like
+  // every other gate here, never trusted from a prior call.
+  if (!member.live_lookup_consented_at) {
     return { ok: false, result: unavailable(REASONS.NOT_PERMITTED) };
   }
 
@@ -137,6 +146,40 @@ async function resolveAuthorizedMailbox({ deps, clientId, requestingMemberId }) 
   const { rules } = await emailPolicyService.getPolicy(clientId);
 
   return { ok: true, accessToken, connectionRow, emailConnectionRow, rules };
+}
+
+/**
+ * EL6 (§1.1 step 4) — the cheap, DB-only availability check Relativity runs
+ * on EVERY chat question to decide the `emailLookupAvailable` flag it
+ * attaches to AIKB's `/query`/`/ask` request. Deliberately NOT
+ * resolveAuthorizedMailbox: it skips the Gmail token refresh (and the
+ * policy-rules fetch, unneeded here) — refreshing a token on every single
+ * question regardless of whether the question needs live lookup would be
+ * wasteful and would leak a Gmail-outage failure into unrelated stored-
+ * knowledge answers. A token that turns out to be expired/unrefreshable
+ * still surfaces correctly at actual tool-call time via
+ * resolveAuthorizedMailbox's own `auth_expired` result — this function
+ * only answers "is it even worth offering the tools," not "will the call
+ * definitely succeed."
+ *
+ * @returns {Promise<boolean>}
+ */
+async function isLiveLookupAvailable({ deps, clientId, requestingMemberId }) {
+  const { supabaseService, oauthConnectionsService, emailConnectionService, emailPolicyService } = deps;
+  if (!clientId || !requestingMemberId) return false;
+
+  const member = await supabaseService.getClientMemberById(requestingMemberId, clientId);
+  if (!member || member.status !== 'active' || member.role === 'viewer' || member.search_enabled === false) return false;
+  if (!member.live_lookup_consented_at) return false;
+
+  const connectionRow = await oauthConnectionsService.getActiveConnectionForClientAndMember(clientId, PROVIDER, requestingMemberId);
+  if (!connectionRow) return false;
+
+  const emailConnectionRow = await emailConnectionService.getEmailConnectionRecord(connectionRow.id);
+  if (!emailConnectionRow || !emailConnectionRow.live_lookup_enabled) return false;
+
+  const settings = await emailPolicyService.getSettings(clientId);
+  return Boolean(settings.liveLookupEnabled);
 }
 
 /**
@@ -396,6 +439,7 @@ function createEmailLiveLookupService({
   return {
     searchEmailMessages: (params) => searchEmailMessages({ deps, ...params }),
     getEmailContent: (params) => getEmailContent({ deps, ...params }),
+    isLiveLookupAvailable: (params) => isLiveLookupAvailable({ deps, ...params }),
   };
 }
 

@@ -32,6 +32,7 @@ function makeFakes(overrides = {}) {
     updateCredentialForConnection: [],
     listDocuments: [],
     deleteDocumentById: [],
+    updateLiveLookupEnabled: [],
   };
 
   // In-memory model of oauth_connections rows, keyed by connectionId, so
@@ -228,6 +229,12 @@ function makeFakes(overrides = {}) {
       calls.updateManagedLabelId.push({ oauthConnectionId, managedLabelId });
       if (overrides.updateManagedLabelId) return overrides.updateManagedLabelId(oauthConnectionId, managedLabelId);
       return { oauth_connection_id: oauthConnectionId, managed_label_id: managedLabelId };
+    },
+    // EL6 — PUT /live-lookup-settings' per-mailbox half.
+    updateLiveLookupEnabled: async (oauthConnectionId, enabled) => {
+      calls.updateLiveLookupEnabled.push({ oauthConnectionId, enabled });
+      if (overrides.updateLiveLookupEnabled) return overrides.updateLiveLookupEnabled(oauthConnectionId, enabled);
+      return { oauth_connection_id: oauthConnectionId, live_lookup_enabled: enabled };
     },
   };
 
@@ -997,4 +1004,40 @@ test('mapGmailConnectionResponse never includes any credential-related field', (
   for (const key of ['access_token', 'refresh_token', 'access_token_encrypted', 'accessToken', 'ciphertext', 'iv', 'authTag']) {
     assert.equal(key in mapped, false, `must not include "${key}"`);
   }
+});
+
+// ─────────────────────────────────────────────
+// setLiveLookupEnabledForOwnConnection (EL6 — §2.3's consent/revocation
+// toggle, the per-mailbox half PUT /live-lookup-settings keeps in sync
+// with client_members.live_lookup_consented_at in the same request)
+// ─────────────────────────────────────────────
+
+test('setLiveLookupEnabledForOwnConnection updates the member\'s own active connection', async () => {
+  const { service, calls, connectionsStore } = makeFakes();
+  connectionsStore.set('conn-a', { id: 'conn-a', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-a', status: 'active' });
+
+  const result = await service.setLiveLookupEnabledForOwnConnection({ clientId: 'client-a', memberId: 'member-a', enabled: true });
+
+  assert.deepEqual(result, { updated: true });
+  assert.equal(calls.updateLiveLookupEnabled.length, 1);
+  assert.deepEqual(calls.updateLiveLookupEnabled[0], { oauthConnectionId: 'conn-a', enabled: true });
+});
+
+test('setLiveLookupEnabledForOwnConnection is a no-op, not an error, when the member has no active connection', async () => {
+  const { service, calls } = makeFakes();
+
+  const result = await service.setLiveLookupEnabledForOwnConnection({ clientId: 'client-a', memberId: 'member-a', enabled: true });
+
+  assert.deepEqual(result, { updated: false });
+  assert.equal(calls.updateLiveLookupEnabled.length, 0);
+});
+
+test('setLiveLookupEnabledForOwnConnection never touches another member\'s connection', async () => {
+  const { service, calls, connectionsStore } = makeFakes();
+  connectionsStore.set('conn-b', { id: 'conn-b', client_id: 'client-a', provider: 'gmail', connected_by_member_id: 'member-b', status: 'active' });
+
+  const result = await service.setLiveLookupEnabledForOwnConnection({ clientId: 'client-a', memberId: 'member-a', enabled: true });
+
+  assert.deepEqual(result, { updated: false });
+  assert.equal(calls.updateLiveLookupEnabled.length, 0);
 });

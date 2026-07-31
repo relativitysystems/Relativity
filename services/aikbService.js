@@ -105,7 +105,7 @@ async function listDocuments(clientId, filters = {}) {
   }
 }
 
-async function queryKnowledge(clientId, query, sessionId, authHeader, allowedCollectionIds = null) {
+async function queryKnowledge(clientId, query, sessionId, authHeader, allowedCollectionIds = null, emailLookupOptions = {}) {
   try {
     const body = { clientId, question: query };
     if (sessionId) body.sessionId = sessionId;
@@ -113,6 +113,13 @@ async function queryKnowledge(clientId, query, sessionId, authHeader, allowedCol
     // already supports allowedCollectionIds (null = unrestricted, an array
     // restricts retrieval) — aikb needed no changes for this.
     if (Array.isArray(allowedCollectionIds)) body.allowedCollectionIds = allowedCollectionIds;
+    // EL6 (LIVE_EMAIL_LOOKUP.md §1.1 step 4) — emailLookupAvailable is
+    // Relativity's own real signal (services/emailLiveLookupService.js#isLiveLookupAvailable),
+    // computed by the route before this call; forceLiveLookup is the "Live
+    // email" mode override (§2.1). Both default false/absent when the
+    // caller omits emailLookupOptions, unchanged from before EL6.
+    if (emailLookupOptions.emailLookupAvailable) body.emailLookupAvailable = true;
+    if (emailLookupOptions.forceLiveLookup) body.forceLiveLookup = true;
     const res = await axios.post(
       `${aikbConfig.apiBaseUrl}/api/knowledge/query`,
       body,
