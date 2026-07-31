@@ -81,6 +81,11 @@ function createSlackDeliverService({
         answer: payload && payload.answer,
         sources: payload && payload.sources,
         isKnowledgeGap: !!(payload && payload.isKnowledgeGap),
+        // EL7B (§3.2) — narrow signal only (never the full intent object);
+        // AIKB sets this when the classifier thought live email might help
+        // but no tools were ever offered (unlinked Slack user, or a linked
+        // one with no active/consented mailbox).
+        emailLookupSuggested: !!(payload && payload.emailLookupSuggested),
       })
       : FALLBACK.TEMPORARY_FAILURE;
 

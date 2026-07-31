@@ -40,9 +40,11 @@ function createAikbAskClient({ httpClient = axios } = {}) {
    * @param {{ teamId: string, channelId: string, threadTs: string, eventId: string }} params.originMetadata
    * @param {string[]} params.allowedCollectionIds - Milestone 5: AIKB knowledge_collections ids Slack may search for this client. Always an explicit array (possibly empty — empty means "search nothing", not "search everything"), never omitted, so a caller can never accidentally fall back to an unrestricted search.
    * @param {string} [params.origin] - 'slack' (channel @mention, default) or 'slack_dm' (backlog M13) — tags the resulting AIKB session so DM conversations can be excluded from portal-facing chat history.
+   * @param {string|null} [params.memberId] - EL7B (LIVE_EMAIL_LOOKUP.md §3.2): the requesting member, resolved via slack_user_links — ONLY ever set for a DM from a linked Slack user, never a channel @mention. Absent/null means "no live-lookup identity for this request," exactly like the portal's pre-EL6 default.
+   * @param {boolean} [params.emailLookupAvailable] - EL7B: mirrors the portal's own emailLookupAvailable signal (EL6) — whether that resolved member currently has an active, live-lookup-enabled, consented Gmail connection.
    * @returns {Promise<{ accepted: boolean, eventId: string|null }>}
    */
-  async function ask({ clientId, question, idempotencyKey, originMetadata, allowedCollectionIds, origin = 'slack' }) {
+  async function ask({ clientId, question, idempotencyKey, originMetadata, allowedCollectionIds, origin = 'slack', memberId = null, emailLookupAvailable = false }) {
     const baseUrl = config.aikb.apiBaseUrl;
     const apiKey = config.aikb.apiKey;
     const signingSecret = config.serviceRequest.signingSecret;
@@ -59,6 +61,8 @@ function createAikbAskClient({ httpClient = axios } = {}) {
       // payload object) — tampering with this in transit invalidates the
       // signature exactly like tampering with `question` would.
       allowedCollectionIds: Array.isArray(allowedCollectionIds) ? allowedCollectionIds : [],
+      memberId: memberId || null,
+      emailLookupAvailable: emailLookupAvailable === true,
     };
 
     const envelope = signServiceRequest({

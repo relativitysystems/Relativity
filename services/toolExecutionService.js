@@ -28,10 +28,12 @@ const defaultEmailLiveLookupService = require('./emailLiveLookupService');
  * @param {string} [params.clientId] - from req.serviceRequest (the signed
  *   envelope's own bound field), never from the payload body.
  * @param {string} [params.requestingMemberId] - from req.servicePayload.
+ * @param {string} [params.origin] - EL7B, audit-only ('portal'/'slack'/'slack_dm').
+ * @param {object} [params.originMetadata] - EL7B, audit-only — narrow, safe metadata, never message content.
  * @param {object} [deps] - injected for testing; defaults to the real singleton service.
  * @returns {Promise<object>}
  */
-async function executeTool({ toolName, args, clientId, requestingMemberId }, deps = {}) {
+async function executeTool({ toolName, args, clientId, requestingMemberId, origin, originMetadata }, deps = {}) {
   const emailLiveLookupService = deps.emailLiveLookupService || defaultEmailLiveLookupService;
 
   if (toolName === 'noop') {
@@ -53,8 +55,8 @@ async function executeTool({ toolName, args, clientId, requestingMemberId }, dep
     }
 
     return toolName === TOOL_NAMES.SEARCH_EMAIL_MESSAGES
-      ? emailLiveLookupService.searchEmailMessages({ clientId, requestingMemberId, args: validated })
-      : emailLiveLookupService.getEmailContent({ clientId, requestingMemberId, args: validated });
+      ? emailLiveLookupService.searchEmailMessages({ clientId, requestingMemberId, args: validated, origin, originMetadata })
+      : emailLiveLookupService.getEmailContent({ clientId, requestingMemberId, args: validated, origin, originMetadata });
   }
 
   return { status: 'error', reason: 'unknown_tool' };

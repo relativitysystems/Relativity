@@ -18,8 +18,9 @@
 // requestingMemberId/origin/originMetadata (the full payload shape S1.1
 // step 7 specifies) are read here and passed through — EL4 is what
 // actually authorizes against requestingMemberId (services/
-// emailLiveLookupService.js's 8-gate chain); origin/originMetadata remain
-// unused pending EL9's audit logging.
+// emailLiveLookupService.js's 8-gate chain); origin/originMetadata feed
+// EL7B's audit write (services/emailLiveLookupService.js's
+// recordAuditEventBestEffort), a narrow slice of EL9 pulled forward.
 //
 // clientId is read from req.serviceRequest (the verified, envelope-bound
 // field), never from req.servicePayload — the same discipline every other
@@ -32,9 +33,9 @@ const toolExecutionService = require('../services/toolExecutionService');
 const router = express.Router();
 
 router.post('/execute', requireServiceRequest, async (req, res) => {
-  const { toolName, args, requestingMemberId } = req.servicePayload || {};
+  const { toolName, args, requestingMemberId, origin, originMetadata } = req.servicePayload || {};
   const { clientId } = req.serviceRequest;
-  const result = await toolExecutionService.executeTool({ toolName, args, clientId, requestingMemberId });
+  const result = await toolExecutionService.executeTool({ toolName, args, clientId, requestingMemberId, origin, originMetadata });
   return res.status(200).json(result);
 });
 

@@ -24,7 +24,8 @@
 // (toolExecutionService) returns as-is to AIKB. Only an unexpected
 // exception (a bug, not a modeled outcome) propagates.
 
-const { email: emailConfig } = require('../config');
+const { createClient } = require('@supabase/supabase-js');
+const { email: emailConfig, supabase: supabaseConfig } = require('../config');
 const defaultGmailService = require('./gmailService');
 const defaultOauthConnectionsService = require('./oauthConnectionsService');
 const defaultEmailConnectionService = require('./emailConnectionService');
@@ -32,6 +33,43 @@ const defaultEmailPolicyService = require('./emailPolicyService');
 const { ruleMatchesMessage } = require('./emailPolicyService');
 const defaultEmailNormalizationService = require('./emailNormalizationService');
 const defaultSupabaseService = require('./supabaseService');
+
+// EL7B (LIVE_EMAIL_LOOKUP.md §10.1's "extend, don't duplicate", pulled
+// forward narrowly from EL9 since EL7B's own acceptance criteria requires
+// an audit row per live-lookup interaction) — thin, injectable data access
+// for email_ingestion_events' two new outcome values, mirroring every
+// other email service's own dbClient-plus-repo-object convention.
+const defaultAuditDbClient = createClient(supabaseConfig.url, supabaseConfig.serviceKey);
+const defaultAuditRepo = {
+  async recordEvent(event) {
+    const { error } = await defaultAuditDbClient.from('email_ingestion_events').insert(event);
+    if (error) throw new Error(`recordEvent failed: ${error.message}`);
+  },
+};
+
+/**
+ * Best-effort, never throws — an audit-write failure must not break the
+ * actual tool response, matching this codebase's consistent
+ * "review/analytics data is allowed to fail silently, the user-facing
+ * result is not" convention (e.g. runKnowledgeQuery.js#persistGapBestEffort).
+ */
+async function recordAuditEventBestEffort({ auditRepo, emailConnectionId, outcome, providerMessageId, origin, originMetadata, toolName, resultCount, providerLatencyMs, reason }) {
+  try {
+    await auditRepo.recordEvent({
+      email_connection_id: emailConnectionId,
+      provider_message_id: providerMessageId || null,
+      outcome,
+      origin: origin || null,
+      origin_metadata: originMetadata || null,
+      tool_name: toolName,
+      result_count: resultCount,
+      provider_latency_ms: providerLatencyMs,
+      reason: reason || null,
+    });
+  } catch (err) {
+    console.error('[emailLiveLookupService] audit write failed (best-effort, swallowed):', err.message);
+  }
+}
 
 const PROVIDER = 'gmail';
 
@@ -287,14 +325,18 @@ function capBody({ messageId, threadId, subject, fromAddress, date, body }) {
  * §4.2 — search_email_messages. `args` must already be validated/normalized
  * by services/emailToolValidation.js#validateSearchEmailMessagesArgs
  * (maxResults is trusted here to already be within
- * config.email.liveLookup.maxResultsPerSearch).
+ * config.email.liveLookup.maxResultsPerSearch). `origin`/`originMetadata`
+ * (EL7B) are audit-only — 'portal' or 'slack'/'slack_dm', narrow safe
+ * metadata never containing message content, matching the discipline every
+ * other origin_metadata use in this codebase already follows.
  */
-async function searchEmailMessages({ deps, clientId, requestingMemberId, args }) {
-  const { gmailService } = deps;
+async function searchEmailMessages({ deps, clientId, requestingMemberId, args, origin, originMetadata }) {
+  const { gmailService, auditRepo } = deps;
 
   const auth = await resolveAuthorizedMailbox({ deps, clientId, requestingMemberId });
   if (!auth.ok) return auth.result;
 
+  const startedAt = Date.now();
   const maxHistoricalDays = computeMaxHistoricalDays(auth.rules);
   const boundedDateFrom = clampDateFrom(args.dateFrom, maxHistoricalDays);
   const query = compileLiveSearchQuery({ ...args, dateFrom: boundedDateFrom });
@@ -306,7 +348,13 @@ async function searchEmailMessages({ deps, clientId, requestingMemberId, args })
       emailConfig.liveLookup.searchTimeoutMs
     );
   } catch {
-    return classifyGmailError();
+    const result = classifyGmailError();
+    await recordAuditEventBestEffort({
+      auditRepo, emailConnectionId: auth.emailConnectionRow.id, outcome: 'live_lookup_search',
+      origin, originMetadata, toolName: 'search_email_messages', resultCount: 0,
+      providerLatencyMs: Date.now() - startedAt, reason: result.reason,
+    });
+    return result;
   }
 
   const matches = [];
@@ -340,6 +388,12 @@ async function searchEmailMessages({ deps, clientId, requestingMemberId, args })
     });
   }
 
+  await recordAuditEventBestEffort({
+    auditRepo, emailConnectionId: auth.emailConnectionRow.id, outcome: 'live_lookup_search',
+    origin, originMetadata, toolName: 'search_email_messages', resultCount: matches.length,
+    providerLatencyMs: Date.now() - startedAt, reason: 'ok',
+  });
+
   return {
     status: 'ok',
     matches,
@@ -359,11 +413,21 @@ async function searchEmailMessages({ deps, clientId, requestingMemberId, args })
  * belongs to — a messageId/threadId from a different mailbox simply 404s
  * inside gmailService, never resolves.
  */
-async function getEmailContent({ deps, clientId, requestingMemberId, args }) {
-  const { gmailService, emailNormalizationService } = deps;
+async function getEmailContent({ deps, clientId, requestingMemberId, args, origin, originMetadata }) {
+  const { gmailService, emailNormalizationService, auditRepo } = deps;
 
   const auth = await resolveAuthorizedMailbox({ deps, clientId, requestingMemberId });
   if (!auth.ok) return auth.result;
+
+  const startedAt = Date.now();
+  const requestedId = args.threadId || args.messageId;
+  async function audit({ resultCount, reason }) {
+    await recordAuditEventBestEffort({
+      auditRepo, emailConnectionId: auth.emailConnectionRow.id, outcome: 'live_lookup_fetch',
+      providerMessageId: requestedId, origin, originMetadata, toolName: 'get_email_content',
+      resultCount, providerLatencyMs: Date.now() - startedAt, reason,
+    });
+  }
 
   if (args.threadId) {
     let thread;
@@ -373,7 +437,9 @@ async function getEmailContent({ deps, clientId, requestingMemberId, args }) {
         emailConfig.liveLookup.contentTimeoutMs
       );
     } catch {
-      return classifyGmailError();
+      const result = classifyGmailError();
+      await audit({ resultCount: 0, reason: result.reason });
+      return result;
     }
 
     const capped = thread.messages.slice(0, args.maxMessagesInThread);
@@ -384,6 +450,7 @@ async function getEmailContent({ deps, clientId, requestingMemberId, args }) {
       messages.push(capBody({ messageId: m.messageId, threadId: m.threadId, subject: m.subject, fromAddress: m.fromAddress, date: m.date, body }));
     }
 
+    await audit({ resultCount: messages.length, reason: 'ok' });
     return { status: 'ok', threadId: args.threadId, messages, truncated: thread.messages.length > args.maxMessagesInThread };
   }
 
@@ -395,13 +462,16 @@ async function getEmailContent({ deps, clientId, requestingMemberId, args }) {
       emailConfig.liveLookup.contentTimeoutMs
     );
   } catch {
-    return classifyGmailError();
+    const result = classifyGmailError();
+    await audit({ resultCount: 0, reason: result.reason });
+    return result;
   }
 
   // A deny-listed single message is reported the same way "nothing found"
   // is (§9's zero-matches precedent), not as a distinct error — the caller
   // has no legitimate need to know a message exists but was excluded.
   if (isDenied(auth.rules, toPolicyMessage(meta))) {
+    await audit({ resultCount: 0, reason: 'denied' });
     return { status: 'ok', messages: [], truncated: false };
   }
 
@@ -413,9 +483,12 @@ async function getEmailContent({ deps, clientId, requestingMemberId, args }) {
     );
     normalized = emailNormalizationService.normalizeEmailBody({ html: raw.html, text: raw.text });
   } catch {
-    return classifyGmailError();
+    const result = classifyGmailError();
+    await audit({ resultCount: 0, reason: result.reason });
+    return result;
   }
 
+  await audit({ resultCount: 1, reason: 'ok' });
   return {
     status: 'ok',
     messages: [capBody({ messageId: meta.messageId, threadId: meta.threadId, subject: meta.subject, fromAddress: meta.fromAddress, date: meta.date, body: normalized })],
@@ -433,8 +506,9 @@ function createEmailLiveLookupService({
   emailPolicyService = defaultEmailPolicyService,
   emailNormalizationService = defaultEmailNormalizationService,
   supabaseService = defaultSupabaseService,
+  auditRepo = defaultAuditRepo,
 } = {}) {
-  const deps = { gmailService, oauthConnectionsService, emailConnectionService, emailPolicyService, emailNormalizationService, supabaseService };
+  const deps = { gmailService, oauthConnectionsService, emailConnectionService, emailPolicyService, emailNormalizationService, supabaseService, auditRepo };
 
   return {
     searchEmailMessages: (params) => searchEmailMessages({ deps, ...params }),

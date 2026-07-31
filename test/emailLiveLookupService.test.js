@@ -84,15 +84,26 @@ function fixtureGmailService(overrides = {}) {
   };
 }
 
+// EL7B — a fake audit repo so tests never make a real Supabase call; also
+// lets tests assert on exactly what got audited.
+function fixtureAuditRepo() {
+  const events = [];
+  return { events, recordEvent: async (event) => { events.push(event); } };
+}
+
 function makeService(overrides = {}) {
-  return createEmailLiveLookupService({
+  const auditRepo = overrides.auditRepo || fixtureAuditRepo();
+  const service = createEmailLiveLookupService({
     gmailService: fixtureGmailService(overrides.gmailService),
     oauthConnectionsService: fixtureOauthConnectionsService(overrides.oauthConnectionsService),
     emailConnectionService: fixtureEmailConnectionService(overrides.emailConnectionService),
     emailPolicyService: fixtureEmailPolicyService(overrides.emailPolicyService),
     emailNormalizationService: { normalizeEmailBody },
     supabaseService: fixtureSupabaseService(overrides.supabaseService),
+    auditRepo,
   });
+  service._auditEvents = auditRepo.events;
+  return service;
 }
 
 const SEARCH_ARGS = { maxResults: 10 };
@@ -362,4 +373,92 @@ test('computeMaxHistoricalDays: uses the most permissive enabled rule', () => {
     { enabled: false, maxHistoricalDays: 730 },
   ];
   assert.equal(computeMaxHistoricalDays(rules), 180);
+});
+
+// ─────────────────────────────────────────────
+// EL7B — audit trail (§10, pulled forward narrowly from EL9)
+// ─────────────────────────────────────────────
+
+test('search: a successful call writes one live_lookup_search audit row naming the connection, origin, tool, and result count', async () => {
+  const service = makeService({
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: ['m1'], nextPageToken: null }),
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'hi', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x',
+      }),
+    },
+  });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'slack_dm', originMetadata: { teamId: 'T1' } });
+
+  assert.equal(service._auditEvents.length, 1);
+  const event = service._auditEvents[0];
+  assert.equal(event.email_connection_id, 'email-conn-a');
+  assert.equal(event.outcome, 'live_lookup_search');
+  assert.equal(event.origin, 'slack_dm');
+  assert.deepEqual(event.origin_metadata, { teamId: 'T1' });
+  assert.equal(event.tool_name, 'search_email_messages');
+  assert.equal(event.result_count, 1);
+  assert.equal(event.provider_message_id, null, 'a search has no single message id to attribute');
+  assert.ok(typeof event.provider_latency_ms === 'number');
+});
+
+test('search: a gate rejection (e.g. no consent) writes NO audit row — nothing was ever attempted against Gmail', async () => {
+  const service = makeService({ supabaseService: { member: fixtureMember({ live_lookup_consented_at: null }) } });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'portal' });
+  assert.equal(service._auditEvents.length, 0);
+});
+
+test('search: a provider failure still writes an audit row, with the failure reason recorded', async () => {
+  const service = makeService({
+    gmailService: { listMessageIdsByQuery: async () => { throw new Error('down'); } },
+  });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'portal' });
+
+  assert.equal(service._auditEvents.length, 1);
+  assert.equal(service._auditEvents[0].outcome, 'live_lookup_search');
+  assert.equal(service._auditEvents[0].reason, 'provider_timeout');
+  assert.equal(service._auditEvents[0].result_count, 0);
+});
+
+test('get_email_content (messageId): writes a live_lookup_fetch audit row naming the requested message id', async () => {
+  const service = makeService({
+    gmailService: {
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'hi', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x',
+      }),
+      getMessageBody: async ({ messageId }) => ({ messageId, html: null, text: 'body' }),
+    },
+  });
+  await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: CONTENT_ARGS_BY_MESSAGE, origin: 'slack_dm' });
+
+  assert.equal(service._auditEvents.length, 1);
+  const event = service._auditEvents[0];
+  assert.equal(event.outcome, 'live_lookup_fetch');
+  assert.equal(event.provider_message_id, 'msg-1');
+  assert.equal(event.result_count, 1);
+});
+
+test('get_email_content (threadId): audits the requested threadId as provider_message_id and the returned message count', async () => {
+  const messages = [
+    { messageId: 'm1', threadId: 't1', subject: 'a', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, html: null, text: 'x' },
+    { messageId: 'm2', threadId: 't1', subject: 'b', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, html: null, text: 'y' },
+  ];
+  const service = makeService({ gmailService: { getThread: async ({ threadId }) => ({ threadId, messages }) } });
+  await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: { messageId: null, threadId: 't1', maxMessagesInThread: 5 }, origin: 'portal' });
+
+  const event = service._auditEvents[0];
+  assert.equal(event.provider_message_id, 't1');
+  assert.equal(event.result_count, 2);
+});
+
+test('an audit-write failure never breaks the actual tool response (best-effort)', async () => {
+  const failingAuditRepo = { events: [], recordEvent: async () => { throw new Error('db down'); } };
+  const service = makeService({
+    auditRepo: failingAuditRepo,
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: [], nextPageToken: null }),
+    },
+  });
+  const result = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'portal' });
+  assert.equal(result.status, 'ok');
 });

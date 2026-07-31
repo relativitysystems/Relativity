@@ -18,6 +18,7 @@ const defaultAikbAskClient = require('./aikbAskClient');
 const defaultSlackCollectionAccessService = require('./slackCollectionAccessService');
 const defaultSlackDeliveryFailureService = require('./slackDeliveryFailureService');
 const defaultSlackUserLinkService = require('./slackUserLinkService');
+const defaultEmailLiveLookupService = require('./emailLiveLookupService');
 const { extractQuestion, EMPTY_QUESTION_REPLY } = require('./slackQuestionService');
 const { FALLBACK } = require('./slackAnswerFormatter');
 const { retryWithBackoff } = require('./retryWithBackoff');
@@ -85,6 +86,7 @@ function createSlackEventsService({
   slackCollectionAccessService = defaultSlackCollectionAccessService,
   slackDeliveryFailureService = defaultSlackDeliveryFailureService,
   slackUserLinkService = defaultSlackUserLinkService,
+  emailLiveLookupService = defaultEmailLiveLookupService,
   sleep,
 } = {}) {
   /**
@@ -229,6 +231,26 @@ function createSlackEventsService({
       return { status: 200, outcome: OUTCOME.EMPTY_QUESTION };
     }
 
+    // EL7B (LIVE_EMAIL_LOOKUP.md §3.2, §3.3) — requestingMemberId is
+    // resolved ONLY for a DM from a linked Slack user, never for a channel
+    // @mention regardless of link status: "channel @mentions never offer
+    // the tools regardless of link status" is a hard MVP policy, not an
+    // oversight, so this resolution is structurally unreachable for
+    // event.type === 'app_mention'. Re-resolved on every request — a
+    // stale/cached link is never trusted (§7B's own security requirement).
+    // emailLookupAvailable is the same cheap, DB-only, no-Gmail-call check
+    // the portal uses (EL6) — computed only when a member was actually
+    // resolved, since it's meaningless without one.
+    let requestingMemberId = null;
+    let emailLookupAvailable = false;
+    if (isDirectMessage) {
+      const linked = await slackUserLinkService.getLinkedMember({ clientId: client.id, slackUserId: event.user });
+      if (linked) {
+        requestingMemberId = linked.member_id;
+        emailLookupAvailable = await emailLiveLookupService.isLiveLookupAvailable({ clientId: client.id, requestingMemberId });
+      }
+    }
+
     // ADR-007: the fast accept-and-enqueue call to AIKB gets the same
     // bounded, immediate, in-flow retry treatment as Slack delivery itself
     // — there is no scheduled sweep left to recover a row stuck at
@@ -246,6 +268,8 @@ function createSlackEventsService({
           originMetadata: { teamId, channelId: event.channel, threadTs, eventId },
           allowedCollectionIds,
           origin: isDirectMessage ? 'slack_dm' : 'slack',
+          memberId: requestingMemberId,
+          emailLookupAvailable,
         }),
         { attempts: config.slackDelivery.maxAttempts, backoffMs: config.slackDelivery.backoffMs, sleep }
       );
