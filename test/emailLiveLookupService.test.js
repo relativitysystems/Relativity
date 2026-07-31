@@ -462,3 +462,66 @@ test('an audit-write failure never breaks the actual tool response (best-effort)
   const result = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'portal' });
   assert.equal(result.status, 'ok');
 });
+
+// ─────────────────────────────────────────────
+// EL8 (§6, security requirement: "verify no OAuth/credential/hidden-
+// recipient field ever appears in a rendered citation — a dedicated test,
+// not just code review"). Simulates a Gmail response carrying extra,
+// sensitive-shaped fields (as if a future gmailService change accidentally
+// widened what getMessageMetadata/getMessageBody return) and proves the
+// mapped result this file returns to AIKB never propagates them —
+// structural, because every mapping below is an explicit property read,
+// never an object spread.
+// ─────────────────────────────────────────────
+
+const FORBIDDEN_KEYS = ['accessToken', 'refreshToken', 'access_token', 'refresh_token', 'oauthToken', 'credential', 'bcc', 'rawPayload', 'authTag'];
+
+function assertNoForbiddenKeys(obj) {
+  const keys = Object.keys(obj);
+  for (const forbidden of FORBIDDEN_KEYS) {
+    assert.equal(keys.includes(forbidden), false, `result must never include "${forbidden}"`);
+  }
+}
+
+test('security: a search match never propagates extra/sensitive fields present on the underlying Gmail metadata response', async () => {
+  const service = makeService({
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: ['m1'], nextPageToken: null }),
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'hi', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x',
+        // Simulated leak surface — a hypothetical widened Gmail response.
+        accessToken: 'ya29.leaked', refreshToken: '1//leaked', bcc: 'secret@b.com', rawPayload: { mime: 'raw' },
+      }),
+    },
+  });
+  const result = await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS });
+  assertNoForbiddenKeys(result.matches[0]);
+  assert.deepEqual(Object.keys(result.matches[0]).sort(), ['date', 'deepLinkUrl', 'fromAddress', 'messageId', 'snippet', 'subject', 'threadId'].sort());
+});
+
+test('security: get_email_content (messageId) never propagates extra/sensitive fields, and the access token itself never appears in the response', async () => {
+  const service = makeService({
+    gmailService: {
+      getMessageMetadata: async ({ messageId }) => ({
+        messageId, threadId: 't1', subject: 'hi', fromAddress: 'a@b.com', date: '2026-07-30T00:00:00Z', isSent: false, snippet: 'x',
+        accessToken: 'ya29.leaked',
+      }),
+      getMessageBody: async ({ messageId }) => ({ messageId, html: null, text: 'body', accessToken: 'ya29.leaked-in-body', bcc: 'secret@b.com' }),
+    },
+  });
+  const result = await service.getEmailContent({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: CONTENT_ARGS_BY_MESSAGE });
+  assertNoForbiddenKeys(result.messages[0]);
+  assert.equal(JSON.stringify(result).includes('ya29.leaked'), false, 'the Gmail access token used internally must never appear anywhere in the returned result');
+});
+
+test('security: the audit row itself never contains the access token or message body content', async () => {
+  const service = makeService({
+    gmailService: {
+      listMessageIdsByQuery: async () => ({ messageIds: [], nextPageToken: null }),
+    },
+  });
+  await service.searchEmailMessages({ clientId: CLIENT_ID, requestingMemberId: MEMBER_A, args: SEARCH_ARGS, origin: 'portal' });
+  const event = service._auditEvents[0];
+  assert.equal(JSON.stringify(event).includes('valid-token'), false, 'the access token (fixtureEmailConnectionService default) must never be audited');
+  assertNoForbiddenKeys(event);
+});

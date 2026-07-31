@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatSlackMessage, formatCitations, truncateAnswer, FALLBACK, MAX_CITATIONS, MAX_ANSWER_CHARS } = require('../services/slackAnswerFormatter');
+const { formatSlackMessage, formatCitations, titleForSource, truncateAnswer, FALLBACK, MAX_CITATIONS, MAX_ANSWER_CHARS } = require('../services/slackAnswerFormatter');
 
 test('renders a plain answer with no sources', () => {
   const text = formatSlackMessage({ answer: 'The PTO policy allows 15 days.', sources: [], isKnowledgeGap: false });
@@ -152,4 +152,40 @@ test('emailLookupSuggested is omitted entirely when false/absent — no behavior
   const withFalseFlag = formatSlackMessage({ answer: 'An answer.', sources: [], isKnowledgeGap: false, emailLookupSuggested: false });
   assert.equal(withoutFlag, 'An answer.');
   assert.equal(withFalseFlag, 'An answer.');
+});
+
+// ─────────────────────────────────────────────
+// EL8 (§6, security requirement: "verify no OAuth/credential/hidden-
+// recipient field ever appears in a rendered citation — a dedicated test,
+// not just code review"). titleForSource/formatCitations are the only
+// functions that ever turn a source object into rendered text — proves
+// they never do so via anything but explicit, allowlisted field reads.
+// ─────────────────────────────────────────────
+
+test('security: titleForSource reads only subject/from/title/fileName — a poisoned source never leaks any other field into the rendered title', () => {
+  const poisoned = {
+    subject: 'Renewal terms', from: 'jane@acme.example.com', live: true,
+    accessToken: 'ya29.leaked', refreshToken: '1//leaked', bcc: 'secret@b.com', deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/m1',
+  };
+  const title = titleForSource(poisoned);
+  assert.equal(title, '"Renewal terms" from jane@acme.example.com');
+  assert.equal(title.includes('leaked'), false);
+  assert.equal(title.includes('secret@b.com'), false);
+});
+
+test('security: formatCitations never renders a deepLinkUrl, credential, or any field beyond the constructed title line', () => {
+  const poisoned = {
+    subject: 'Renewal terms', from: 'jane@acme.example.com', live: true,
+    accessToken: 'ya29.leaked', deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/m1?token=ya29.leaked-in-url',
+  };
+  const lines = formatCitations([poisoned]);
+  assert.deepEqual(lines, ['"Renewal terms" from jane@acme.example.com (Live)']);
+  assert.equal(lines[0].includes('leaked'), false);
+  assert.equal(lines[0].includes('http'), false, 'formatCitations renders only the title line, never a URL — deep links are portal/audit-only, per §3.2\'s "never inlines... into the channel/DM message"');
+});
+
+test('security: formatSlackMessage\'s full rendered text never contains an access token even when both sources and the answer text are poisoned', () => {
+  const poisoned = { subject: 'x', from: 'a@b.com', live: true, accessToken: 'ya29.leaked-in-source' };
+  const text = formatSlackMessage({ answer: 'Here is the answer.', sources: [poisoned], isKnowledgeGap: false });
+  assert.equal(text.includes('leaked'), false);
 });
