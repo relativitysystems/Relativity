@@ -235,6 +235,8 @@ function capBody({ messageId, threadId, subject, fromAddress, date, body }) {
     date,
     body: truncated ? body.slice(0, max) : body,
     truncated,
+    // §6.2 — same URL shape as search's match objects above.
+    deepLinkUrl: `https://mail.google.com/mail/u/0/#all/${messageId}`,
   };
 }
 
@@ -288,6 +290,10 @@ async function searchEmailMessages({ deps, clientId, requestingMemberId, args })
       fromAddress: meta.fromAddress,
       date: meta.date,
       snippet: capSnippet(meta.snippet),
+      // §6.2 — same URL shape as ingestion's existing citation deep link
+      // (emailSyncService.js), Gmail-only for now (matches this file's
+      // existing Gmail-only scope).
+      deepLinkUrl: `https://mail.google.com/mail/u/0/#all/${meta.messageId}`,
     });
   }
 
