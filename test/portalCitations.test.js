@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 // Pure, DOM-free logic — no jsdom or browser stub needed, mirroring
 // test/portalCache.test.js's dual-mode require pattern.
 const PortalCitations = require('../public/portal/portalCitations.js');
-const { isEmailSource, isLiveSource, citationDate, formatCitationDate, shouldShowSourcesBox, groupSourcesForDisplay } = PortalCitations;
+const { isEmailSource, isLiveSource, citationDate, formatCitationDate, shouldShowSourcesBox, groupSourcesForDisplay, stripInlineSourceLine } = PortalCitations;
 
 const DOC_SOURCE = { fileName: 'Handbook.pdf', documentId: 'doc-1', pages: [2] };
 const EMAIL_SOURCE = { documentId: 'doc-email-1', fileName: 'Renewal.txt', title: '"Renewal" from Jane', subject: 'Renewal', from: 'Jane Doe', sentAt: '2026-07-20T12:00:00Z', deepLinkUrl: 'https://mail.google.com/mail/u/0/#all/msg-1' };
@@ -42,6 +42,37 @@ test('formatCitationDate returns null for null/empty/unparseable input', () => {
   assert.equal(formatCitationDate(null), null);
   assert.equal(formatCitationDate(''), null);
   assert.equal(formatCitationDate('not-a-date'), null);
+});
+
+// EM10.5 Scenario 2 bug fix — pinned to UTC so a timestamp near a timezone
+// boundary formats deterministically regardless of the visitor's browser
+// timezone (this is what previously caused this citation date to disagree
+// with aikb/services/openaiService.js's server-side one).
+test('formatCitationDate is pinned to UTC, not the browser\'s local timezone', () => {
+  assert.equal(formatCitationDate('2026-08-04T23:30:00Z'), 'Aug 4, 2026');
+  assert.equal(formatCitationDate('2026-08-05T00:30:00Z'), 'Aug 5, 2026');
+});
+
+// ─────────────────────────────────────────────
+// stripInlineSourceLine — EM10.5 Scenario 2 bug fix
+// ─────────────────────────────────────────────
+
+test('stripInlineSourceLine removes a trailing "Source: ..." line and trims trailing whitespace', () => {
+  const text = 'TL;DR\nThe meeting is Thursday at 9am.\n\nSource: Weekly Sales Meeting Agenda.txt';
+  assert.equal(stripInlineSourceLine(text), 'TL;DR\nThe meeting is Thursday at 9am.');
+});
+
+test('stripInlineSourceLine leaves text with no Source line unchanged (aside from trimming)', () => {
+  assert.equal(stripInlineSourceLine('An answer with no citation line.'), 'An answer with no citation line.');
+});
+
+test('stripInlineSourceLine removes a "Source: N/A" line the same as any other', () => {
+  assert.equal(stripInlineSourceLine('Answer.\n\nSource: N/A'), 'Answer.');
+});
+
+test('stripInlineSourceLine never throws on a non-string input', () => {
+  assert.equal(stripInlineSourceLine(null), null);
+  assert.equal(stripInlineSourceLine(undefined), undefined);
 });
 
 // ─────────────────────────────────────────────

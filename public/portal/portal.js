@@ -1900,8 +1900,6 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'kb-message-bubble';
-    bubble.textContent = content;
-    wrap.appendChild(bubble);
 
     if (role === 'assistant') {
       // EL6 (§6.3) — live sources are split out and always shown in their
@@ -1910,13 +1908,26 @@
       const allSources = sources || [];
       const liveSources = allSources.filter(isLiveSource);
       const storedSources = allSources.filter(s => !isLiveSource(s));
+      const showStoredBox = shouldShowSourcesBox(content, storedSources);
 
-      if (shouldShowSourcesBox(content, storedSources)) {
-        wrap.appendChild(buildSourcesBox(storedSources));
+      // EM10.5 Scenario 2 bug fix — when the structured box below is going
+      // to render these same sources, drop the model's own inline "Source:"
+      // line from the visible bubble text so the citation isn't shown
+      // twice. Both boxes are appended as CHILDREN of this bubble (not
+      // siblings under wrap) so citations render as part of the same
+      // message rather than a visually separate second bubble.
+      bubble.textContent = showStoredBox ? stripInlineSourceLine(content) : content;
+      wrap.appendChild(bubble);
+
+      if (showStoredBox) {
+        bubble.appendChild(buildSourcesBox(storedSources));
       }
       if (liveSources.length > 0) {
-        wrap.appendChild(buildLiveSourcesBox(liveSources));
+        bubble.appendChild(buildLiveSourcesBox(liveSources));
       }
+    } else {
+      bubble.textContent = content;
+      wrap.appendChild(bubble);
     }
 
     kbMessages.appendChild(wrap);
@@ -2001,7 +2012,7 @@
   // as a separate <script> before this file (portal.html) so it's directly
   // unit-testable via node:test without a DOM, mirroring portalCache.js's
   // existing split. Only the DOM-building below stays in this file.
-  const { shouldShowSourcesBox, isEmailSource, isLiveSource, citationDate, formatCitationDate, groupSourcesForDisplay } = PortalCitations;
+  const { shouldShowSourcesBox, isEmailSource, isLiveSource, citationDate, formatCitationDate, groupSourcesForDisplay, stripInlineSourceLine } = PortalCitations;
 
   // EL6 (§6.2, §6.3) — `live` adds the small "🔴 Live" badge and reads
   // citationDate (sentAt for stored, receivedAt for live) instead of

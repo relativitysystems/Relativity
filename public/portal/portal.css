@@ -1288,6 +1288,23 @@ body {
   background: var(--surface-tint-1);
 }
 
+/* EM10.5 Scenario 2 bug fix — portal.js now appends the sources/live-sources
+   box as a CHILD of .kb-message-bubble rather than a sibling under
+   .kb-message, so a citation renders as part of the same message rather
+   than a visually separate second bubble (it previously shared the bubble's
+   own background + border-radius, which read as a second bubble even
+   though it was one DOM level up). Nested here, it becomes a divided
+   section within the single bubble instead. */
+.kb-message-bubble > .kb-message-sources,
+.kb-message-bubble > .kb-message-live-sources {
+  max-width: 100%;
+  margin-top: 10px;
+  padding: 10px 8px 0;
+  background: transparent;
+  border-radius: 0;
+  border-top: 1px solid var(--border-hover);
+}
+
 .kb-message-sources-label {
   display: block;
   font-size: 0.68rem;

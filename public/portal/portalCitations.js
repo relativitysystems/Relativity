@@ -30,11 +30,16 @@
     return s && (s.sentAt || s.receivedAt);
   }
 
+  // EM10.5 Scenario 2 bug fix: pinned to UTC so this always agrees with
+  // aikb/services/openaiService.js's identical function — before this, each
+  // defaulted to its own runtime's local timezone (this browser's vs. the
+  // AIKB Node process's), so the same sentAt instant near a timezone
+  // boundary could format to different calendar dates on each side.
   function formatCitationDate(isoString) {
     if (!isoString) return null;
     var d = new Date(isoString);
     if (isNaN(d.getTime())) return null;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   }
 
   // The box was previously suppressed whenever the model's own answer text
@@ -78,6 +83,23 @@
     return groups;
   }
 
+  // EM10.5 Scenario 2 bug fix — strips the model's own inline "Source: ..."
+  // line(s) (RAG_SYSTEM_PROMPT's Response Format always ends the answer with
+  // one) from the displayed bubble text. Only called when a structured
+  // sources box is about to be rendered for the same message — the box
+  // conveys the same information (and more: dates, deep links, thread
+  // grouping), so showing the freeform line too just duplicates the
+  // citation and reads as two disconnected blocks. Never called for a
+  // knowledge-gap answer ("Source: N/A") or a plain-document answer with no
+  // deep link, where the inline line remains the sole citation, unchanged.
+  function stripInlineSourceLine(answerText) {
+    if (typeof answerText !== 'string') return answerText;
+    return answerText
+      .replace(/^[ \t]*Source\s*:.*$/gim, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   var PortalCitations = {
     isEmailSource: isEmailSource,
     isLiveSource: isLiveSource,
@@ -85,6 +107,7 @@
     formatCitationDate: formatCitationDate,
     shouldShowSourcesBox: shouldShowSourcesBox,
     groupSourcesForDisplay: groupSourcesForDisplay,
+    stripInlineSourceLine: stripInlineSourceLine,
   };
 
   if (typeof module === 'object' && module.exports) {
