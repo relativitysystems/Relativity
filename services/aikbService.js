@@ -16,6 +16,43 @@ function getAikbSupabase() {
   return _client;
 }
 
+// Test-only seam: lets tests substitute a fake Storage client instead of
+// constructing a real @supabase/supabase-js client from env config. Never
+// called by application code — see test/aikbService.test.js.
+function _setAikbSupabaseClientForTests(client) { _client = client; }
+function _resetAikbSupabaseClientForTests() { _client = null; }
+
+// EM10.5 Scenario 3 follow-up (Architecture/architecture/EM10_5_STAGING_CHECKLIST.md
+// bug log): uploads/{clientId}/{sourceFileId} is deterministic, and every
+// original caller of uploadAndIngest (portal upload, ZIP import, Google
+// Drive import — see routes/api.js) mints sourceFileId fresh via
+// crypto.randomUUID() per call, so that path can never legitimately already
+// exist there. upsert: false was a correct, defensive "this must be new;
+// fail loudly if it isn't" guard under that invariant.
+//
+// Gmail ingestion (EM6) passes sourceFileId = the Gmail message id, which is
+// STABLE — the same value is legitimately re-submitted on every re-scan
+// (historical Full Scan revisits every currently-matching message
+// unconditionally, before AIKB's own content-hash dedup ever runs; see
+// emailSyncService.js's runHistoricalPage / processCandidateMessage). Under
+// upsert: false, any repeat scan of already-ingested mail — or any
+// delete-then-reimport cycle — fails at this storage write with "The
+// resource already exists" before AIKB gets a chance to decide whether the
+// content is unchanged, already indexed, or needs rebuilding.
+//
+// This is an explicit, testable allowlist keyed only on sourceProvider —
+// deliberately not inferred from the file name or storage path. 'microsoft'
+// is intentionally NOT included: no Relativity code path ingests
+// Microsoft/Outlook email today (it exists only as an allowed sourceProvider
+// enum value in oauthConnectionsService.js's SUPPORTED_PROVIDERS and AIKB's
+// /ingest validation) — add it here only once a real stable-message-id
+// ingestion path for it exists.
+const STABLE_SOURCE_ID_PROVIDERS = new Set(['gmail']);
+
+function allowsStorageOverwrite(sourceProvider) {
+  return STABLE_SOURCE_ID_PROVIDERS.has(sourceProvider);
+}
+
 function aikbHeaders(authHeader) {
   const headers = { 'x-api-key': aikbConfig.apiKey };
   if (authHeader) headers.Authorization = authHeader;
@@ -51,11 +88,14 @@ function signedEnvelope(clientId, payload) {
   });
 }
 
-async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType) {
+async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType, sourceProvider = 'portal_upload') {
   const storagePath = `uploads/${clientId}/${sourceFileId}`;
+  // Direct atomic upsert for stable-identity providers (Gmail) rather than a
+  // delete-then-upload — a delete-first strategy would leave a window where
+  // the path is empty and a concurrent read/reindex sees no object at all.
   const { error } = await getAikbSupabase().storage
     .from(aikbConfig.storageBucket)
-    .upload(storagePath, fileBuffer, { contentType: mimeType, upsert: false });
+    .upload(storagePath, fileBuffer, { contentType: mimeType, upsert: allowsStorageOverwrite(sourceProvider) });
 
   if (error) throw new Error(`AIKB storage upload failed: ${error.message}`);
   return storagePath;
@@ -69,7 +109,7 @@ async function uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType) {
 // non-default collection at first insert; emailMetadata is required by
 // AIKB's /ingest route whenever sourceProvider is gmail/microsoft.
 async function uploadAndIngest({ clientId, sourceFileId, fileName, mimeType, fileBuffer, sourceProvider = 'portal_upload', collectionId, emailMetadata }) {
-  const storagePath = await uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType);
+  const storagePath = await uploadToStorage(clientId, sourceFileId, fileBuffer, mimeType, sourceProvider);
   const payload = { sourceProvider, sourceFileId, fileName, mimeType, storagePath };
   if (collectionId) payload.collectionId = collectionId;
   if (emailMetadata) payload.emailMetadata = emailMetadata;
@@ -482,6 +522,8 @@ async function updateKnowledgeGapStatus(clientId, gapId, status) {
 }
 
 module.exports = {
+  uploadToStorage,
+  allowsStorageOverwrite,
   uploadAndIngest,
   listDocuments,
   queryKnowledge,
@@ -506,4 +548,6 @@ module.exports = {
   moveDocumentCollection,
   listKnowledgeGaps,
   updateKnowledgeGapStatus,
+  _setAikbSupabaseClientForTests,
+  _resetAikbSupabaseClientForTests,
 };
