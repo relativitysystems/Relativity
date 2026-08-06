@@ -3151,23 +3151,16 @@
     }, 4000);
   }
 
-  // EL6 (§2.1) — `showLiveEmailHint` adds a static "Searching connected
-  // email…" line alongside the existing loading-dots bubble. Static, not a
-  // real tool-call-in-flight signal (§2.4's documented MVP limitation —
-  // /query is a single non-streaming response, so there is no mid-request
-  // event to key a real "tool_call_started" state off of).
+  // EL6 (§2.1) — `showLiveEmailHint` still reflects whether a live mailbox
+  // lookup could plausibly be in play for this question (kept for callers
+  // and any future reuse), but the loading bubble itself is presentation-
+  // only: just the animated dots, no explanatory text underneath.
   function appendLoadingBubble(showLiveEmailHint) {
     const wrap = document.createElement('div');
     wrap.className = 'kb-message kb-message--assistant';
     const bubble = document.createElement('div');
     bubble.className = 'kb-message-bubble';
     bubble.innerHTML = '<span class="loading-dots"><span></span><span></span><span></span></span>';
-    if (showLiveEmailHint) {
-      const hint = document.createElement('span');
-      hint.className = 'kb-loading-live-email-hint';
-      hint.textContent = 'Searching connected email…';
-      bubble.appendChild(hint);
-    }
     wrap.appendChild(bubble);
     kbMessages.appendChild(wrap);
     kbMessages.scrollTop = kbMessages.scrollHeight;

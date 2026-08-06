@@ -1839,16 +1839,6 @@ select.form-input {
 .loading-dots span:nth-child(2) { animation-delay: 0.18s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.36s; }
 
-/* EL6 (§2.1) — static "Searching connected email…" hint, shown alongside
-   the loading dots whenever the active mode could plausibly trigger a
-   live lookup. */
-.kb-loading-live-email-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
 @keyframes loading-dot-pulse {
   0%, 70%, 100% { transform: scale(0.7); opacity: 0.4; }
   35%            { transform: scale(1);   opacity: 1;   }
