@@ -851,7 +851,7 @@ test('incremental sync: a labelRemoved change tombstones the previously-ingested
   const { service, emailSyncRepo } = makeService({
     pages: [], rules: [ALLOW_FINANCE], documents, gmailCalls,
     initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
-    historyPages: [{ changes: [{ type: 'labelRemoved', messageId: 'old-msg' }], historyId: '150', nextPageToken: null }],
+    historyPages: [{ changes: [{ type: 'labelRemoved', messageId: 'old-msg', labelIds: [MANAGED_LABEL_ID] }], historyId: '150', nextPageToken: null }],
   });
   const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
   assert.equal(result.reconciled.length, 1);
@@ -859,6 +859,79 @@ test('incremental sync: a labelRemoved change tombstones the previously-ingested
   const event = emailSyncRepo._events.find((e) => e.provider_message_id === 'old-msg');
   assert.equal(event.outcome, 'tombstoned_label_removed');
   assert.match(event.reason, /label removed/);
+});
+
+// EM10.5 Scenario 3 regression: removing the managed label from ONE message
+// tombstoned three previously-ingested messages in production. Root cause —
+// Gmail's labelId-scoped history.list still surfaced `labelsRemoved` events
+// for an UNREAD-label change (caused by opening the other two messages in
+// Gmail) alongside the one real managed-label removal; the code treated
+// every labelRemoved event identically regardless of which label it named.
+test('incremental sync: a labelRemoved event naming a DIFFERENT label (e.g. UNREAD, removed by opening the message) is not treated as the managed label being removed', async () => {
+  const documents = [
+    { id: 'doc-weekly', source_provider: 'gmail', source_file_id: 'weekly-msg', status: 'indexed' },
+    { id: 'doc-refund', source_provider: 'gmail', source_file_id: 'refund-msg', status: 'indexed' },
+    { id: 'doc-phoenix', source_provider: 'gmail', source_file_id: 'phoenix-msg', status: 'indexed' },
+  ];
+  const { service, emailSyncRepo } = makeService({
+    pages: [], rules: [],
+    documents,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{
+      changes: [
+        { type: 'labelRemoved', messageId: 'weekly-msg', labelIds: [MANAGED_LABEL_ID] }, // the real, intended removal
+        { type: 'labelRemoved', messageId: 'refund-msg', labelIds: ['UNREAD'] }, // opened in Gmail — unrelated
+        { type: 'labelRemoved', messageId: 'phoenix-msg', labelIds: ['UNREAD'] }, // opened in Gmail — unrelated
+      ],
+      historyId: '150', nextPageToken: null,
+    }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+
+  assert.equal(result.reconciled.length, 1, 'only the message whose managed label was actually removed should be tombstoned');
+  assert.equal(result.reconciled[0].messageId, 'weekly-msg');
+  const tombstoneEvents = emailSyncRepo._events.filter((e) => e.outcome === 'tombstoned_label_removed');
+  assert.equal(tombstoneEvents.length, 1);
+  assert.equal(tombstoneEvents[0].provider_message_id, 'weekly-msg');
+});
+
+test('incremental sync: a labelRemoved event with no labelIds at all is treated as unrelated noise, not a managed-label removal (fail-safe default)', async () => {
+  const documents = [{ id: 'doc-old', source_provider: 'gmail', source_file_id: 'old-msg', status: 'indexed' }];
+  const { service } = makeService({
+    pages: [], rules: [], documents,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'labelRemoved', messageId: 'old-msg', labelIds: [] }], historyId: '150', nextPageToken: null }],
+  });
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+  assert.equal(result.reconciled.length, 0);
+});
+
+// EM10.5 Scenario 3, second confirmed bug: a message tombstoned by the
+// incremental page's own labelRemoved diff was not excluded from the same
+// run's policy-change reconciliation pass, so it could be re-evaluated and
+// tombstoned a SECOND time (confirmed in production: two ingestion events
+// for the same message, 1.65s apart — tombstoned_label_removed then
+// tombstoned_policy_change).
+test('incremental sync: a message tombstoned by the label-removed diff is excluded from the same-run policy-change reconciliation pass — no redundant double-tombstone', async () => {
+  const documents = [{ id: 'doc-1', source_provider: 'gmail', source_file_id: 'msg-1', status: 'indexed' }];
+  // Still resolvable via getMessageMetadata for reconcilePolicyChanges's own
+  // re-fetch, with no managed label and an empty ruleset (rules: []) — if
+  // NOT excluded, this candidate would fail policy and get tombstoned again.
+  const extraMessages = [{ id: 'msg-1', subject: 'Weekly Sales Meeting Agenda', fromAddress: 'a@x.com', labelIds: [] }];
+  const aikbCalls = {};
+  const { service, emailSyncRepo } = makeService({
+    pages: [], rules: [], documents, previouslyIngested: ['msg-1'], extraMessages, aikbCalls,
+    initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
+    historyPages: [{ changes: [{ type: 'labelRemoved', messageId: 'msg-1', labelIds: [MANAGED_LABEL_ID] }], historyId: '150', nextPageToken: null }],
+  });
+
+  const result = await service.syncConnection({ clientId: 'client-a', emailConnectionRow: fixtureConnection(), memberSearchEnabled: true, accessToken: 't' });
+
+  assert.equal(result.reconciled.length, 1, 'must be tombstoned exactly once, not once per reconciliation pass');
+  assert.equal(aikbCalls.deleteDocumentById.length, 1);
+  const events = emailSyncRepo._events.filter((e) => e.provider_message_id === 'msg-1');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].outcome, 'tombstoned_label_removed');
 });
 
 test('incremental sync: a messageDeleted change also tombstones, with a distinct reason from a label removal', async () => {
@@ -881,7 +954,7 @@ test('incremental sync: a message labeled then unlabeled within the SAME page ne
     pages: [{ messages: [{ id: 'm1', subject: 'X', fromAddress: 'a@x.com', labelIds: [] }] }], rules: [ALLOW_FINANCE], documents, aikbCalls,
     initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
     historyPages: [{
-      changes: [{ type: 'labelAdded', messageId: 'm1' }, { type: 'labelRemoved', messageId: 'm1' }],
+      changes: [{ type: 'labelAdded', messageId: 'm1' }, { type: 'labelRemoved', messageId: 'm1', labelIds: [MANAGED_LABEL_ID] }],
       historyId: '150', nextPageToken: null,
     }],
   });
@@ -951,8 +1024,8 @@ test('incremental pagination: a second page reuses the SAME startHistoryId (the 
     pages, rules: [], gmailCalls,
     initialSyncState: { cursor_status: 'valid', provider_cursor: '100' },
     historyPages: [
-      { changes: [{ type: 'labelRemoved', messageId: 'm1' }], historyId: '120', nextPageToken: 'hist-page-2' },
-      { changes: [{ type: 'labelRemoved', messageId: 'm2' }], historyId: '150', nextPageToken: null },
+      { changes: [{ type: 'labelRemoved', messageId: 'm1', labelIds: [MANAGED_LABEL_ID] }], historyId: '120', nextPageToken: 'hist-page-2' },
+      { changes: [{ type: 'labelRemoved', messageId: 'm2', labelIds: [MANAGED_LABEL_ID] }], historyId: '150', nextPageToken: null },
     ],
   });
 

@@ -708,11 +708,36 @@ test('listHistory flattens labelsAdded/labelsRemoved/messagesDeleted into an ord
   const result = await service.listHistory({ accessToken: 'token', startHistoryId: '100' });
   assert.deepEqual(result.changes, [
     { type: 'labelAdded', messageId: 'm1' },
-    { type: 'labelRemoved', messageId: 'm2' },
+    { type: 'labelRemoved', messageId: 'm2', labelIds: [] },
     { type: 'messageDeleted', messageId: 'm3' },
   ]);
   assert.equal(result.historyId, '150');
   assert.equal(result.nextPageToken, null);
+});
+
+// EM10.5 Scenario 3 regression — the caller (emailSyncService.js) needs to
+// know WHICH label(s) were removed to tell a real managed-label removal
+// apart from an unrelated one (e.g. UNREAD, removed just by opening the
+// message) bundled into the same labelId-scoped history feed.
+test('listHistory preserves labelIds on a labelsRemoved entry so callers can tell which label was actually removed', async () => {
+  const httpClient = {
+    get: async () => ({
+      status: 200,
+      data: {
+        historyId: '150',
+        history: [
+          { labelsRemoved: [{ message: { id: 'm1' }, labelIds: ['Label_managed_1'] }] },
+          { labelsRemoved: [{ message: { id: 'm2' }, labelIds: ['UNREAD'] }] },
+        ],
+      },
+    }),
+  };
+  const service = createGmailService({ httpClient });
+  const result = await service.listHistory({ accessToken: 'token', startHistoryId: '100' });
+  assert.deepEqual(result.changes, [
+    { type: 'labelRemoved', messageId: 'm1', labelIds: ['Label_managed_1'] },
+    { type: 'labelRemoved', messageId: 'm2', labelIds: ['UNREAD'] },
+  ]);
 });
 
 test('listHistory (EM8) flattens messagesAdded records into {type: messageAdded, messageId} — the automatic-mode signal', async () => {

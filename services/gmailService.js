@@ -641,18 +641,29 @@ function createGmailService({ httpClient = axios } = {}) {
    * automatic mode): reads what changed since `startHistoryId`. Two shapes,
    * selected by the caller via `historyTypes`/`labelId`, never decided in
    * here:
-   *   - manual mode (default `historyTypes`, `labelId` set): scoped to the
-   *     managed label so this never sees unrelated mailbox activity (§18.2)
-   *     — `labelAdded`/`labelRemoved`/`messageDeleted`.
+   *   - manual mode (default `historyTypes`, `labelId` set): filtered by Gmail
+   *     to messages associated with the managed label — but NOT scoped to
+   *     changes of that specific label. A `labelsRemoved` record in this feed
+   *     can name a completely different label (most commonly `UNREAD`,
+   *     removed simply by opening the message in Gmail) bundled alongside a
+   *     message that also happens to carry the managed label. Every
+   *     `labelRemoved` change below therefore carries its own `labelIds` so
+   *     the caller can check WHICH label was actually removed before treating
+   *     it as "the managed label was removed" (EM10.5 Scenario 3 regression —
+   *     §24.2 previously assumed this filtering was already exact).
+   *     `labelAdded`/`labelRemoved`/`messageDeleted`.
    *   - automatic mode (`historyTypes: ['messageAdded']`, no `labelId`):
    *     unscoped — any new message anywhere in the mailbox, since automatic
    *     mode has no label to scope by and relies on organization policy
    *     alone (§16.1 item 3).
-   * Returns a flat, ORDER-PRESERVING list of `{type, messageId}` changes —
-   * callers reduce this to one final action per message (last-write-wins)
-   * rather than this function pre-grouping into added/removed sets, since a
-   * message can legitimately be labeled and then unlabeled again within the
-   * same page and only the net effect matters (§24.2).
+   * Returns a flat, ORDER-PRESERVING list of `{type, messageId}` changes
+   * (`labelRemoved` additionally carries `labelIds: string[]`, the actual
+   * label(s) removed in that entry, defaulting to `[]` if Gmail's response
+   * omits it) — callers reduce this to one final action per message
+   * (last-write-wins) rather than this function pre-grouping into added/
+   * removed sets, since a message can legitimately be labeled and then
+   * unlabeled again within the same page and only the net effect matters
+   * (§24.2).
    *
    * Throws `ERROR_CODES.HISTORY_EXPIRED` on Gmail's documented 404 for a
    * `startHistoryId` older than the retained history window — callers must
@@ -700,7 +711,8 @@ function createGmailService({ httpClient = axios } = {}) {
       }
       for (const entry of record.labelsRemoved || []) {
         const messageId = entry.message && entry.message.id;
-        if (messageId) changes.push({ type: 'labelRemoved', messageId });
+        const labelIds = Array.isArray(entry.labelIds) ? entry.labelIds : [];
+        if (messageId) changes.push({ type: 'labelRemoved', messageId, labelIds });
       }
       for (const entry of record.messagesDeleted || []) {
         const messageId = entry.message && entry.message.id;

@@ -719,8 +719,25 @@ async function runIncrementalPage(deps) {
     maxResults: HISTORICAL_PAGE_SIZE,
   });
 
+  // Bug fix (EM10.5 Scenario 3 regression): a `labelRemoved` change only
+  // signals that OUR managed label was removed if `labelIds` actually names
+  // it — Gmail's labelId-scoped history feed can still surface removal of a
+  // completely unrelated label (most commonly `UNREAD`, removed simply by
+  // opening the message in Gmail) bundled in for a message that also
+  // happens to carry the managed label. An event that doesn't name the
+  // managed label is noise, not a removal signal, and must be dropped
+  // before the last-write-wins reduction below — otherwise it can wrongly
+  // overwrite a real 'labelAdded' action, or wrongly tombstone a message
+  // whose managed label was never actually removed.
   const finalActionByMessage = new Map();
-  for (const change of historyResult.changes) finalActionByMessage.set(change.messageId, change.type);
+  for (const change of historyResult.changes) {
+    if (change.type === 'labelRemoved') {
+      const removedManagedLabel = Boolean(emailConnectionRow.managed_label_id)
+        && change.labelIds.includes(emailConnectionRow.managed_label_id);
+      if (!removedManagedLabel) continue;
+    }
+    finalActionByMessage.set(change.messageId, change.type);
+  }
 
   const toIngest = [];
   const toRemoveLabelRemoved = [];
@@ -954,10 +971,21 @@ function createEmailSyncService({
     // and both run types (unlike the label-removal pass above), only gated
     // on the run having completed successfully — see reconcilePolicyChanges'
     // own doc comment for why this can't be scoped to manual/historical only.
-    // excludeMessageIds prevents a double-tombstone of anything the
-    // label-removal pass above already handled this same sync.
+    // excludeMessageIds prevents a double-tombstone of anything already
+    // tombstoned this same sync. Bug fix (EM10.5 Scenario 3 regression):
+    // this previously only included extraReconciled (historical's full-list
+    // pass) and missed pageOutcome.reconciled — an INCREMENTAL run's own
+    // per-page labelRemoved/messageDeleted tombstones, done inline inside
+    // runIncrementalPage — so a message that pass already tombstoned could
+    // still be re-evaluated and tombstoned a second time here. historical's
+    // pageOutcome.reconciled is always [] (its reconciliation is the
+    // extraReconciled branch above), so this is a no-op there — the gap was
+    // incremental-only.
     if (complete && runStatus !== 'failed') {
-      const alreadyReconciledIds = new Set(extraReconciled.map((r) => r.messageId));
+      const alreadyReconciledIds = new Set([
+        ...pageOutcome.reconciled.map((r) => r.messageId),
+        ...extraReconciled.map((r) => r.messageId),
+      ]);
       extraReconciled = [
         ...extraReconciled,
         ...(await reconcilePolicyChanges({
