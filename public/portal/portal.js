@@ -1045,8 +1045,6 @@
   const kbCollectionsFilterDetails = document.getElementById('kb-collections-filter');
   const kbCollectionsFilterList    = document.getElementById('kb-collections-filter-list');
   const kbCollectionsFilterLabel   = document.getElementById('kb-collections-filter-label');
-  const kbEmailLookupModeRow    = document.getElementById('kb-email-lookup-mode-row');
-  const kbEmailLookupModeSelect = document.getElementById('kb-email-lookup-mode');
   const liveLookupConsentModal   = document.getElementById('live-lookup-consent-modal');
   const liveLookupConsentAccept  = document.getElementById('live-lookup-consent-accept');
   const liveLookupConsentDecline = document.getElementById('live-lookup-consent-decline');
@@ -2925,19 +2923,15 @@
 
   loadKbCollectionsFilter();
 
-  // EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — the portal's three-way mode selector.
-  // localStorage-persisted per client, same convention as kbAllowedCollectionIds
-  // above (a shared browser session already implies a shared logged-in
-  // member in this portal's auth model, matching that existing precedent).
-  const KB_EMAIL_LOOKUP_MODE_KEY = `kbEmailLookupMode:${clientId}`;
-  let kbEmailLookupMode = (() => {
-    try {
-      const raw = localStorage.getItem(KB_EMAIL_LOOKUP_MODE_KEY);
-      return ['company_knowledge', 'live_email', 'automatic'].includes(raw) ? raw : 'automatic';
-    } catch {
-      return 'automatic';
-    }
-  })();
+  // EL6 (LIVE_EMAIL_LOOKUP.md §2.1) originally exposed a three-way mode
+  // selector here (`Automatic` / `Company knowledge only` / `Live email`,
+  // localStorage-persisted per client). Per §2.2's confirmed long-term
+  // direction, the selector is no longer exposed in the standard client UI —
+  // every query silently uses `automatic`, the canonical value routes/api.js
+  // already defaults to for a missing/invalid `emailLookupMode`. The
+  // underlying `company_knowledge`/`live_email` modes are untouched
+  // server-side and remain available to the automatic router.
+  const kbEmailLookupMode = 'automatic';
   let liveLookupConsentedAt = null;
   let hasActiveGmailConnection = false;
 
@@ -2985,8 +2979,11 @@
     openLiveLookupConsentModal();
   }
 
+  // Still needed with the mode selector gone: `automatic` mode can still
+  // trigger the live-lookup consent modal and the "Searching connected
+  // email…" hint below, both of which depend on knowing whether a Gmail
+  // mailbox is connected and already consented.
   async function loadEmailLookupUI() {
-    if (!kbEmailLookupModeRow) return;
     try {
       const [connRes, settingsRes] = await Promise.all([
         fetch('/api/integrations/email/connections', { headers: { Authorization: `Bearer ${accessToken}` } }),
@@ -3000,23 +2997,7 @@
         const body = await settingsRes.json();
         liveLookupConsentedAt = body.consentedAt || null;
       }
-      // Not gated on hasActiveGmailConnection: §2.1's "silently inert"
-      // behavior for a disconnected mailbox is already correct without
-      // hiding the control (Automatic/Live email simply never actually
-      // offer the tools — the server-side emailLookupAvailable check
-      // handles that uniformly, same as it does for a not-yet-consented
-      // member).
-      kbEmailLookupModeRow.hidden = false;
-      if (kbEmailLookupModeSelect) kbEmailLookupModeSelect.value = kbEmailLookupMode;
-    } catch { /* leave the row hidden — chat still works in the unrestricted default */ }
-  }
-
-  if (kbEmailLookupModeSelect) {
-    kbEmailLookupModeSelect.addEventListener('change', () => {
-      kbEmailLookupMode = kbEmailLookupModeSelect.value;
-      try { localStorage.setItem(KB_EMAIL_LOOKUP_MODE_KEY, kbEmailLookupMode); } catch { /* selection just won't persist across reloads */ }
-      maybeShowLiveLookupConsentModal();
-    });
+    } catch { /* chat still works in the unrestricted default */ }
   }
 
   loadEmailLookupUI();

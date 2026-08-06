@@ -1348,23 +1348,6 @@ body {
   margin: 2px 0 0 12px;
 }
 
-/* EL6 (LIVE_EMAIL_LOOKUP.md §2.1) — mode selector row, sibling to the
-   existing "Search scope" collections filter above the chat container. */
-.kb-email-lookup-mode-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-}
-.kb-email-lookup-mode-select {
-  font-size: 0.78rem;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-primary);
-}
-
 /* EL6 (§6.3) — a visually distinct "Live sources" box, deliberately never
    merged with .kb-message-sources above: a live result is fresher and can
    change or disappear (a message could be deleted, a label removed) in a
