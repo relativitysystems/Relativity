@@ -486,22 +486,6 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   letter-spacing: 0.01em;
 }
 
-.proof-gap {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  line-height: 1.75;
-}
-
-.proof-gap-label {
-  display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-right: 10px;
-}
-
 /* ============================================================
    STORY CHAPTERS (Problem / Philosophy / Solution / Demo / Growing)
    ============================================================ */
@@ -882,16 +866,55 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   flex-shrink: 0;
 }
 
-/* Knowledge gap mockup */
-.mock-gap__save {
-  display: inline-block;
+/* Knowledge gap mockup — mirrors the live portal's .kb-gap-card component */
+.mock-gap__card {
   margin-top: 18px;
-  font-size: 0.78rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.mock-gap__card .kb-gap-card__label {
+  display: block;
+  font-size: 0.68rem;
   font-weight: 600;
-  padding: 8px 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+  margin-bottom: 5px;
+}
+
+.mock-gap__card .kb-gap-card__text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.mock-gap__card .kb-gap-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mock-gap__card .kb-gap-card__btn {
+  padding: 5px 12px;
   border-radius: 6px;
-  border: 1px solid var(--border);
-  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.mock-gap__card .kb-gap-card__btn--save {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: var(--warn);
+}
+
+.mock-gap__card .kb-gap-card__btn--dismiss {
+  color: var(--text-muted);
 }
 
 /* ============================================================
