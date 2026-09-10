@@ -929,23 +929,6 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
   padding-bottom: 28px;
 }
 
-/* === CTA Banner === */
-.cta-banner {
-  padding: 110px 0;
-  border-top: 1px solid var(--border);
-}
-
-.cta-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 40px;
-}
-
-.cta-inner h2 {
-  max-width: 520px;
-}
-
 /* === Contact === */
 .contact {
   padding: 150px 0;
@@ -1164,12 +1147,6 @@ footer {
     border-bottom: none;
   }
 
-  .cta-inner {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 28px;
-  }
-
   .contact-inner {
     grid-template-columns: 1fr;
     gap: 56px;
@@ -1255,7 +1232,6 @@ footer {
 
   .chapter,
   .philosophy,
-  .cta-banner,
   .contact {
     padding: 88px 0;
   }
