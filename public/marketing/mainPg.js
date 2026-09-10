@@ -140,34 +140,6 @@ form.addEventListener('submit', async (e) => {
   submitBtn.disabled = false;
 });
 
-// === Magnetic "Book a Demo" buttons ===
-// Particles are seeded once per button and animate to center via the
-// `is-attracting` class (CSS handles the spring-like easing); skipped
-// entirely under reduced motion since the effect is purely decorative.
-if (!prefersReducedMotion) {
-  document.querySelectorAll('.btn-magnetic').forEach(btn => {
-    const count = parseInt(btn.dataset.magnetParticles, 10) || 10;
-    const radius = parseInt(btn.dataset.magnetRadius, 10) || 34;
-
-    for (let i = 0; i < count; i++) {
-      const particle = document.createElement('span');
-      particle.className = 'magnet-particle';
-      const angle = Math.random() * Math.PI * 2;
-      const dist = radius * (0.5 + Math.random() * 0.5);
-      particle.style.setProperty('--mx', `${Math.cos(angle) * dist}px`);
-      particle.style.setProperty('--my', `${Math.sin(angle) * dist}px`);
-      btn.insertBefore(particle, btn.firstChild);
-    }
-
-    const attract = () => btn.classList.add('is-attracting');
-    const release = () => btn.classList.remove('is-attracting');
-    btn.addEventListener('mouseenter', attract);
-    btn.addEventListener('mouseleave', release);
-    btn.addEventListener('touchstart', attract, { passive: true });
-    btn.addEventListener('touchend', release);
-  });
-}
-
 // === Smooth scroll for anchor links ===
 document.querySelectorAll('a[href^="#"]').forEach(link => {
   link.addEventListener('click', (e) => {
