@@ -790,13 +790,19 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 
 /* Slack mockup */
 .mock-slack__channel {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: 18px;
+}
+
+.mock-slack__logo {
+  flex-shrink: 0;
 }
 
 .mock-slack__msg {
