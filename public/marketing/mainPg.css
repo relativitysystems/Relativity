@@ -134,6 +134,13 @@ h3 { font-size: 1.1rem; font-weight: 500; letter-spacing: -0.01em; }
     opacity: 1;
     transform: none;
   }
+
+  /* theme.css's universal 0.01ms override still loops these keyframes
+     near-instantly; drop them entirely so the diagram sits still. */
+  .sources-integration__flow,
+  .sources-integration__pulse {
+    animation: none;
+  }
 }
 
 /* === Nav === */
@@ -481,37 +488,143 @@ nav.menu-open .mobile-menu-btn span:nth-child(3) {
 }
 
 /* ============================================================
-   COMPANY KNOWLEDGE SOURCES — icon grid converging into one layer
-   ============================================================ */
-.sources-grid {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
-  margin-bottom: 8px;
+   COMPANY KNOWLEDGE SOURCES — radial hub, sources flowing into Relativity
+   ============================================================
+   A 100x100 SVG viewBox sits under absolutely-positioned HTML nodes. Both
+   use the same 0-100 coordinate space (the container is locked to a 1:1
+   aspect ratio via `aspect-ratio: 1`), so a node's `left/top` percentage
+   and its connecting line's SVG coordinates are numerically identical —
+   no JS needed to keep them in sync. Each spoke runs from its source node
+   to the center (not the reverse) and the flowing dash animates toward
+   the center, so the motion reads as knowledge flowing into Relativity. */
+.sources-integration {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1;
+  margin: 8px auto 0;
 }
 
-.sources-grid li {
+.sources-integration__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sources-integration__line {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 0.35;
+}
+
+.sources-integration__flow {
+  fill: none;
+  stroke: url(#sourcesFlowGlow);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  /* Short dash, long gap (was 3 9) — sparser, so fewer dashes are ever in
+     flight on a given spoke at once. Each path's own animation-duration
+     and animation-delay (set inline, per node) override the base speed
+     and phase below to give every node an independent, non-uniform
+     cadence rather than a synchronized rotation. */
+  stroke-dasharray: 2 20;
+  animation: sources-flow 6s linear infinite;
+}
+
+@keyframes sources-flow {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -66; }
+}
+
+.sources-integration__center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.sources-integration__badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(52px, 11vw, 68px);
+  height: clamp(52px, 11vw, 68px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.sources-integration__logo {
+  height: 40%;
+  width: auto;
+}
+
+.sources-integration__pulse {
+  position: absolute;
+  inset: -8px;
+  border: 2px solid #fa4902;
+  border-radius: 20px;
+  opacity: 0;
+  animation: sources-pulse 3s ease-out infinite;
+}
+
+@keyframes sources-pulse {
+  0%   { transform: scale(1); opacity: 0.45; }
+  70%  { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+.sources-integration__node {
+  position: absolute;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: center;
+  gap: 6px;
+  width: clamp(56px, 11vw, 84px);
+  transform: translate(-50%, -50%);
+}
+
+.sources-integration__node-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(32px, 7vw, 48px);
+  height: clamp(32px, 7vw, 48px);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px 18px;
+  border-radius: 12px;
+  background: var(--surface);
   color: var(--text-secondary);
-  transition: border-color var(--transition), background var(--transition);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--transition), transform var(--transition);
 }
 
-.sources-grid li:hover {
+.sources-integration__node-icon svg {
+  /* max- (not fixed) width/height: each icon keeps its own hardcoded,
+     already aspect-correct pixel size (they range from 16x20 to 24x17)
+     and only shrinks — without stretching — if that's too big for the
+     clamped icon box on a small viewport. */
+  width: auto;
+  height: auto;
+  max-width: 60%;
+  max-height: 60%;
+}
+
+.sources-integration__node:hover .sources-integration__node-icon {
   border-color: var(--border-hover);
-  background: var(--surface-tint-2);
+  transform: translateY(-2px);
 }
 
-.sources-grid li span {
-  font-size: 0.85rem;
+.sources-integration__node-label {
+  font-size: clamp(0.6rem, 1.6vw, 0.7rem);
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
 }
 
 .sources-connector {
@@ -1017,10 +1130,6 @@ footer {
 
   .workflow-step:last-child p {
     border-bottom: none;
-  }
-
-  .sources-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   }
 
   .cta-inner {
