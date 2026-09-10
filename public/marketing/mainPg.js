@@ -136,7 +136,7 @@ form.addEventListener('submit', async (e) => {
     status.classList.add('error');
   }
 
-  submitBtn.textContent = 'Send Message';
+  submitBtn.textContent = 'Book Demo';
   submitBtn.disabled = false;
 });
 
