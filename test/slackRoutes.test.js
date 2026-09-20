@@ -53,19 +53,19 @@ test('Slack routes — auth gating, retirement, and safe callback redirects', as
   await t.test('GET /api/integrations/slack/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/slack/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=slack&error=access_denied');
+    assert.equal(res.headers.get('location'), '/portal?integration=slack&error=access_denied');
   });
 
   await t.test('GET /api/integrations/slack/callback with no code/state redirects to invalid_state', async () => {
     const res = await fetch(`${base}/api/integrations/slack/callback`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=slack&error=invalid_state');
+    assert.equal(res.headers.get('location'), '/portal?integration=slack&error=invalid_state');
   });
 
   await t.test('GET /api/integrations/slack/callback with only a code (no state) redirects to invalid_state', async () => {
     const res = await fetch(`${base}/api/integrations/slack/callback?code=abc`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=slack&error=invalid_state');
+    assert.equal(res.headers.get('location'), '/portal?integration=slack&error=invalid_state');
   });
 
   await t.test('the old /auth/slack/start route is retired (410 Gone), not the active OAuth path', async () => {

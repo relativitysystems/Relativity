@@ -24,7 +24,7 @@
   // If already logged in (and we're not here because of an auth failure), skip straight to portal
   const { data: { session } } = await supabase.auth.getSession();
   if (session && !errorCode) {
-    window.location.href = '/portal.html';
+    window.location.href = '/portal';
     return;
   }
 
@@ -47,6 +47,6 @@
       return;
     }
 
-    window.location.href = '/portal.html';
+    window.location.href = '/portal';
   });
 })();

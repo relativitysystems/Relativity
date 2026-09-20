@@ -107,6 +107,6 @@
       return;
     }
 
-    window.location.href = '/portal.html';
+    window.location.href = '/portal';
   });
 })();

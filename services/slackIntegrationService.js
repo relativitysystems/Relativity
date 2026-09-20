@@ -23,11 +23,11 @@ const OWNER_ADMIN_ROLES = ['owner', 'admin'];
 // Safe portal redirects — never carry a raw Slack error string, state,
 // token, or workspace ID. See §13 of the Milestone 3 objective.
 const REDIRECT = Object.freeze({
-  SUCCESS: '/portal.html?integration=slack&status=connected',
-  DENIED: '/portal.html?integration=slack&error=access_denied',
-  INVALID_STATE: '/portal.html?integration=slack&error=invalid_state',
-  EXPIRED_STATE: '/portal.html?integration=slack&error=expired_state',
-  CONNECTION_FAILED: '/portal.html?integration=slack&error=connection_failed',
+  SUCCESS: '/portal?integration=slack&status=connected',
+  DENIED: '/portal?integration=slack&error=access_denied',
+  INVALID_STATE: '/portal?integration=slack&error=invalid_state',
+  EXPIRED_STATE: '/portal?integration=slack&error=expired_state',
+  CONNECTION_FAILED: '/portal?integration=slack&error=connection_failed',
 });
 
 /**

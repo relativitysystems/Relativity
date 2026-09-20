@@ -7,7 +7,7 @@
   // 2. Guard: redirect to login if there is no active session
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
-    window.location.href = '/login.html';
+    window.location.href = '/login';
     return;
   }
 
@@ -25,7 +25,7 @@
     // just bounce us straight back here.
     PortalCache.clearAll();
     await supabase.auth.signOut();
-    window.location.href = '/login.html?error=' + encodeURIComponent(me.reason || 'session_invalid');
+    window.location.href = '/login?error=' + encodeURIComponent(me.reason || 'session_invalid');
     return;
   }
 
@@ -152,7 +152,7 @@
     } else if (error) {
       showBanner('error', SLACK_ERROR_MESSAGES[error] || 'Slack connection failed. Please try again.');
     }
-    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+    window.history.replaceState({}, '', `/portal${window.location.hash}`);
   }
 
   // EM2 — Gmail per-member OAuth connect. Mirrors Slack's redirect-banner
@@ -170,7 +170,7 @@
     } else if (error) {
       showBanner('error', GMAIL_ERROR_MESSAGES[error] || 'Gmail connection failed. Please try again.');
     }
-    window.history.replaceState({}, '', `/portal/portal.html${window.location.hash}`);
+    window.history.replaceState({}, '', `/portal${window.location.hash}`);
   }
 
   // 4b. Slack Integration
@@ -2909,7 +2909,7 @@
     logoutBtn.addEventListener('click', async () => {
       PortalCache.clearAll();
       await supabase.auth.signOut();
-      window.location.href = '/login.html';
+      window.location.href = '/login';
     });
   }
 

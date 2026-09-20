@@ -129,7 +129,7 @@ router.post('/invite', adminAuth, async (req, res) => {
   }
 
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${appBaseUrl}/invite-claim.html`,
+    redirectTo: `${appBaseUrl}/invite-claim`,
     data: { client_id: client.id },
   });
 

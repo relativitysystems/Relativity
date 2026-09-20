@@ -182,24 +182,24 @@ test('Email integration routes — auth gating and safe callback redirects', asy
   await t.test('GET /api/integrations/email/gmail/callback with a denial error redirects to the safe access_denied path', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?error=access_denied`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=gmail&error=access_denied');
+    assert.equal(res.headers.get('location'), '/portal?integration=gmail&error=access_denied');
   });
 
   await t.test('GET /api/integrations/email/gmail/callback with no code/state redirects to invalid_state', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=gmail&error=invalid_state');
+    assert.equal(res.headers.get('location'), '/portal?integration=gmail&error=invalid_state');
   });
 
   await t.test('GET /api/integrations/email/gmail/callback with only a code (no state) redirects to invalid_state', async () => {
     const res = await fetch(`${base}/api/integrations/email/gmail/callback?code=abc`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=gmail&error=invalid_state');
+    assert.equal(res.headers.get('location'), '/portal?integration=gmail&error=invalid_state');
   });
 
   await t.test('GET /api/integrations/email/microsoft/callback (unsupported provider) redirects to invalid_state, not a 500 or JSON error', async () => {
     const res = await fetch(`${base}/api/integrations/email/microsoft/callback`, { redirect: 'manual' });
     assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/portal.html?integration=gmail&error=invalid_state');
+    assert.equal(res.headers.get('location'), '/portal?integration=gmail&error=invalid_state');
   });
 });

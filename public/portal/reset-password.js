@@ -74,6 +74,6 @@
     }
 
     show('successState');
-    setTimeout(() => { window.location.href = '/login.html'; }, 2500);
+    setTimeout(() => { window.location.href = '/login'; }, 2500);
   });
 })();

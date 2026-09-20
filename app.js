@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const corsPolicy = require('./middleware/corsPolicy');
 const authRoutes = require('./routes/auth');
 const apiRoutes = require('./routes/api');
@@ -30,18 +29,47 @@ app.use(express.json({
   },
 }));
 
-// Local dev only — Vercel serves public/ as static files directly from CDN
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Root route: serve index.html if present, otherwise redirect to /portal.html
-app.get('/', (req, res) => {
-  const indexPath = path.join(__dirname, 'public', 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.redirect('/portal.html');
+// Clean, extensionless client-facing URLs. Mirrors the rewrites/redirects in
+// vercel.json (which is what production uses): each clean path serves the real
+// file, and the old .html paths redirect to the clean one (query string kept).
+const publicDir = path.join(__dirname, 'public');
+const CLEAN_ROUTES = {
+  '/': 'marketing/index.html',
+  '/login': 'portal/login.html',
+  '/portal': 'portal/portal.html',
+  '/forgot-password': 'portal/forgot-password.html',
+  '/reset-password': 'portal/reset-password.html',
+  '/invite-team': 'portal/invite-team.html',
+  '/invite-claim': 'portal/invite-claim.html',
+  '/privacy': 'privacy.html',
+  // Shares its path with the /admin API router; only GET /admin (exactly) is
+  // the page, everything else falls through to adminRoutes.
+  '/admin': 'admin/admin.html',
+};
+const LEGACY_REDIRECTS = {
+  '/marketing/index.html': '/',
+  '/marketing': '/',
+  '/privacy.html': '/privacy',
+  '/admin/admin.html': '/admin',
+};
+for (const name of ['login', 'portal', 'forgot-password', 'reset-password', 'invite-team', 'invite-claim']) {
+  LEGACY_REDIRECTS[`/${name}.html`] = `/${name}`;
+  LEGACY_REDIRECTS[`/portal/${name}.html`] = `/${name}`;
+}
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const legacy = LEGACY_REDIRECTS[req.path];
+  if (legacy) {
+    const qs = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(legacy + qs);
   }
+  const file = CLEAN_ROUTES[req.path];
+  if (file) return res.sendFile(path.join(publicDir, file));
+  next();
 });
+
+// Local dev only � Vercel serves public/ as static files directly from CDN
+app.use(express.static(publicDir));
 
 app.use('/auth', authRoutes);
 app.use('/api', apiRoutes);

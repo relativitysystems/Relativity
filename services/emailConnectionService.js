@@ -56,11 +56,11 @@ const PROVIDER = 'gmail';
 // Safe portal redirects — never carry a raw error string, state, token, or
 // mailbox address. Mirrors slackIntegrationService.js's REDIRECT constants.
 const REDIRECT = Object.freeze({
-  SUCCESS: '/portal.html?integration=gmail&status=connected',
-  DENIED: '/portal.html?integration=gmail&error=access_denied',
-  INVALID_STATE: '/portal.html?integration=gmail&error=invalid_state',
-  EXPIRED_STATE: '/portal.html?integration=gmail&error=expired_state',
-  CONNECTION_FAILED: '/portal.html?integration=gmail&error=connection_failed',
+  SUCCESS: '/portal?integration=gmail&status=connected',
+  DENIED: '/portal?integration=gmail&error=access_denied',
+  INVALID_STATE: '/portal?integration=gmail&error=invalid_state',
+  EXPIRED_STATE: '/portal?integration=gmail&error=expired_state',
+  CONNECTION_FAILED: '/portal?integration=gmail&error=connection_failed',
 });
 
 // Thin, EM2-only data access for the email_connections table (§13.1) — the

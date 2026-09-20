@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/shared/theme.css" />
-  <link rel="stylesheet" href="portal.css" />
-  <link rel="stylesheet" href="login.css" />
+  <link rel="stylesheet" href="/portal/portal.css" />
+  <link rel="stylesheet" href="/portal/login.css" />
   <script src="/shared/theme.js"></script>
 </head>
 <body>
@@ -37,7 +37,7 @@
       <div id="invalidState" hidden>
         <h1 class="login-title">Invalid Invitation</h1>
         <p id="invalidMessage" class="login-sub">This invite link is invalid, expired, or has already been used.</p>
-        <a id="invalidSignInLink" href="/login.html" class="login-sub" style="color:var(--badge-orange)" hidden>Sign In</a>
+        <a id="invalidSignInLink" href="/login" class="login-sub" style="color:var(--badge-orange)" hidden>Sign In</a>
       </div>
 
       <!-- Shown for a new user who needs to create an account -->
@@ -133,7 +133,7 @@
             <div id="signinError" class="login-error" hidden></div>
 
             <button type="submit" id="signinBtn" class="btn-login">Sign In &amp; Accept</button>
-            <a href="/forgot-password.html" class="forgot-link">Forgot password?</a>
+            <a href="/forgot-password" class="forgot-link">Forgot password?</a>
           </form>
         </div>
       </div>
@@ -147,6 +147,6 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="invite-team.js"></script>
+  <script src="/portal/invite-team.js"></script>
 </body>
 </html>

@@ -1,7 +1,25 @@
 {
+  "cleanUrls": true,
+  "redirects": [
+    { "source": "/marketing/index.html", "destination": "/", "permanent": false },
+    { "source": "/marketing/index",      "destination": "/", "permanent": false },
+    { "source": "/marketing",            "destination": "/", "permanent": false },
+    { "source": "/admin/admin.html",     "destination": "/admin", "permanent": false },
+    { "source": "/admin/admin",          "destination": "/admin", "permanent": false },
+    { "source": "/portal/:page(login|portal|forgot-password|reset-password|invite-team|invite-claim).html", "destination": "/:page", "permanent": false },
+    { "source": "/portal/:page(login|portal|forgot-password|reset-password|invite-team|invite-claim)",      "destination": "/:page", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/api/:path*",   "destination": "/api" },
-    { "source": "/auth/:path*",  "destination": "/api" },
-    { "source": "/admin/:path*", "destination": "/api" }
+    { "source": "/",                 "destination": "/marketing/index.html" },
+    { "source": "/login",            "destination": "/portal/login.html" },
+    { "source": "/portal",           "destination": "/portal/portal.html" },
+    { "source": "/forgot-password",  "destination": "/portal/forgot-password.html" },
+    { "source": "/reset-password",   "destination": "/portal/reset-password.html" },
+    { "source": "/invite-team",      "destination": "/portal/invite-team.html" },
+    { "source": "/invite-claim",     "destination": "/portal/invite-claim.html" },
+    { "source": "/admin",            "destination": "/admin/admin.html" },
+    { "source": "/api/:path*",       "destination": "/api" },
+    { "source": "/auth/:path*",      "destination": "/api" },
+    { "source": "/admin/:path*",     "destination": "/api" }
   ]
 }

@@ -265,7 +265,7 @@ router.post('/password-reset/request', async (req, res) => {
     const { data, error } = await supabase.auth.admin.generateLink({
       type: 'recovery',
       email,
-      options: { redirectTo: `${appBaseUrl}/reset-password.html` },
+      options: { redirectTo: `${appBaseUrl}/reset-password` },
     });
 
     if (error || !data?.properties?.action_link) {

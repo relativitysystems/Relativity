@@ -65,7 +65,7 @@
 
     try {
       await acceptInvite(session.access_token);
-      window.location.href = '/portal.html';
+      window.location.href = '/portal';
     } catch (err) {
       showError('loginError', err.message || 'Could not accept invite. Please try again.');
       if (btn) {
@@ -88,7 +88,7 @@
     acceptingInvite = true;
     try {
       await acceptInvite(existingSession.access_token);
-      window.location.href = '/portal.html';
+      window.location.href = '/portal';
       return true;
     } catch {
       acceptingInvite = false;
@@ -191,7 +191,7 @@
 
     try {
       const confirmationRedirectUrl =
-        `${window.location.origin}/invite-team.html?token=${encodeURIComponent(inviteToken)}`;
+        `${window.location.origin}/invite-team?token=${encodeURIComponent(inviteToken)}`;
 
       const { data, error } = await supabase.auth.signUp({
         email: inviteEmail,
@@ -214,7 +214,7 @@
       }
 
       await acceptInvite(data.session.access_token);
-      window.location.href = '/portal.html';
+      window.location.href = '/portal';
     } catch (err) {
       showError('signupError', err.message || 'Sign-up failed. Please try again.');
       $('signupBtn').disabled = false;
@@ -248,7 +248,7 @@
       if (error) throw error;
 
       await acceptInvite(data.session.access_token);
-      window.location.href = '/portal.html';
+      window.location.href = '/portal';
     } catch (err) {
       showError('signinError', err.message || 'Sign-in failed. Please try again.');
       $('signinBtn').disabled = false;

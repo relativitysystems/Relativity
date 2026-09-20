@@ -133,7 +133,7 @@ router.post('/team/invite', clientAuth, requireRole(...OWNER_ADMIN), async (req,
       invitedBy: req.member.id,
     });
 
-    const acceptUrl = `${appBaseUrl}/invite-team.html?token=${token}`;
+    const acceptUrl = `${appBaseUrl}/invite-team?token=${token}`;
     await sendTeamInviteEmail({
       toEmail: normalizedEmail,
       companyName: req.client.name || 'your company',
@@ -184,7 +184,7 @@ router.post('/team/invites/resend', clientAuth, requireRole(...OWNER_ADMIN), asy
 
     const invite = await supabaseService.regenerateTeamInvite(memberId, req.client.id, newToken, newExpiresAt);
 
-    const acceptUrl = `${appBaseUrl}/invite-team.html?token=${newToken}`;
+    const acceptUrl = `${appBaseUrl}/invite-team?token=${newToken}`;
     await sendTeamInviteEmail({
       toEmail: member.email,
       companyName: req.client.name || 'your company',
